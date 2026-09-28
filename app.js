@@ -42,17 +42,18 @@ function authAllowed(email=''){return email.toLowerCase().endsWith('@'+ALLOWED_E
 function setAuthMessage(msg,isError=false){const el=document.getElementById('authMessage');if(!el)return;el.textContent=msg||'';el.style.color=isError?'#b94141':'#52616d'}
 function showAuthGate(show){const el=document.getElementById('authGate');if(el)el.style.display=show?'flex':'none';const app=document.querySelector('.app');if(app){app.style.filter=show?'blur(2px)':'none';app.style.pointerEvents=show?'none':'auto'}}
 
-async function sendMagicLink(){
+async function signInWithPasswordLogin(){
   if(!sb){setAuthMessage('Supabase is not connected yet. Add the project URL and public key to config.js.',true);return}
   const email=(document.getElementById('authEmail').value||'').trim().toLowerCase();
+  const password=(document.getElementById('authPassword').value||'');
   if(!authAllowed(email)){setAuthMessage('Use your @'+ALLOWED_EMAIL_DOMAIN+' work email.',true);return}
+  if(!password){setAuthMessage('Enter your password.',true);return}
   const btn=document.getElementById('authBtn');
   btn.disabled=true;
-  setAuthMessage('Sending sign-in link...');
-  const redirect=window.location.origin+window.location.pathname;
-  const {error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:redirect}});
+  setAuthMessage('Signing in...');
+  const {error}=await sb.auth.signInWithPassword({email,password});
   btn.disabled=false;
-  if(error)setAuthMessage(error.message,true);else setAuthMessage('Check your email and click the sign-in link.');
+  if(error)setAuthMessage(error.message,true);
 }
 
 async function signOut(){if(sb)await sb.auth.signOut();currentUser=null;showAuthGate(true);setAuthMessage('Signed out.')}
@@ -459,8 +460,9 @@ function wireUI(){
   document.getElementById('saveBtn').onclick=saveModal;
   document.getElementById('deleteBtn').onclick=()=>{if(editingId){quickDelete(editingId);closeModal()}};
   document.getElementById('modalBackdrop').onclick=e=>{if(e.target.id==='modalBackdrop')closeModal()};
-  document.getElementById('authBtn').onclick=sendMagicLink;
-  document.getElementById('authEmail').addEventListener('keydown',e=>{if(e.key==='Enter')sendMagicLink()});
+  document.getElementById('authBtn').onclick=signInWithPasswordLogin;
+  document.getElementById('authEmail').addEventListener('keydown',e=>{if(e.key==='Enter')signInWithPasswordLogin()});
+  document.getElementById('authPassword').addEventListener('keydown',e=>{if(e.key==='Enter')signInWithPasswordLogin()});
   document.getElementById('signOutBtn').onclick=signOut;
 }
 

@@ -43,9 +43,10 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.app{min-height:
   <div class="auth-card">
     <div class="eyebrow" style="color:#6b7d8d">Superior Operations</div>
     <h2>Sign in to the live schedule</h2>
-    <p>Use your Superior work email. We will send you a secure sign-in link - no new password to remember.</p>
+    <p>Use your Superior work email and schedule password. No email link is required.</p>
     <input id="authEmail" type="email" autocomplete="email" placeholder="you@superiorwallsnd.com" />
-    <button type="button" id="authBtn">Email me a sign-in link</button>
+    <input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" />
+    <button type="button" id="authBtn">Sign in</button>
     <div class="auth-message" id="authMessage"></div>
   </div>
 </div>
