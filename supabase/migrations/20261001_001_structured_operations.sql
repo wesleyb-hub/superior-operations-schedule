@@ -187,7 +187,7 @@ begin
   if exists (
     select 1 from jsonb_array_elements(coalesce(p_snapshot->'loads','[]'::jsonb)) n(item)
     join public.schedule_records o on o.collection='loads' and o.record_id=n.item->>'id'
-    where coalesce(n.item->>'status','')='Delivered' and coalesce(o.data->>'status','')<>'Loaded'
+    where coalesce(n.item->>'status','')='Delivered' and coalesce(o.data->>'status','') not in ('Loaded','Delivered')
   ) then raise exception 'Delivery must pass through Loaded before it can be marked Delivered.'; end if;
 end;
 $$;
