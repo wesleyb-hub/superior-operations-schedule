@@ -730,7 +730,7 @@ function validateOperationalTransition(snapshot){
   const oldBilling=new Map((lastRemoteData.billing||[]).map(x=>[x.key,x]));
   for(const b of snapshot.billing||[]){const old=oldBilling.get(b.key)||{};if(b.status==='Billed'&&old.status!=='Billed'&&(!b.invoice||!b.invoiceDate))return `${b.project||'Billing record'} requires an invoice number and invoice date before Billed status.`}
   const oldLoads=new Map((lastRemoteData.loads||[]).map(x=>[x.id,x]));
-  for(const l of snapshot.loads||[]){const old=oldLoads.get(l.id)||{};if(l.status==='Delivered'&&old.status!=='Loaded')return `${l.project||'Delivery'} must pass through Loaded before Delivered.`}
+  for(const l of snapshot.loads||[]){const old=oldLoads.get(l.id)||{};if(l.status==='Delivered'&&!['Loaded','Delivered'].includes(old.status))return `${l.project||'Delivery'} must pass through Loaded before Delivered.`}
   return''
 }
 async function persistState(reason='Saved'){
