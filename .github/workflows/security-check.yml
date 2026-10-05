@@ -18,3 +18,5 @@ jobs:
           node-version: 22
       - name: Verify public bundle safety
         run: node scripts/validate-public-bundle.mjs
+      - name: Verify database migrations
+        run: node scripts/validate-migrations.mjs

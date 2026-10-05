@@ -303,6 +303,17 @@ td{padding:9px 10px;border-bottom:1px solid #edf0f2;vertical-align:top}
 .year-unscheduled strong{color:var(--navy)}
 @media(max-width:760px){.year-gantt{--label-w:210px;--week-w:32px}.year-row-label{min-height:46px}.year-cell{min-height:46px}}
 
+/* EXCEPTIONS + READ-ONLY OPERATIONS ASSISTANT */
+.exception-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.exception-card{border:1px solid var(--line);border-left:5px solid var(--orange);border-radius:10px;padding:12px;background:#fff}
+.exception-card.critical{border-left-color:var(--red)}.exception-card.medium{border-left-color:var(--blue)}
+.exception-title{font-weight:900;color:var(--navy);font-size:12px}.exception-meta{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4}
+.assistant-launch{position:fixed;right:18px;bottom:18px;z-index:65;border:0;border-radius:99px;background:var(--navy);color:#fff;padding:12px 16px;font-weight:900;box-shadow:0 8px 24px rgba(19,40,61,.25)}
+.assistant-panel{position:fixed;right:18px;bottom:72px;z-index:70;width:min(410px,calc(100vw - 24px));height:min(560px,calc(100vh - 110px));background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px rgba(19,40,61,.25);display:none;flex-direction:column;overflow:hidden}
+.assistant-panel.open{display:flex}.assistant-head{padding:12px 14px;background:var(--navy);color:#fff;display:flex;justify-content:space-between;align-items:center}.assistant-head strong{font-size:14px}.assistant-head button{border:0;background:rgba(255,255,255,.15);color:#fff;border-radius:6px;padding:5px 8px}
+.assistant-note{padding:8px 12px;background:#f5f8fa;border-bottom:1px solid var(--line);font-size:9px;color:#667681}.assistant-log{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}.assistant-message{max-width:88%;border-radius:10px;padding:9px 10px;font-size:11px;line-height:1.45;white-space:pre-wrap}.assistant-message.user{align-self:flex-end;background:#e7eef5;color:var(--navy)}.assistant-message.bot{align-self:flex-start;background:#f3f5f6;color:#33434f}.assistant-source{font-size:8px;color:#7b8791;margin-top:4px}.assistant-form{border-top:1px solid var(--line);padding:10px;display:flex;gap:7px}.assistant-form input{flex:1;min-width:0;border:1px solid #cbd5dc;border-radius:8px;padding:9px}.assistant-form button{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:9px 12px;font-weight:900}
+@media(max-width:760px){.exception-summary{grid-template-columns:1fr}.assistant-launch{right:10px;bottom:10px}.assistant-panel{right:10px;bottom:62px;width:calc(100vw - 20px)}}
+
 
 @media print{body{background:#fff}.topbar,.tabs,.toolbar,.notice,.subtabs,.no-print{display:none!important}.main{max-width:none;padding:0}.section,.wall-week{box-shadow:none;border:1px solid #bbb;break-inside:avoid}button{display:none!important}.print-title{display:block!important}}
 
@@ -416,7 +427,7 @@ button,.tab,.subtab,.mini,.btn,select,input[type="date"],input[type="month"]{tou
     <button class="tab" data-view="fence">Precast Fence</button>
     <button class="tab" data-view="block">Precast Block</button>
     <button class="tab" data-view="qc">QC</button>
-    <button class="tab" data-view="delivery">Delivery</button><button class="tab" data-view="billing">Billing / Completions</button><button class="tab" data-view="import">Import Center</button><button class="tab" data-view="audit">Weekly Change Log</button><button class="tab" data-view="history">History</button>
+    <button class="tab" data-view="delivery">Delivery</button><button class="tab" data-view="billing">Billing / Completions</button><button class="tab" data-view="exceptions">Exceptions</button><button class="tab" data-view="import">Import Center</button><button class="tab" data-view="audit">Weekly Change Log</button><button class="tab" data-view="history">History</button>
   </div>
   <div class="toolbar">
     <div><div class="muted" style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em">Planning Week</div><div class="week-title" id="weekTitle"></div><div id="mobileNavStatus" class="muted" style="display:none;font-size:9px;margin-top:2px">Mobile navigation active</div></div>
@@ -425,6 +436,14 @@ button,.tab,.subtab,.mini,.btn,select,input[type="date"],input[type="month"]{tou
   <div class="notice" style="margin-bottom:12px"><span><span class="live-dot"></span><strong>LIVE TEAM HUB:</strong> changes save to the shared Superior Operations database.</span><span class="small-note" id="accessStatus">Checking access...</span><span class="small-note" id="saveStatus">Connecting...</span></div>
   <div id="view"></div>
 </main>
+
+<button type="button" class="assistant-launch no-print" id="assistantLaunch">Ask Operations</button>
+<section class="assistant-panel no-print" id="assistantPanel" aria-label="Read-only Operations Assistant">
+  <div class="assistant-head"><strong>Operations Assistant</strong><button type="button" id="assistantClose">Close</button></div>
+  <div class="assistant-note">Read-only. Answers come from the authenticated live schedule and cannot change dates or statuses.</div>
+  <div class="assistant-log" id="assistantLog"></div>
+  <form class="assistant-form" id="assistantForm"><input id="assistantInput" autocomplete="off" placeholder="Ask about jobs, exceptions, production, QC, delivery, or billing"><button type="submit">Ask</button></form>
+</section>
 
 <div class="modal-backdrop" id="wallModal">
   <div class="modal">
@@ -530,7 +549,7 @@ const SUPABASE_URL=(window.SUPERIOR_CONFIG&&window.SUPERIOR_CONFIG.supabaseUrl)|
 const SUPABASE_ANON_KEY=(window.SUPERIOR_CONFIG&&window.SUPERIOR_CONFIG.supabaseAnonKey)||'';
 const ALLOWED_EMAIL_DOMAIN=((window.SUPERIOR_CONFIG&&window.SUPERIOR_CONFIG.allowedEmailDomain)||'superiorwallsnd.com').toLowerCase();
 const sb=(SUPABASE_URL&&SUPABASE_ANON_KEY&&window.supabase)?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
-let currentUser=null,currentUserRole='viewer',currentUserCanWrite=false,lastRevision=0,stateChannel=null,saveBusy=false,saveQueued=false,queuedReason='Saved',remoteReady=false,lastSharedJson='';
+let currentUser=null,currentUserRole='viewer',currentUserCanWrite=false,lastRevision=0,lastRemoteUpdatedAt='',lastRemoteData=null,structuredBackendReady=false,stateChannel=null,saveBusy=false,saveQueued=false,queuedReason='Saved',remoteReady=false,lastSharedJson='';
 const divisionMeta={
   boxes:{label:'Box Culverts',unit:'pcs',capacity:2,itemLabel:'Box'},
   manholes:{label:'Manholes',unit:'pcs',capacity:4,itemLabel:'Manhole'},
@@ -674,6 +693,8 @@ async function applyRemoteRow(row,notice){
     return false
   }
   mergeRemoteData(decoded.data);
+  lastRemoteData=clone(decoded.data);
+  lastRemoteUpdatedAt=row.updated_at||new Date().toISOString();
   remoteReady=true;
   lastSharedJson=JSON.stringify(sharedDataFromState(state));
   render();
@@ -685,9 +706,32 @@ async function applyRemoteRow(row,notice){
 async function loadRemoteState(manual=false){
   if(!sb||!currentUser)return false;
   const s=document.getElementById('saveStatus');if(s)s.textContent='Loading shared hub...';
+  const structured=await sb.rpc('get_schedule_snapshot');
+  if(!structured.error&&structured.data){
+    structuredBackendReady=true;
+    return await applyRemoteRow(structured.data,manual?'Refreshed structured hub':'Live structured hub')
+  }
+  structuredBackendReady=false;
   const {data,error}=await sb.from('schedule_state').select('id,payload,revision,updated_at,updated_by').eq('id',1).single();
   if(error){if(s)s.textContent='Could not load shared hub';alert('Could not load the shared hub: '+error.message);return false}
   return await applyRemoteRow(data,manual?'Refreshed live hub':'Live shared hub')
+}
+function validateOperationalTransition(snapshot){
+  if(!lastRemoteData)return'';
+  const oldWalls=new Map((lastRemoteData.walls||[]).map(x=>[x.id,x]));
+  for(const w of snapshot.walls||[]){
+    const old=oldWalls.get(w.id)||{};
+    const released=w?.planReview?.stages?.approvedProduction?.status==='Complete';
+    if(w.productionDate&&w.productionDate!==(old.productionDate||'')&&!released)return `${w.job||'Wall job'} cannot receive a Production Date until Approved for Production is Complete.`;
+    if((w.completedDate||w.completedMonth)&&((w.completedDate||'')!==(old.completedDate||'')||(w.completedMonth||'')!==(old.completedMonth||''))&&!released)return `${w.job||'Wall job'} cannot be completed until Approved for Production is Complete.`
+  }
+  const oldJobs=new Map((lastRemoteData.jobs||[]).map(x=>[x.id,x]));
+  for(const j of snapshot.jobs||[]){const old=oldJobs.get(j.id)||{};if(j.completedDate&&j.completedDate!==(old.completedDate||'')&&(j.products||[]).some(p=>p.status!=='released'))return `${j.name||'Project'} cannot be completed until every listed product is QC released.`}
+  const oldBilling=new Map((lastRemoteData.billing||[]).map(x=>[x.key,x]));
+  for(const b of snapshot.billing||[]){const old=oldBilling.get(b.key)||{};if(b.status==='Billed'&&old.status!=='Billed'&&(!b.invoice||!b.invoiceDate))return `${b.project||'Billing record'} requires an invoice number and invoice date before Billed status.`}
+  const oldLoads=new Map((lastRemoteData.loads||[]).map(x=>[x.id,x]));
+  for(const l of snapshot.loads||[]){const old=oldLoads.get(l.id)||{};if(l.status==='Delivered'&&!['Loaded','Delivered'].includes(old.status))return `${l.project||'Delivery'} must pass through Loaded before Delivered.`}
+  return''
 }
 async function persistState(reason='Saved'){
   if(!sb||!currentUser||!remoteReady)return false;
@@ -700,20 +744,28 @@ async function persistState(reason='Saved'){
   if(saveBusy){saveQueued=true;queuedReason=reason||queuedReason;return true}
   const snapshot=sharedDataFromState(state),json=JSON.stringify(snapshot);
   if(json===lastSharedJson){saveUiPrefs();return true}
+  const gateMessage=validateOperationalTransition(snapshot);
+  if(gateMessage){alert('Evidence gate: '+gateMessage);await loadRemoteState(true);return false}
   saveBusy=true;const s=document.getElementById('saveStatus');if(s)s.textContent='Saving...';
-  const next=lastRevision+1,payload={schemaVersion:31,data:snapshot};
-  const {data,error}=await sb.from('schedule_state').update({payload,revision:next,updated_at:new Date().toISOString(),updated_by:currentUser.email}).eq('id',1).eq('revision',lastRevision).select('revision,updated_at,updated_by').maybeSingle();
+  const next=lastRevision+1,payload={schemaVersion:35,data:snapshot};
+  let data,error;
+  if(structuredBackendReady){
+    const result=await sb.rpc('save_schedule_snapshot',{p_expected_revision:lastRevision,p_snapshot:snapshot,p_reason:reason||'Saved'});data=result.data;error=result.error;
+  }else{
+    const result=await sb.from('schedule_state').update({payload,revision:next,updated_at:new Date().toISOString(),updated_by:currentUser.email}).eq('id',1).eq('revision',lastRevision).select('id,payload,revision,updated_at,updated_by').maybeSingle();data=result.data;error=result.error;
+  }
   saveBusy=false;
   if(error){if(s)s.textContent='Save failed';alert('Hub save failed: '+error.message);await loadRemoteState(true);return false}
   if(!data){if(s)s.textContent='Another update happened first';alert('Someone else changed the hub at the same time. I reloaded the newest version so nobody gets overwritten. Please make your change again.');await loadRemoteState(true);return false}
-  lastRevision=Number(data.revision||next);lastSharedJson=json;saveUiPrefs();if(s)s.textContent=(reason||'Saved')+' - '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  lastRevision=Number(data.revision||next);lastRemoteUpdatedAt=data.updated_at||new Date().toISOString();lastRemoteData=clone(snapshot);lastSharedJson=json;saveUiPrefs();if(s)s.textContent=(reason||'Saved')+' - '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
   if(saveQueued){saveQueued=false;const r=queuedReason;queuedReason='Saved';if(JSON.stringify(sharedDataFromState(state))!==lastSharedJson)persistState(r)}
   return true
 }
 function subscribeLive(){
   if(!sb)return;if(stateChannel)sb.removeChannel(stateChannel);
-  stateChannel=sb.channel('superior-master-operations-live').on('postgres_changes',{event:'UPDATE',schema:'public',table:'schedule_state',filter:'id=eq.1'},evt=>{
-    const row=evt.new;if(Number(row.revision||0)>lastRevision&&!saveBusy)applyRemoteRow(row,'Updated live by '+(row.updated_by||'team member'))
+  const table=structuredBackendReady?'schedule_meta':'schedule_state';
+  stateChannel=sb.channel('superior-master-operations-live').on('postgres_changes',{event:'UPDATE',schema:'public',table,filter:'id=eq.1'},evt=>{
+    const row=evt.new;if(Number(row.revision||0)>lastRevision&&!saveBusy)loadRemoteState(false)
   }).subscribe()
 }
 async function startSession(user){
@@ -1248,6 +1300,7 @@ function render(){
   else if(state.view==='qc')renderQC();
   else if(state.view==='delivery')renderDelivery();
   else if(state.view==='billing')renderBilling();
+  else if(state.view==='exceptions')renderExceptions();
   else if(state.view==='import')renderImport();
   else if(state.view==='audit')renderAudit();
   else if(state.view==='history')renderHistory();
@@ -2562,6 +2615,49 @@ function applyImport(){
 /* SEARCH */
 function renderSearchResults(){const q=(state.searchQuery||'').trim().toLowerCase(),results=[];if(q){state.walls.forEach(w=>{const blob=[w.job,w.customer,w.project,w.development,w.type,w.address,w.notes,w.constraint].join(' ').toLowerCase();if(blob.includes(q))results.push({division:'walls',title:w.job,sub:`${w.type} · ${w.project}`,id:w.id,type:'wall'})});state.jobs.forEach(j=>{const blob=[j.name,j.customer,j.type,j.notes,j.constraint].join(' ').toLowerCase();if(blob.includes(q))results.push({division:j.division,title:j.name,sub:`${divisionMeta[j.division]?.label||j.division} · ${j.type}`,id:j.id,type:'project'});(j.products||[]).forEach(p=>{if([p.label,p.structureId,p.pieceType,p.pieceSize,p.pieceNotes,j.name,j.customer].join(' ').toLowerCase().includes(q))results.push({division:j.division,title:p.label,sub:`${j.name} · ${productStatusText(p)}`,id:j.id,type:'project'})})})}document.getElementById('view').innerHTML=`<section class="section"><div class="section-head"><h3>Search Results</h3><span class="muted" style="font-size:11px">${results.length} result${results.length===1?'':'s'} for "${state.searchQuery||''}"</span></div><div class="section-body"><div class="search-results">${results.length?results.slice(0,60).map(r=>`<div class="search-result"><div class="project-name">${r.title}</div><div class="job-sub">${r.sub}</div><button class="mini" style="margin-top:8px" data-open-result="${r.type}|${r.division}|${r.id}">Open</button></div>`).join(''):'<div class="empty">No matching jobs, customers, addresses, or pieces.</div>'}</div></div></section>`;document.querySelectorAll('[data-open-result]').forEach(b=>b.onclick=()=>{const [type,div,id]=b.dataset.openResult.split('|');state.view=div;saveState();render();setTimeout(()=>{if(type==='wall')openWallModal(id);else openProjectModal(id)},0)})}
 
+/* MANAGEMENT EXCEPTIONS */
+function htmlSafe(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
+function sourceVerifiedLabel(){return lastRemoteUpdatedAt?new Date(lastRemoteUpdatedAt).toLocaleString():'Not yet verified'}
+function buildOperationalExceptions(){
+  const rows=[],today=todayISO(),soon=addDays(today,14),add=(x)=>rows.push({source:'Live structured schedule',lastVerified:sourceVerifiedLabel(),...x});
+  state.walls.filter(w=>!wallIsCompleted(w)).forEach(w=>{
+    if(w.productionDate&&!wallPlanReleased(w))add({severity:w.productionDate<=soon?'Critical':'High',division:'Superior Walls',record:w.job||w.id,type:'Production scheduled without release',owner:'Superior Walls Manager / Management',next:'Complete and evidence Approved for Production',due:w.productionDate,blocker:'Approved for Production is not Complete'});
+    if(!w.productionDate)add({severity:'High',division:'Superior Walls',record:w.job||w.id,type:'Missing Production Date',owner:'Project Coordination',next:'Verify readiness and assign a supported Production Date',due:'Unscheduled',blocker:w.constraint||'Production Date is missing'});
+  });
+  state.jobs.filter(j=>!j.completedDate&&['At Risk','Hold'].includes(j.status)).forEach(j=>add({severity:j.status==='Hold'?'Critical':'High',division:divisionMeta[j.division]?.label||j.division,record:j.name,type:'Project '+j.status,owner:'Operations',next:'Resolve the constraint and verify the controlling schedule',due:j.startDate||'Unscheduled',blocker:j.constraint||'Recorded project status'}));
+  allProducts().filter(x=>['hold','pre-ready','final-needed'].includes(x.product.status)).forEach(x=>add({severity:x.product.status==='hold'?'Critical':'Medium',division:divisionMeta[x.project.division]?.label||x.project.division,record:`${x.project.name} — ${x.product.label}`,type:x.product.status==='hold'?'QC Hold':'QC evidence pending',owner:'QC',next:x.product.status==='pre-ready'?'Complete pre-pour inspection':x.product.status==='final-needed'?'Complete final inspection':'Resolve and document the QC hold',due:x.product.plannedDate||'No date',blocker:productStatusText(x.product)}));
+  state.loads.filter(l=>l.status!=='Delivered'&&l.date&&l.date<today).forEach(l=>add({severity:'High',division:l.division==='walls'?'Superior Walls':divisionMeta[l.division]?.label||l.division,record:l.project,type:'Past-due delivery',owner:'Field Operations / Logistics',next:'Verify readiness and reschedule or complete delivery',due:l.date,blocker:`Status is ${l.status}`}));
+  state.billing.filter(b=>b.status==='Hold').forEach(b=>add({severity:'Medium',division:b.division==='walls'?'Superior Walls':divisionMeta[b.division]?.label||b.division,record:b.project,type:'Billing hold',owner:'Accounting',next:'Verify hold evidence and define the next billing action',due:b.billableDate||b.billableMonth||'No date',blocker:b.notes||'Billing status is Hold'}));
+  const rank={Critical:0,High:1,Medium:2};return rows.sort((a,b)=>(rank[a.severity]-rank[b.severity])||String(a.due).localeCompare(String(b.due)))
+}
+function renderExceptions(){
+  const rows=buildOperationalExceptions(),critical=rows.filter(x=>x.severity==='Critical').length,high=rows.filter(x=>x.severity==='High').length,medium=rows.filter(x=>x.severity==='Medium').length;
+  document.getElementById('view').innerHTML=`<div class="stats">${kpi('Critical Exceptions',critical)}${kpi('High Exceptions',high)}${kpi('Medium Exceptions',medium)}${kpi('Last Verified',sourceVerifiedLabel())}</div><div class="notice"><span><strong>Management attention queue:</strong> ranked from authenticated live schedule evidence. An exception is not proof that the underlying work is incomplete; verify the named blocker against its authoritative source.</span></div><div class="exception-summary">${rows.length?rows.map(x=>`<article class="exception-card ${x.severity.toLowerCase()}"><div class="exception-title">${htmlSafe(x.severity)} · ${htmlSafe(x.type)}</div><div class="project-name" style="margin-top:5px">${htmlSafe(x.record)}</div><div class="exception-meta"><strong>Division:</strong> ${htmlSafe(x.division)}<br><strong>Owner:</strong> ${htmlSafe(x.owner)}<br><strong>Next action:</strong> ${htmlSafe(x.next)}<br><strong>Due:</strong> ${htmlSafe(x.due)}<br><strong>Blocker:</strong> ${htmlSafe(x.blocker)}<br><strong>Source:</strong> ${htmlSafe(x.source)} · verified ${htmlSafe(x.lastVerified)}</div></article>`).join(''):'<div class="empty">No current exceptions were derived from the live schedule.</div>'}</div>`
+}
+
+/* READ-ONLY OPERATIONS ASSISTANT */
+function assistantSource(){return `Live schedule revision ${lastRevision||'not loaded'} · verified ${sourceVerifiedLabel()}`}
+function matchingOperationsRecords(q){
+  const matches=[];
+  state.walls.forEach(w=>{if([w.job,w.customer,w.project,w.development,w.type,w.address].join(' ').toLowerCase().includes(q))matches.push(`${w.job}: ${w.customer||'No customer'}; production ${w.productionDate||'unscheduled'}; install ${w.installDate||'unscheduled'}; ${wallPlanReleased(w)?'production released':'not production released'}.`)});
+  state.jobs.forEach(j=>{if([j.name,j.customer,j.type,j.division].join(' ').toLowerCase().includes(q))matches.push(`${j.name}: ${divisionMeta[j.division]?.label||j.division}; status ${j.status||'not recorded'}; start ${j.startDate||'unscheduled'}; completed ${j.completedDate||'no'}.`)});
+  return matches.slice(0,8)
+}
+function answerOperationsQuestion(question){
+  const q=String(question||'').trim().toLowerCase();if(!q)return'Ask a question about a job, exceptions, production, QC, delivery, or billing.';
+  const direct=matchingOperationsRecords(q);if(direct.length)return direct.join('\n');
+  const exceptions=buildOperationalExceptions();
+  if(q.includes('exception')||q.includes('attention')||q.includes('problem')||q.includes('risk'))return exceptions.length?`${exceptions.length} current exceptions. Top items:\n${exceptions.slice(0,8).map(x=>`${x.severity}: ${x.record} — ${x.type}. Owner: ${x.owner}. Next: ${x.next}.`).join('\n')}`:'No current exceptions were derived from the live schedule.';
+  if(q.includes('missing')&&q.includes('production')){const rows=state.walls.filter(w=>!wallIsCompleted(w)&&!w.productionDate);return rows.length?`${rows.length} active Superior Walls jobs are missing a Production Date:\n${rows.slice(0,15).map(w=>w.job||w.id).join('\n')}`:'No active Superior Walls jobs are missing a Production Date.'}
+  if(q.includes('production')||q.includes('this week')){const wd=weekDates(),walls=state.walls.filter(w=>wd.includes(w.productionDate)),projects=state.jobs.filter(j=>(j.products||[]).some(p=>pieceScheduleDates(p).some(d=>wd.includes(d))));return `For week of ${fmt(state.week)}: ${walls.length} Superior Walls production job(s) and ${projects.length} precast project(s) have production activity.\nWalls: ${walls.map(w=>w.job).join(', ')||'none'}\nPrecast: ${projects.map(j=>j.name).join(', ')||'none'}.`}
+  if(q.includes('delivery')||q.includes('load')){const active=state.loads.filter(l=>l.status!=='Delivered');return `${active.length} active delivery load(s):\n${active.slice(0,12).map(l=>`${l.date||'No date'} — ${l.project} — ${l.status}`).join('\n')||'None'}.`}
+  if(q.includes('qc')||q.includes('hold')){const items=allProducts().filter(x=>['hold','pre-ready','final-needed'].includes(x.product.status));return `${items.length} product(s) need QC attention:\n${items.slice(0,12).map(x=>`${x.project.name} — ${x.product.label}: ${productStatusText(x.product)}`).join('\n')||'None'}.`}
+  if(q.includes('bill')||q.includes('invoice')){const ready=state.billing.filter(b=>b.status==='Ready to Bill'),holds=state.billing.filter(b=>b.status==='Hold');return `${ready.length} record(s) are Ready to Bill and ${holds.length} are on Hold.\nReady: ${ready.slice(0,10).map(b=>b.project).join(', ')||'none'}\nHolds: ${holds.slice(0,10).map(b=>b.project).join(', ')||'none'}.`}
+  return 'I can answer read-only questions such as: “What needs attention?”, “Which jobs are missing production dates?”, “What is producing this week?”, “What deliveries are active?”, “What needs QC?”, “What is ready to bill?”, or a specific job/customer name.'
+}
+function appendAssistantMessage(kind,text){const log=document.getElementById('assistantLog'),wrap=document.createElement('div'),msg=document.createElement('div');msg.className='assistant-message '+kind;msg.textContent=text;wrap.appendChild(msg);if(kind==='bot'){const source=document.createElement('div');source.className='assistant-source';source.textContent=assistantSource();wrap.appendChild(source)}log.appendChild(wrap);log.scrollTop=log.scrollHeight}
+function openAssistant(){const panel=document.getElementById('assistantPanel');panel.classList.add('open');if(!document.getElementById('assistantLog').children.length)appendAssistantMessage('bot','Ask me about live schedule exceptions, production, QC, delivery, billing, or a specific job. I am read-only.');document.getElementById('assistantInput').focus()}
+
 /* AUDIT LOG */
 function renderAudit(){
   const logWeek=currentLogWeek();
@@ -2982,6 +3078,9 @@ document.getElementById('resetBtn').onclick=()=>{if(confirm('Reload the newest s
 document.getElementById('exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='superior-master-operations-hub-v27-backup.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},0)};
 document.getElementById('refreshLiveBtn').onclick=()=>loadRemoteState(true);
 document.getElementById('signOutBtn').onclick=signOut;
+document.getElementById('assistantLaunch').onclick=openAssistant;
+document.getElementById('assistantClose').onclick=()=>document.getElementById('assistantPanel').classList.remove('open');
+document.getElementById('assistantForm').onsubmit=e=>{e.preventDefault();const input=document.getElementById('assistantInput'),q=input.value.trim();if(!q)return;appendAssistantMessage('user',q);input.value='';appendAssistantMessage('bot',answerOperationsQuestion(q))};
 document.getElementById('authBtn').onclick=signInWithPasswordLogin;
 document.getElementById('authEmail').addEventListener('keydown',e=>{if(e.key==='Enter')signInWithPasswordLogin()});
 document.getElementById('authPassword').addEventListener('keydown',e=>{if(e.key==='Enter')signInWithPasswordLogin()});
