@@ -149,6 +149,16 @@ td{padding:9px 10px;border-bottom:1px solid #edf0f2;vertical-align:top}
 .modal{width:min(900px,100%);max-height:90vh;overflow:hidden;background:#fff;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.28);display:flex;flex-direction:column}
 .modal-head{padding:16px 18px 10px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.modal-head h2{margin:0;font-size:18px;color:var(--navy)}
 .modal-body{padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow-y:auto;min-height:0;flex:1 1 auto}.field.full{grid-column:1/-1}.field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:850;color:#6c7781;margin-bottom:4px}.field input,.field select,.field textarea{width:100%;border:1px solid #ccd5dc;border-radius:7px;padding:9px;color:#27323a;background:#fff}.field textarea{min-height:70px;resize:vertical}
+.wall-height-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.wall-height-entry{border:1px solid #dce4e9;border-radius:9px;background:#f8fafb;padding:8px}
+.wall-height-entry label{font-size:9px;margin-bottom:5px;color:var(--navy)}
+.wall-height-entry input{background:#fff}
+.wall-height-total{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-top:8px;font-size:11px;color:#53616b}
+.wall-height-total strong{font-size:14px;color:var(--navy)}
+.legacy-lf-note{display:none;grid-template-columns:minmax(155px,.4fr) minmax(220px,1fr);gap:10px;align-items:end;margin-top:10px;padding:9px;border:1px solid #ecd39e;border-radius:8px;background:#fff9ed}
+.legacy-lf-note p{margin:0 0 2px;font-size:9px;line-height:1.4;color:#76551d}
+.wall-lf-breakdown{font-size:9px;color:#5c6b75;margin-top:5px;font-weight:800}
+@media(max-width:760px){.wall-height-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.legacy-lf-note{grid-template-columns:1fr}}
 .modal-foot{padding:12px 18px 16px;display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--line);flex-wrap:wrap;position:relative;z-index:4;background:#fff;flex:0 0 auto}.modal-actions{display:flex;gap:8px;flex-wrap:wrap}
 .dark{border:0;background:var(--navy);color:#fff;padding:9px 13px;border-radius:8px;font-weight:850}.ghost{border:1px solid #cfd8df;background:#f5f7f8;color:var(--navy);padding:9px 13px;border-radius:8px;font-weight:850}.complete-btn{border:0;background:var(--complete);color:#fff;padding:9px 13px;border-radius:8px;font-weight:850}.danger{border:0;background:var(--red);color:#fff;padding:9px 13px;border-radius:8px;font-weight:850}
 
@@ -457,7 +467,13 @@ button,.tab,.subtab,.mini,.btn,select,input[type="date"],input[type="month"]{tou
       <div class="field"><label>Development / Area</label><input id="wDevelopment"></div>
       <div class="field"><label>Model / Type</label><input id="wType"></div>
       <div class="field"><label>Address / Location</label><input id="wAddress"></div>
-      <div class="field"><label>LF</label><input id="wLF" type="number" min="0"></div>
+      <div class="field full"><label>Linear Footage by Wall Height</label><div class="wall-height-grid">
+        <div class="wall-height-entry"><label>5′ Wall LF</label><input id="wLF5" type="number" min="0" step="any" value="0"></div>
+        <div class="wall-height-entry"><label>8′ Wall LF</label><input id="wLF8" type="number" min="0" step="any" value="0"></div>
+        <div class="wall-height-entry"><label>9′ Wall LF</label><input id="wLF9" type="number" min="0" step="any" value="0"></div>
+        <div class="wall-height-entry"><label>10′ Wall LF</label><input id="wLF10" type="number" min="0" step="any" value="0"></div>
+        <div class="wall-height-entry"><label>12′ Wall LF</label><input id="wLF12" type="number" min="0" step="any" value="0"></div>
+      </div><div class="wall-height-total">Total LF: <strong id="wLFTotal">0</strong></div><div class="legacy-lf-note" id="wLFLegacyWrap"><div><label>Existing Unassigned LF</label><input id="wLFUnassigned" type="number" min="0" step="any" value="0"></div><p>This is existing LF saved before wall heights were tracked. Move it into the correct height boxes when known; it stays in the total until then.</p></div></div>
       <div class="field"><label>Units / Shells</label><input id="wUnits" type="number" min="1" value="1"></div>
       <div class="field"><label>Dig Date</label><input id="wDig" type="date"></div>
       <div class="field"><label>Production Date</label><input id="wProduction" type="date"></div>
@@ -823,6 +839,25 @@ function wallPlanSummaryHtml(w){
   return `<div class="plan-summary-line"><span class="plan-badge ${wallPlanReleased(w)?'released':status==='Waiting'?'waiting':'hold'}">${wallPlanReleased(w)?'Released for Production':status}</span><strong style="font-size:11px;color:var(--navy)">${wallPlanReleased(w)?'Approved for Production':stage.label}</strong><span class="muted" style="font-size:10px">${p.done}/${p.total} steps complete</span></div><div class="plan-progress" style="margin-top:7px"><span style="width:${p.pct}%"></span></div>${w.planReview?.trackerStatus?`<div class="plan-source-note">Precon tracker status: ${w.planReview.trackerStatus}</div>`:''}`
 }
 
+const WALL_HEIGHTS=[
+  {key:'h5',label:'5′'},{key:'h8',label:'8′'},{key:'h9',label:'9′'},{key:'h10',label:'10′'},{key:'h12',label:'12′'}
+];
+function nonnegativeNumber(value){const n=Number(value||0);return Number.isFinite(n)?Math.max(0,n):0}
+function wallHeightBreakdown(w){const raw=w?.lfByHeight||{};return Object.fromEntries(WALL_HEIGHTS.map(h=>[h.key,nonnegativeNumber(raw[h.key])]))}
+function wallHeightTotal(w){const b=wallHeightBreakdown(w);return WALL_HEIGHTS.reduce((n,h)=>n+b[h.key],0)}
+function normalizeWallLF(w){
+  const hadBreakdown=Boolean(w.lfByHeight&&typeof w.lfByHeight==='object');
+  const breakdown=wallHeightBreakdown(w),heightTotal=WALL_HEIGHTS.reduce((n,h)=>n+breakdown[h.key],0);
+  const legacyTotal=nonnegativeNumber(w.lf),explicitUnassigned=w.lfUnassigned!==undefined&&w.lfUnassigned!==null;
+  const unassigned=explicitUnassigned?nonnegativeNumber(w.lfUnassigned):(hadBreakdown?Math.max(0,legacyTotal-heightTotal):legacyTotal);
+  w.lfByHeight=breakdown;w.lfUnassigned=unassigned;w.lf=heightTotal+unassigned;return w
+}
+function wallLfSummary(w,includeUnassigned=true){
+  const b=wallHeightBreakdown(w),parts=WALL_HEIGHTS.filter(h=>b[h.key]>0).map(h=>`${h.label}: ${b[h.key].toLocaleString()} LF`);
+  const unassigned=nonnegativeNumber(w?.lfUnassigned);if(includeUnassigned&&unassigned>0)parts.push(`Unassigned: ${unassigned.toLocaleString()} LF`);
+  return parts.join(' · ')
+}
+
 function ensureState(){
   state.systemFlags=state.systemFlags||{};
   state.role=state.role||'Management';
@@ -845,6 +880,7 @@ function ensureState(){
   state.deliveryHistory.forEach(l=>{l.date=normalizeDate(l.date);l.deliveredAt=l.deliveredAt||'';l.releasedWeek=l.releasedWeek||operationsWeekKey(l.deliveredAt||l.date)});
   state.walls.forEach(w=>{
     w.constraint=w.constraint||'';w.links=w.links||[];w.development=w.development||'';
+    normalizeWallLF(w);
     w.digDate=normalizeDate(w.digDate);
     w.productionDate=normalizeDate(w.productionDate);
     w.installDate=normalizeDate(w.installDate);
@@ -1454,7 +1490,8 @@ function wallCard(w,stage,date,dragMode=false){
     <div class="milestone ${stage}">${stage==='dig'?'Dig Week':stage==='prod'?'Production':'Install'}: ${fmt(date)}</div>${w.deliveryDate?`<div class="job-sub" style="margin-top:5px;font-weight:850">Delivery: ${fmt(w.deliveryDate)}</div>`:''}
     ${stage==='prod'?(wallPlanReleased(w)?`<div class="plan-ok">✓ Released for Production</div>`:`<div class="plan-warning">⚠ NOT RELEASED FOR PRODUCTION · ${wallPlanCurrentStage(w).label}</div>`):''}
     ${dragMode?`<div class="drag-hint">Grab anywhere on this card and drag it to the same lane in another week.</div>`:''}
-    <div class="wall-foot"><span>${w.units||1} unit${Number(w.units||1)===1?'':'s'} / shell${Number(w.units||1)===1?'':'s'}${Number(w.lf||0)>0?' · '+w.lf+' LF':''}</span><div class="wall-actions">${dragMode?`<button type="button" draggable="false" data-move-wall="${w.id}|${stage}|-7">← 1 wk</button><button type="button" draggable="false" data-move-wall="${w.id}|${stage}|7">1 wk →</button>`:''}<button type="button" draggable="false" data-wall="${w.id}">Edit</button><button type="button" draggable="false" data-plan-review="${w.id}">Plans</button>${!wallIsCompleted(w)?`<button type="button" draggable="false" data-complete-wall="${w.id}">Complete</button>`:''}</div></div>
+    ${wallLfSummary(w)?`<div class="wall-lf-breakdown">${wallLfSummary(w)}</div>`:''}
+    <div class="wall-foot"><span>${w.units||1} unit${Number(w.units||1)===1?'':'s'} / shell${Number(w.units||1)===1?'':'s'}${Number(w.lf||0)>0?' · '+Number(w.lf).toLocaleString()+' total LF':''}</span><div class="wall-actions">${dragMode?`<button type="button" draggable="false" data-move-wall="${w.id}|${stage}|-7">← 1 wk</button><button type="button" draggable="false" data-move-wall="${w.id}|${stage}|7">1 wk →</button>`:''}<button type="button" draggable="false" data-wall="${w.id}">Edit</button><button type="button" draggable="false" data-plan-review="${w.id}">Plans</button>${!wallIsCompleted(w)?`<button type="button" draggable="false" data-complete-wall="${w.id}">Complete</button>`:''}</div></div>
   </div>`
 }
 function wallWeekCard(week,dragMode=false){
@@ -2010,7 +2047,9 @@ function renderWallsMonthly(){
           return bd.localeCompare(ad)
         }),
         lf=js.reduce((n,w)=>n+Number(w.lf||0),0),
-        units=js.reduce((n,w)=>n+Number(w.units||0),0);
+        units=js.reduce((n,w)=>n+Number(w.units||0),0),
+        heightTotals=Object.fromEntries(WALL_HEIGHTS.map(h=>[h.key,js.reduce((n,w)=>n+wallHeightBreakdown(w)[h.key],0)])),
+        unassignedLF=js.reduce((n,w)=>n+nonnegativeNumber(w.lfUnassigned),0);
 
   document.getElementById('view').innerHTML=`${divisionSubtabs('walls')}
     <section class="section">
@@ -2020,9 +2059,11 @@ function renderWallsMonthly(){
       </div>
       <div class="section-body">
         <div class="stats">${kpi('Jobs Completed',js.length)}${kpi('LF Completed',lf.toLocaleString())}${kpi('Units / Shells',units)}${kpi('Verity',js.filter(w=>w.source==='Verity').length)}${kpi('Other',js.filter(w=>w.source==='Other').length)}</div>
+        <div style="margin:14px 0 7px;font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:900;color:var(--navy)">Completed LF by Wall Height</div>
+        <div class="stats">${WALL_HEIGHTS.map(h=>kpi(`${h.label} Wall LF`,heightTotals[h.key].toLocaleString())).join('')}${unassignedLF>0?kpi('Unassigned Legacy LF',unassignedLF.toLocaleString()):''}</div>
         <div class="lookahead"><table>
-          <thead><tr><th>Completed</th><th>Job #</th><th>Model</th><th>Customer</th><th>LF</th><th>Dig</th><th>Production</th><th>Install</th></tr></thead>
-          <tbody>${js.length?js.map(w=>`<tr><td>${wallCompletionDisplay(w)}</td><td><button class="job-link" data-wall="${w.id}">${w.job}</button></td><td>${w.type||'—'}</td><td>${w.customer||'—'}</td><td>${Number(w.lf||0)>0?w.lf:'—'}</td><td>${fmt(w.digDate)}</td><td>${fmt(w.productionDate)}</td><td>${fmt(w.installDate)}</td></tr>`).join(''):'<tr><td colspan="8">No completed wall jobs for this month.</td></tr>'}</tbody>
+          <thead><tr><th>Completed</th><th>Job #</th><th>Model</th><th>Customer</th>${WALL_HEIGHTS.map(h=>`<th>${h.label} LF</th>`).join('')}<th>Unassigned</th><th>Total LF</th><th>Dig</th><th>Production</th><th>Install</th></tr></thead>
+          <tbody>${js.length?js.map(w=>{const b=wallHeightBreakdown(w);return `<tr><td>${wallCompletionDisplay(w)}</td><td><button class="job-link" data-wall="${w.id}">${w.job}</button></td><td>${w.type||'—'}</td><td>${w.customer||'—'}</td>${WALL_HEIGHTS.map(h=>`<td>${b[h.key]>0?b[h.key].toLocaleString():'—'}</td>`).join('')}<td>${nonnegativeNumber(w.lfUnassigned)>0?nonnegativeNumber(w.lfUnassigned).toLocaleString():'—'}</td><td><strong>${Number(w.lf||0)>0?Number(w.lf).toLocaleString():'—'}</strong></td><td>${fmt(w.digDate)}</td><td>${fmt(w.productionDate)}</td><td>${fmt(w.installDate)}</td></tr>`}).join(''):'<tr><td colspan="14">No completed wall jobs for this month.</td></tr>'}</tbody>
         </table></div>
       </div>
     </section>`;
@@ -2505,8 +2546,8 @@ function renderBilling(){syncBilling();const month=state.reportMonth,divFilter=s
 
 /* IMPORT CENTER */
 function parseCSV(csv){const rows=[];let row=[],cell='',q=false;for(let i=0;i<csv.length;i++){const ch=csv[i],next=csv[i+1];if(ch==='"'&&q&&next==='"'){cell+='"';i++}else if(ch==='"'){q=!q}else if(ch===','&&!q){row.push(cell);cell=''}else if((ch==='\n'||ch==='\r')&&!q){if(ch==='\r'&&next==='\n')i++;row.push(cell);cell='';if(row.some(x=>x.trim()!==''))rows.push(row);row=[]}else cell+=ch}row.push(cell);if(row.some(x=>x.trim()!==''))rows.push(row);if(!rows.length)return[];const headers=rows[0].map(h=>h.trim());return rows.slice(1).map(r=>Object.fromEntries(headers.map((h,i)=>[h,(r[i]||'').trim()]))) }
-function importTargets(div){if(div==='walls')return[{k:'job',l:'Job Number'},{k:'customer',l:'Customer'},{k:'project',l:'Project / Development'},{k:'type',l:'Model / Type'},{k:'address',l:'Address'},{k:'lf',l:'LF'},{k:'units',l:'Units'},{k:'digDate',l:'Dig Date'},{k:'productionDate',l:'Production Date'},{k:'installDate',l:'Install Date'}];return[{k:'name',l:'Project'},{k:'customer',l:'Customer'},{k:'type',l:'Type / Size'},{k:'total',l:'Total Quantity'},{k:'rate',l:'Planned Per Day'},{k:'startDate',l:'Production Start'},{k:'completedDate',l:'Completed Date'}]}
-function guessHeader(target,headers){const aliases={job:['job','job number','job #'],customer:['customer','builder','gc'],project:['project','development'],type:['type','model','box size','size'],address:['address','location'],lf:['lf','linear feet','walls sold'],units:['units','shells'],digDate:['dig date','dig'],productionDate:['production date','production','cast date'],installDate:['install date','install'],name:['project','job name','project name'],total:['total quantity','qty','quantity','total pieces','pieces'],rate:['planned per day','per day','rate'],startDate:['start date','production start','cast date'],completedDate:['completed date','completion date']};const vals=aliases[target]||[target];return headers.find(h=>vals.includes(h.toLowerCase()))||''}
+function importTargets(div){if(div==='walls')return[{k:'job',l:'Job Number'},{k:'customer',l:'Customer'},{k:'project',l:'Project / Development'},{k:'type',l:'Model / Type'},{k:'address',l:'Address'},{k:'lf5',l:'5′ Wall LF'},{k:'lf8',l:'8′ Wall LF'},{k:'lf9',l:'9′ Wall LF'},{k:'lf10',l:'10′ Wall LF'},{k:'lf12',l:'12′ Wall LF'},{k:'lf',l:'Legacy / Total LF'},{k:'units',l:'Units'},{k:'digDate',l:'Dig Date'},{k:'productionDate',l:'Production Date'},{k:'installDate',l:'Install Date'}];return[{k:'name',l:'Project'},{k:'customer',l:'Customer'},{k:'type',l:'Type / Size'},{k:'total',l:'Total Quantity'},{k:'rate',l:'Planned Per Day'},{k:'startDate',l:'Production Start'},{k:'completedDate',l:'Completed Date'}]}
+function guessHeader(target,headers){const aliases={job:['job','job number','job #'],customer:['customer','builder','gc'],project:['project','development'],type:['type','model','box size','size'],address:['address','location'],lf5:["5 lf","5' lf",'5 ft lf','5 foot lf','5 wall lf'],lf8:["8 lf","8' lf",'8 ft lf','8 foot lf','8 wall lf'],lf9:["9 lf","9' lf",'9 ft lf','9 foot lf','9 wall lf'],lf10:["10 lf","10' lf",'10 ft lf','10 foot lf','10 wall lf'],lf12:["12 lf","12' lf",'12 ft lf','12 foot lf','12 wall lf'],lf:['lf','linear feet','walls sold','total lf'],units:['units','shells'],digDate:['dig date','dig'],productionDate:['production date','production','cast date'],installDate:['install date','install'],name:['project','job name','project name'],total:['total quantity','qty','quantity','total pieces','pieces'],rate:['planned per day','per day','rate'],startDate:['start date','production start','cast date'],completedDate:['completed date','completion date']};const vals=aliases[target]||[target];return headers.find(h=>vals.includes(h.toLowerCase()))||''}
 function renderImport(){document.getElementById('view').innerHTML=`<div class="notice"><span><strong>Import safely:</strong> upload CSV or JSON, map columns, preview, then choose Apply Import. Existing Wall jobs match by Job #; precast projects match by Project name. Imported dates are normalized first so an odd CSV date format cannot break the dashboard.</span></div><div class="import-shell"><div class="import-panel"><h3 style="margin:0;color:var(--navy)">Import Schedule</h3><label>Division</label><select id="importDivision"><option value="walls">Superior Walls</option><option value="boxes">Box Culverts</option><option value="manholes">Manholes</option><option value="fence">Precast Fence</option><option value="block">Precast Block</option></select><label>Source</label><select id="importSource"><option>Generic CSV / Excel Export</option><option>Buildertrend Export</option><option>Titan Export</option><option>ExakTime Export</option><option>Superior Export</option></select><label>CSV or JSON File</label><input id="importFile" type="file" accept=".csv,.json,text/csv,application/json"><div style="margin-top:10px"><button class="dark" id="loadImport">Load & Preview</button></div></div><div class="import-panel"><h3 style="margin:0;color:var(--navy)">Preview / Field Mapping</h3><div id="importPreview" class="muted" style="font-size:11px;margin-top:8px">Choose a file and click Load & Preview.</div></div></div>`;document.getElementById('loadImport').onclick=loadImportFile}
 function loadImportFile(){const file=document.getElementById('importFile').files[0];if(!file){alert('Choose a CSV or JSON file first.');return}const reader=new FileReader();reader.onload=()=>{try{const raw=String(reader.result||''),data=file.name.toLowerCase().endsWith('.json')?JSON.parse(raw):parseCSV(raw);importData=Array.isArray(data)?data:(Array.isArray(data.jobs)?data.jobs:[]);if(!importData.length)throw new Error('No rows found');importHeaders=[...new Set(importData.flatMap(r=>Object.keys(r)))];renderImportPreview()}catch(e){alert('Could not read this file: '+e.message)}};reader.readAsText(file)}
 function renderImportPreview(){const div=document.getElementById('importDivision').value,targets=importTargets(div),preview=document.getElementById('importPreview');preview.innerHTML=`<div><strong>${importData.length} rows found.</strong> Map each target field to a source column.</div><div class="mapping-grid">${targets.map(t=>`<div class="map-card"><label>${t.l}</label><select data-map="${t.k}"><option value="">- Skip -</option>${importHeaders.map(h=>`<option value="${h}" ${guessHeader(t.k,importHeaders)===h?'selected':''}>${h}</option>`).join('')}</select></div>`).join('')}</div><div class="lookahead" style="margin-top:12px"><table><thead><tr>${importHeaders.slice(0,8).map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${importData.slice(0,5).map(r=>`<tr>${importHeaders.slice(0,8).map(h=>`<td>${r[h]??''}</td>`).join('')}</tr>`).join('')}</tbody></table></div><div style="margin-top:12px"><button class="dark" id="applyImport">Apply Import</button></div>`;document.getElementById('applyImport').onclick=applyImport}
@@ -2536,14 +2577,19 @@ function applyImport(){
       let w=state.walls.find(x=>String(x.job).trim().toLowerCase()===job.toLowerCase());
 
       const customer=v('customer'),project=v('project'),type=v('type'),address=v('address');
-      const lf=Number(v('lf')||0),units=Number(v('units')||1);
+      const lf=nonnegativeNumber(v('lf')),units=Number(v('units')||1);
+      const heightMap={h5:'lf5',h8:'lf8',h9:'lf9',h10:'lf10',h12:'lf12'};
+      const hasHeightImport=Object.values(heightMap).some(k=>Boolean(maps[k]));
+      const importedHeights=Object.fromEntries(Object.entries(heightMap).map(([heightKey,importKey])=>[heightKey,nonnegativeNumber(v(importKey))]));
 
       if(w){
         if(customer)w.customer=customer;
         if(project)w.project=project;
         if(type)w.type=type;
         if(address)w.address=address;
-        if(Number.isFinite(lf)&&lf>0)w.lf=lf;
+        if(hasHeightImport){const existingHeights=wallHeightBreakdown(w);Object.entries(heightMap).forEach(([heightKey,importKey])=>{if(maps[importKey])existingHeights[heightKey]=importedHeights[heightKey]});w.lfByHeight=existingHeights}
+        if(maps.lf){const importedHeightTotal=wallHeightTotal(w);w.lfUnassigned=Math.max(0,lf-importedHeightTotal)}
+        normalizeWallLF(w);
         if(Number.isFinite(units)&&units>0)w.units=units;
         if(digDate)w.digDate=digDate;
         if(productionDate)w.productionDate=productionDate;
@@ -2553,11 +2599,11 @@ function applyImport(){
         state.walls.push({
           id:'wi'+Date.now()+Math.random().toString(16).slice(2),
           job,source:'Other',saleType:'Other',
-          customer,project,type,address,lf:Number.isFinite(lf)?lf:0,units:Number.isFinite(units)&&units>0?units:1,
+          customer,project,type,address,lfByHeight:importedHeights,lfUnassigned:hasHeightImport?(maps.lf?Math.max(0,lf-Object.values(importedHeights).reduce((n,x)=>n+x,0)):0):lf,lf,units:Number.isFinite(units)&&units>0?units:1,
           digDate,productionDate,installDate,
           completedDate:'',status:'On Track',constraint:'',notes:'Imported schedule',links:[]
         });
-        added++;
+        normalizeWallLF(state.walls[state.walls.length-1]);added++;
       }
     }else{
       const name=v('name');
@@ -2704,8 +2750,21 @@ function renderHistory(){
 }
 
 /* MODALS */
+function wallModalLfValues(){
+  const value=id=>nonnegativeNumber(document.getElementById(id)?.value);
+  return {lfByHeight:{h5:value('wLF5'),h8:value('wLF8'),h9:value('wLF9'),h10:value('wLF10'),h12:value('wLF12')},lfUnassigned:value('wLFUnassigned')}
+}
+function refreshWallLfTotal(){
+  const values=wallModalLfValues(),heightTotal=Object.values(values.lfByHeight).reduce((n,x)=>n+x,0),total=heightTotal+values.lfUnassigned;
+  const el=document.getElementById('wLFTotal');if(el)el.textContent=total.toLocaleString()
+}
 function openWallModal(id){
-  editingWallId=id;editingWallCompletionDirty=false;const w=id?state.walls.find(x=>x.id===id):null;document.getElementById('wallModalTitle').textContent=w?'Edit Wall Job':'Add Wall Job';document.getElementById('wJob').value=w?.job||'';document.getElementById('wSource').value=w?.source||'Verity';document.getElementById('wSaleType').value=w?.saleType||'Inventory';document.getElementById('wCustomer').value=w?.customer||'Verity Homes';document.getElementById('wProject').value=w?.project||'';document.getElementById('wDevelopment').value=w?.development||'';document.getElementById('wType').value=w?.type||'';document.getElementById('wAddress').value=w?.address||'';document.getElementById('wLF').value=w?.lf||0;document.getElementById('wUnits').value=w?.units||1;document.getElementById('wDig').value=w?.digDate||'';document.getElementById('wProduction').value=w?.productionDate||'';document.getElementById('wInstall').value=w?.installDate||'';document.getElementById('wDelivery').value=w?.deliveryDate||'';document.getElementById('wCompleted').value=w?.completedDate||'';document.getElementById('wCompletedMonth').value=wallCompletionMonth(w)||'';document.getElementById('wStatus').value=w?.status||'On Track';document.getElementById('wConstraint').value=w?.constraint||'';document.getElementById('wNotes').value=w?.notes||'';document.getElementById('wLinks').value=(w?.links||[]).join('\n');document.getElementById('deleteWall').style.display=w?'inline-block':'none';document.getElementById('completeWall').textContent=wallIsCompleted(w)?'Restore to Active Jobs':'Mark Complete This Month';document.getElementById('wPlanSummary').innerHTML=wallPlanSummaryHtml(w);document.getElementById('openPlanReviewBtn').style.display=w?'inline-block':'none';document.getElementById('openPlanReviewBtn').onclick=()=>{closeModal('wallModal');openPlanReviewModal(w.id)};document.getElementById('wallModal').style.display='flex'
+  editingWallId=id;editingWallCompletionDirty=false;const w=id?state.walls.find(x=>x.id===id):null,b=wallHeightBreakdown(w);
+  document.getElementById('wallModalTitle').textContent=w?'Edit Wall Job':'Add Wall Job';document.getElementById('wJob').value=w?.job||'';document.getElementById('wSource').value=w?.source||'Verity';document.getElementById('wSaleType').value=w?.saleType||'Inventory';document.getElementById('wCustomer').value=w?.customer||'Verity Homes';document.getElementById('wProject').value=w?.project||'';document.getElementById('wDevelopment').value=w?.development||'';document.getElementById('wType').value=w?.type||'';document.getElementById('wAddress').value=w?.address||'';
+  WALL_HEIGHTS.forEach(h=>{document.getElementById('wLF'+h.key.slice(1)).value=b[h.key]||0});
+  const unassigned=nonnegativeNumber(w?.lfUnassigned);document.getElementById('wLFUnassigned').value=unassigned;document.getElementById('wLFLegacyWrap').style.display=unassigned>0?'grid':'none';
+  ['wLF5','wLF8','wLF9','wLF10','wLF12','wLFUnassigned'].forEach(fieldId=>{document.getElementById(fieldId).oninput=refreshWallLfTotal});refreshWallLfTotal();
+  document.getElementById('wUnits').value=w?.units||1;document.getElementById('wDig').value=w?.digDate||'';document.getElementById('wProduction').value=w?.productionDate||'';document.getElementById('wInstall').value=w?.installDate||'';document.getElementById('wDelivery').value=w?.deliveryDate||'';document.getElementById('wCompleted').value=w?.completedDate||'';document.getElementById('wCompletedMonth').value=wallCompletionMonth(w)||'';document.getElementById('wStatus').value=w?.status||'On Track';document.getElementById('wConstraint').value=w?.constraint||'';document.getElementById('wNotes').value=w?.notes||'';document.getElementById('wLinks').value=(w?.links||[]).join('\n');document.getElementById('deleteWall').style.display=w?'inline-block':'none';document.getElementById('completeWall').textContent=wallIsCompleted(w)?'Restore to Active Jobs':'Mark Complete This Month';document.getElementById('wPlanSummary').innerHTML=wallPlanSummaryHtml(w);document.getElementById('openPlanReviewBtn').style.display=w?'inline-block':'none';document.getElementById('openPlanReviewBtn').onclick=()=>{closeModal('wallModal');openPlanReviewModal(w.id)};document.getElementById('wallModal').style.display='flex'
 }
 function saveWall(){
   const job=document.getElementById('wJob').value.trim();if(!job){alert('Job number is required.');return}
@@ -2725,12 +2784,13 @@ function saveWall(){
     if(!confirm(`Mark ${job} complete? This will remove it from Active Jobs, Plan Review, and the active schedule.`))return
   }
 
-  const obj={job,source:document.getElementById('wSource').value,saleType:document.getElementById('wSaleType').value,customer:document.getElementById('wCustomer').value.trim(),project:document.getElementById('wProject').value.trim(),development:document.getElementById('wDevelopment').value.trim(),type:document.getElementById('wType').value.trim(),address:document.getElementById('wAddress').value.trim(),lf:Number(document.getElementById('wLF').value||0),units:Number(document.getElementById('wUnits').value||1),digDate:document.getElementById('wDig').value,productionDate:document.getElementById('wProduction').value,installDate:document.getElementById('wInstall').value,deliveryDate:document.getElementById('wDelivery').value,completedDate:exactCompleted,completedMonth,status:document.getElementById('wStatus').value,constraint:document.getElementById('wConstraint').value.trim(),notes:document.getElementById('wNotes').value.trim(),links:document.getElementById('wLinks').value.split(/\n+/).map(x=>x.trim()).filter(Boolean)};
+  const lfValues=wallModalLfValues();
+  const obj={job,source:document.getElementById('wSource').value,saleType:document.getElementById('wSaleType').value,customer:document.getElementById('wCustomer').value.trim(),project:document.getElementById('wProject').value.trim(),development:document.getElementById('wDevelopment').value.trim(),type:document.getElementById('wType').value.trim(),address:document.getElementById('wAddress').value.trim(),lfByHeight:lfValues.lfByHeight,lfUnassigned:lfValues.lfUnassigned,units:Number(document.getElementById('wUnits').value||1),digDate:document.getElementById('wDig').value,productionDate:document.getElementById('wProduction').value,installDate:document.getElementById('wInstall').value,deliveryDate:document.getElementById('wDelivery').value,completedDate:exactCompleted,completedMonth,status:document.getElementById('wStatus').value,constraint:document.getElementById('wConstraint').value.trim(),notes:document.getElementById('wNotes').value.trim(),links:document.getElementById('wLinks').value.split(/\n+/).map(x=>x.trim()).filter(Boolean)};normalizeWallLF(obj);
 
   let savedWallId=editingWallId;
   if(editingWallId){
     Object.assign(existing,obj);
-    logAction('Wall Edit',`${job} updated · Production ${obj.productionDate||'—'} · Install ${obj.installDate||'—'} · Completion ${obj.completedDate||obj.completedMonth||'ACTIVE'}`)
+    logAction('Wall Edit',`${job} updated · ${obj.lf.toLocaleString()} total LF${wallLfSummary(obj)?' ('+wallLfSummary(obj)+')':''} · Production ${obj.productionDate||'—'} · Install ${obj.installDate||'—'} · Completion ${obj.completedDate||obj.completedMonth||'ACTIVE'}`)
   }else{
     savedWallId='w'+Date.now();
     state.walls.push({id:savedWallId,...obj});
@@ -3098,3 +3158,4 @@ bootstrap();
 </script>
 </body>
 </html>
+
