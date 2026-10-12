@@ -399,6 +399,35 @@ button,.tab,.subtab,.mini,.btn,select,input[type="date"],input[type="month"]{tou
   .toolbar>div:last-child>*{grid-column:1}
   .modal-actions{grid-template-columns:1fr}
 }
+/* INVENTORY PILOT REVIEW — scoped styles only */
+body.inventory-active .toolbar{display:none}
+body.inventory-active #assistantLaunch{display:none}
+body.inventory-active .header-actions{display:none}
+.inventory-shell{display:grid;gap:14px}
+.inventory-review-banner{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:13px 15px;border:1px solid #efd08c;border-left:5px solid #d08b18;border-radius:10px;background:#fff8e8;color:#664816;line-height:1.45}
+.inventory-review-banner strong{color:#5c3c07}.inventory-review-banner .small-note{color:#7f632e}
+.inventory-crumb{font-size:12px;color:#718090;font-weight:800}.inventory-crumb span{margin:0 7px;color:#abb5be}.inventory-crumb b{color:#17334d}
+.inventory-heading{display:flex;justify-content:space-between;gap:14px;align-items:flex-end}
+.inventory-heading h2{font-size:27px;line-height:1.1;margin:4px 0 5px;color:#13283d;letter-spacing:-.025em}.inventory-heading p{margin:0;color:#697886}
+.inventory-scope{border:1px solid #cfdbe5;border-radius:20px;padding:7px 11px;background:#f5f8fa;color:#536a7d;font-size:11px;font-weight:850;white-space:nowrap}
+.inventory-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.inventory-stat{background:#fff;border:1px solid #dfe5eb;border-top:4px solid #91a1af;border-radius:10px;padding:14px 15px;box-shadow:0 2px 8px rgba(19,40,61,.04)}
+.inventory-stat.red{border-top-color:#bd3d3b;background:#fffafa}.inventory-stat.amber{border-top-color:#c17a13;background:#fffdf7}.inventory-stat.green{border-top-color:#237b57}.inventory-stat.blue{border-top-color:#316f9f}
+.inventory-stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#6d7c89;font-weight:900}.inventory-stat-value{font-size:29px;font-weight:900;color:#142d44;margin:4px 0 1px}.inventory-stat.red .inventory-stat-value{color:#af3435}.inventory-stat.amber .inventory-stat-value{color:#a9660c}.inventory-stat-sub{font-size:10px;color:#84919d}
+.inventory-section{background:#fff;border:1px solid #dfe5eb;border-radius:11px;overflow:hidden;box-shadow:0 2px 8px rgba(19,40,61,.04)}
+.inventory-section.watch{border-left:5px solid #bd3d3b}.inventory-section.low-watch{border-left:5px solid #c17a13}
+.inventory-section-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px 16px;border-bottom:1px solid #e4e9ed}.inventory-section-head h3{margin:0;color:#17334d;font-size:15px}.inventory-section-head small{color:#728290;font-weight:700}
+.inventory-watch-list{display:grid}.inventory-watch-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 15px;border-bottom:1px solid #edf0f3}.inventory-watch-item:last-child{border-bottom:0}.inventory-watch-title{font-weight:850;color:#24394b}.inventory-watch-meta{font-size:11px;color:#768694;margin-top:3px}.inventory-watch-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.inventory-dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:8px;background:#bd3d3b}.inventory-dot.amber{background:#c17a13}
+.inventory-empty{padding:20px;text-align:center;color:#748493;background:#fbfcfd}
+.inventory-tools{display:flex;gap:9px;flex-wrap:wrap;padding:13px 15px;border-bottom:1px solid #e3e8ed;background:#fbfcfd}.inventory-tools input,.inventory-tools select{min-height:40px;border:1px solid #cfd8df;border-radius:8px;background:#fff;padding:8px 11px;color:#263b4c}.inventory-tools input{flex:1;min-width:230px}.inventory-tools select{min-width:180px}
+.inventory-table-wrap{overflow-x:auto}.inventory-table{width:100%;border-collapse:collapse;min-width:980px}.inventory-table th{background:#f7f9fb;color:#6d7d8b;text-transform:uppercase;letter-spacing:.055em;font-size:9px;padding:11px 13px;text-align:left}.inventory-table td{padding:12px 13px;border-top:1px solid #e9edf0;vertical-align:middle}.inventory-table tr.reorder-row{background:#fffafa}.inventory-table tr.low-row{background:#fffdf7}.inventory-product{font-weight:900;color:#17334d}.inventory-desc{font-weight:750;color:#304557}.inventory-category{font-size:10px;color:#7e8c98;margin-top:3px}
+.inventory-pill{display:inline-flex;align-items:center;border-radius:20px;padding:5px 9px;font-size:10px;font-weight:900;white-space:nowrap}.inventory-pill.red{color:#a52e31;background:#ffe7e8}.inventory-pill.amber{color:#94590a;background:#fff0cf}.inventory-pill.green{color:#176d4a;background:#e3f4eb}.inventory-pill.blue{color:#235d8b;background:#e3f0fb}.inventory-pill.gray{color:#667583;background:#ebeff3}
+.inventory-stepper{display:flex;align-items:center;gap:6px}.inventory-stepper button{min-width:36px}.inventory-qty{min-width:92px!important;display:flex!important;gap:5px!important;align-items:baseline!important;justify-content:center!important}.inventory-qty strong{font-size:18px}.inventory-qty small{font-size:9px;color:#748493}.inventory-actions{display:flex;gap:6px;flex-wrap:wrap}.inventory-btn-danger{border-color:#e1b5b5!important;color:#a52e31!important;background:#fff8f8!important}.inventory-btn-primary{border-color:#1f4d73!important;color:#fff!important;background:#1f4d73!important}.inventory-btn-blue{border-color:#b9d3e8!important;color:#225d89!important;background:#edf6fd!important}
+.inventory-footer{font-size:10px;color:#82909b;text-align:center;padding:3px 0 8px}
+.inventory-modal-backdrop{position:fixed;inset:0;z-index:220;background:rgba(10,24,38,.68);display:none;align-items:center;justify-content:center;padding:18px}.inventory-modal-backdrop.open{display:flex}.inventory-modal{width:min(520px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:13px;box-shadow:0 24px 80px rgba(0,0,0,.3)}.inventory-modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:15px;padding:18px 19px;border-bottom:1px solid #e2e7eb}.inventory-modal-head h3{margin:0 0 4px;color:#17334d}.inventory-modal-body{padding:18px 19px}.inventory-modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:13px 19px;border-top:1px solid #e2e7eb;background:#fafbfc}.inventory-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.inventory-field{margin-bottom:13px}.inventory-field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.055em;font-weight:900;color:#5d6e7d;margin-bottom:6px}.inventory-field input,.inventory-field select{width:100%;min-height:43px;border:1px solid #ccd6de;border-radius:8px;padding:9px 11px;font-size:16px}.inventory-help{background:#f1f6fa;border-left:3px solid #4380ae;padding:11px 12px;border-radius:6px;color:#506d84;font-size:11px;line-height:1.5}.inventory-toast{position:fixed;right:18px;bottom:18px;z-index:260;background:#17334d;color:#fff;border-radius:9px;padding:12px 15px;max-width:min(440px,calc(100vw - 36px));box-shadow:0 14px 34px rgba(0,0,0,.24);font-size:12px;display:none}.inventory-toast.show{display:block}
+@media(max-width:900px){.inventory-stats{grid-template-columns:1fr 1fr}.inventory-heading{align-items:flex-start;flex-direction:column}.inventory-watch-item{grid-template-columns:1fr}.inventory-watch-actions{justify-content:flex-start}}
+@media(max-width:620px){.inventory-stats{grid-template-columns:1fr 1fr}.inventory-review-banner{align-items:flex-start;flex-direction:column}.inventory-section-head{align-items:flex-start;flex-direction:column}.inventory-tools{flex-direction:column}.inventory-tools input,.inventory-tools select{width:100%;min-width:0}.inventory-table{min-width:0}.inventory-table thead{display:none}.inventory-table,.inventory-table tbody{display:block}.inventory-table tr{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:14px;border-top:1px solid #e1e7ec}.inventory-table td{display:block;border:0;padding:0}.inventory-table td:nth-child(1),.inventory-table td:nth-child(2),.inventory-table td:nth-child(3),.inventory-table td:nth-child(7){grid-column:1/-1}.inventory-table td:nth-child(5){text-align:right}.inventory-actions .btn{flex:1}.inventory-fields{grid-template-columns:1fr}.inventory-modal-backdrop{align-items:flex-end;padding:0}.inventory-modal{width:100%;border-radius:15px 15px 0 0}}
 </style>
 </head>
 <body>
@@ -437,7 +466,7 @@ button,.tab,.subtab,.mini,.btn,select,input[type="date"],input[type="month"]{tou
     <button class="tab" data-view="fence">Precast Fence</button>
     <button class="tab" data-view="block">Precast Block</button>
     <button class="tab" data-view="qc">QC</button>
-    <button class="tab" data-view="delivery">Delivery</button><button class="tab" data-view="billing">Billing / Completions</button><button class="tab" data-view="exceptions">Exceptions</button><button class="tab" data-view="import">Import Center</button><button class="tab" data-view="audit">Weekly Change Log</button><button class="tab" data-view="history">History</button>
+    <button class="tab" data-view="delivery">Delivery</button><button class="tab" data-view="inventory">Inventory</button><button class="tab" data-view="billing">Billing / Completions</button><button class="tab" data-view="exceptions">Exceptions</button><button class="tab" data-view="import">Import Center</button><button class="tab" data-view="audit">Weekly Change Log</button><button class="tab" data-view="history">History</button>
   </div>
   <div class="toolbar">
     <div><div class="muted" style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em">Planning Week</div><div class="week-title" id="weekTitle"></div><div id="mobileNavStatus" class="muted" style="display:none;font-size:9px;margin-top:2px">Mobile navigation active</div></div>
@@ -446,6 +475,15 @@ button,.tab,.subtab,.mini,.btn,select,input[type="date"],input[type="month"]{tou
   <div class="notice" style="margin-bottom:12px"><span><span class="live-dot"></span><strong>LIVE TEAM HUB:</strong> changes save to the shared Superior Operations database.</span><span class="small-note" id="accessStatus">Checking access...</span><span class="small-note" id="saveStatus">Connecting...</span></div>
   <div id="view"></div>
 </main>
+
+<div class="inventory-modal-backdrop" id="inventoryModal" role="presentation">
+  <div class="inventory-modal" role="dialog" aria-modal="true" aria-labelledby="inventoryModalTitle">
+    <div class="inventory-modal-head"><div><h3 id="inventoryModalTitle">Update material</h3><div class="small-note" id="inventoryModalSub"></div></div><button type="button" class="mini" id="inventoryModalClose">Close</button></div>
+    <div class="inventory-modal-body" id="inventoryModalBody"></div>
+    <div class="inventory-modal-foot"><button type="button" class="ghost" id="inventoryModalCancel">Cancel</button><button type="button" class="dark" id="inventoryModalSave">Save</button></div>
+  </div>
+</div>
+<div class="inventory-toast" id="inventoryToast" role="status" aria-live="polite"></div>
 
 <button type="button" class="assistant-launch no-print" id="assistantLaunch">Ask Operations</button>
 <section class="assistant-panel no-print" id="assistantPanel" aria-label="Read-only Operations Assistant">
@@ -566,7 +604,40 @@ const SUPABASE_URL=(window.SUPERIOR_CONFIG&&window.SUPERIOR_CONFIG.supabaseUrl)|
 const SUPABASE_ANON_KEY=(window.SUPERIOR_CONFIG&&window.SUPERIOR_CONFIG.supabaseAnonKey)||'';
 const ALLOWED_EMAIL_DOMAIN=((window.SUPERIOR_CONFIG&&window.SUPERIOR_CONFIG.allowedEmailDomain)||'superiorwallsnd.com').toLowerCase();
 const sb=(SUPABASE_URL&&SUPABASE_ANON_KEY&&window.supabase)?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
-let currentUser=null,currentUserRole='viewer',currentUserCanWrite=false,lastRevision=0,lastRemoteUpdatedAt='',lastRemoteData=null,structuredBackendReady=false,stateChannel=null,saveBusy=false,saveQueued=false,queuedReason='Saved',remoteReady=false,lastSharedJson='';
+const INVENTORY_REVIEW_MODE=false;
+const INVENTORY_SEED=[
+  {code:'1TonLiftPin',description:'ALP Lift Pin 1Ton',group:'RM Misc. SW'},
+  {code:'2x10x10gt',description:'2x10x10 green treated',group:'RM Misc. SW'},
+  {code:'2x6x12gt',description:'2x6x12 green treat board',group:'RM Misc. SW'},
+  {code:'5/8REWH',description:'#3/#4 5/8 Rebar Wheels',group:'RM Misc. SW'},
+  {code:'6inSTCL',description:'6 inch Straight Coil loop',group:'RM Misc. SW'},
+  {code:'6x6x8 Dunnage',description:'6x6x8 Dunnage',group:'RM Misc. SW'},
+  {code:'9GSF',description:'9 foot galvanized stud facing',group:'RM Misc. SW'},
+  {code:'BSP',description:'Bolting Saddle Plus',group:'RM Misc. SW'},
+  {code:'BSP Angled',description:'Bolting Saddle Angled',group:'RM Misc. SW'},
+  {code:'BSP Straight',description:'Bolting Saddle Straight',group:'RM Misc. SW'},
+  {code:'CL1/2x13/4',description:'1/2x1-3/4 Coil Loop',group:'RM Misc. SW'},
+  {code:'CL5/8x13/4',description:'5/8 x1-3/4 Coil Loop',group:'RM Misc. SW'},
+  {code:'facebarwire154a',description:'Face bar support wire part number 141',group:'RM Misc. SW'},
+  {code:'FLCOIL1/2',description:'Flared Loop Ferrule 1/2',group:'RM Misc. SW'},
+  {code:'Manhole Steps 12 inch',description:'Manhole steps 12"',group:'RM Misc. SW'},
+  {code:'PISW',description:'Push-In Spreader Wire',group:'RM Misc. SW'},
+  {code:'SpReW',description:'Spreader Rebar Support Wire',group:'RM Misc. SW'},
+  {code:'TL2x6x12',description:'Treated Lumber 2x6x12',group:'RM Misc. SW'},
+  {code:'TrReF',description:'Triple Rebar Face Wire',group:'RM Misc. SW'},
+  {code:'24inch4bar',description:'24 inch #4 bar',group:'RM Rebar'},
+  {code:'3ft11#4bar',description:'3 foot 11 inch numer 4 rebar',group:'RM Rebar'},
+  {code:'4ft11#4bar',description:'4 foot 11 inch #4 rebar',group:'RM Rebar'},
+  {code:'8ft11 4 bar',description:'8 ft 11 inch number 4 bar',group:'RM Rebar'},
+  {code:'9ft11 4 bar',description:'9ft 11 4bar studs',group:'RM Rebar'},
+  {code:'Header Stirrups',description:'Header Stirrups',group:'RM Rebar'},
+  {code:'RE3',description:'Rebar #3',group:'RM Rebar'},
+  {code:'RE4',description:'Rebar #4',group:'RM Rebar'},
+  {code:'RE5',description:'Rebar #5',group:'RM Rebar'},
+  {code:'RE6',description:'Rebar #6',group:'RM Rebar'},
+  {code:'RESW',description:'Rebar Support Wire',group:'RM Rebar'}
+];
+let currentUser=null,currentUserRole='viewer',currentUserCanWrite=false,lastRevision=0,lastRemoteUpdatedAt='',lastRemoteData=null,structuredBackendReady=false,stateChannel=null,inventoryChannel=null,saveBusy=false,saveQueued=false,queuedReason='Saved',remoteReady=false,lastSharedJson='';
 const divisionMeta={
   boxes:{label:'Box Culverts',unit:'pcs',capacity:2,itemLabel:'Box'},
   manholes:{label:'Manholes',unit:'pcs',capacity:4,itemLabel:'Manhole'},
@@ -680,7 +751,7 @@ async function signInWithPasswordLogin(){
   const btn=document.getElementById('authBtn');btn.disabled=true;setAuthMessage('Signing in...');
   const {error}=await sb.auth.signInWithPassword({email,password});btn.disabled=false;if(error)setAuthMessage(error.message,true)
 }
-async function signOut(){if(sb)await sb.auth.signOut();currentUser=null;remoteReady=false;showAuthGate(true);setAuthMessage('Signed out.')}
+async function signOut(){if(sb){if(inventoryChannel)await sb.removeChannel(inventoryChannel);await sb.auth.signOut()}currentUser=null;remoteReady=false;inventoryReady=false;showAuthGate(true);setAuthMessage('Signed out.')}
 function updateAccessStatus(){
   const el=document.getElementById('accessStatus');
   if(!el)return;
@@ -789,9 +860,33 @@ async function startSession(user){
   if(!user)return;const email=(user.email||'').toLowerCase();
   if(!authAllowed(email)){setAuthMessage('This hub is limited to @'+ALLOWED_EMAIL_DOMAIN+' accounts.',true);await sb.auth.signOut();showAuthGate(true);return}
   currentUser=user;await loadCurrentAccess(user);showAuthGate(false);const sign=document.getElementById('signOutBtn');if(sign){sign.style.display='inline-block';sign.textContent='Sign Out - '+email.split('@')[0]}
-  await loadRemoteState();subscribeLive()
+  await loadRemoteState();subscribeLive();await loadInventory();subscribeInventory()
 }
 let state={...clone(seed),...loadUiPrefs()},editingWallId=null,editingWallCompletionDirty=false,editingPlanWallId=null,editingProjectId=null,editingPieceProjectId=null,editingPieceId=null,importData=null,importHeaders=[];
+let inventoryItems=[],inventoryReady=false,inventoryLoadError='',inventoryCanView=false,inventoryCanAdjust=false,inventoryCanManage=false,inventoryBusy=false;
+let inventorySearch='',inventoryFilter='all',inventoryCategory='all',inventoryModalSaveAction=null,inventoryToastTimer=null;
+
+async function loadInventory(){
+  if(!sb||!currentUser)return false;inventoryLoadError='';
+  const [itemsResult,accessResult]=await Promise.all([
+    sb.from('inventory_items').select('item_id,titan_code,description,category,unit,quantity,reorder_threshold,ordered,version,updated_at,updated_by').eq('division_key','walls').eq('inventory_area','production').order('item_id'),
+    sb.rpc('get_inventory_access')
+  ]);
+  if(itemsResult.error||accessResult.error){inventoryReady=false;inventoryLoadError=(itemsResult.error||accessResult.error).message;console.error('Inventory load failed:',itemsResult.error||accessResult.error);if(state.view==='inventory')renderInventory();return false}
+  const access=accessResult.data||{};inventoryCanView=Boolean(access.can_view);inventoryCanAdjust=Boolean(access.can_adjust);inventoryCanManage=Boolean(access.can_manage);
+  inventoryItems=(itemsResult.data||[]).map(x=>({id:x.item_id,code:x.titan_code,description:x.description,group:x.category,unit:x.unit,qty:x.quantity,threshold:x.reorder_threshold,ordered:Boolean(x.ordered),version:Number(x.version||1),updatedAt:x.updated_at,updatedBy:x.updated_by}));
+  inventoryReady=inventoryCanView;inventoryLoadError=inventoryCanView?'':'Your account does not have inventory access.';if(state.view==='inventory')renderInventory();return inventoryReady
+}
+function subscribeInventory(){
+  if(!sb)return;if(inventoryChannel)sb.removeChannel(inventoryChannel);
+  inventoryChannel=sb.channel('superior-production-inventory-live').on('postgres_changes',{event:'*',schema:'public',table:'inventory_items'},()=>{if(!inventoryBusy)loadInventory()}).subscribe()
+}
+async function inventoryRpc(name,args,successMessage){
+  if(!sb||!currentUser||inventoryBusy)return false;inventoryBusy=true;renderInventory();
+  const {error}=await sb.rpc(name,args);inventoryBusy=false;
+  if(error){showInventoryToast(error.message.includes('version conflict')?'Someone else updated this material. The newest count has been loaded.':'Inventory update failed: '+error.message);await loadInventory();return false}
+  await loadInventory();if(successMessage)showInventoryToast(successMessage);return true
+}
 
 function defaultWallPlanReview(){
   const stages={};wallPlanStages.forEach(s=>stages[s.key]={status:'Not Started',date:''});
@@ -1327,12 +1422,95 @@ function divisionSubtabs(div){
 }
 function bindSubtabs(div){document.querySelectorAll('[data-sub]').forEach(b=>b.onclick=()=>setSubview(div,b.dataset.sub))}
 
+function inventoryStatus(item){
+  if(item.qty===null||item.threshold===null)return 'setup';
+  if(item.qty<=item.threshold)return 'reorder';
+  if(item.qty===item.threshold+1)return 'low';
+  return 'ok'
+}
+function inventoryStatusLabel(status){return {setup:'Needs setup',reorder:'Reorder now',low:'Low stock',ok:'In stock'}[status]||status}
+function inventoryPill(status){const color={setup:'gray',reorder:'red',low:'amber',ok:'green'}[status]||'gray';return `<span class="inventory-pill ${color}">${inventoryStatusLabel(status)}</span>`}
+function inventoryItem(code){return inventoryItems.find(x=>x.code===code)}
+function inventoryFilteredItems(){
+  const q=inventorySearch.trim().toLowerCase();
+  return inventoryItems.filter(x=>{
+    const status=inventoryStatus(x);
+    const text=`${x.code} ${x.description} ${x.group}`.toLowerCase();
+    return (!q||text.includes(q))&&(inventoryCategory==='all'||x.group===inventoryCategory)&&(inventoryFilter==='all'||inventoryFilter===status||(inventoryFilter==='ordered'&&x.ordered));
+  }).sort((a,b)=>['reorder','low','setup','ok'].indexOf(inventoryStatus(a))-['reorder','low','setup','ok'].indexOf(inventoryStatus(b))||a.description.localeCompare(b.description))
+}
+function showInventoryToast(message){
+  const el=document.getElementById('inventoryToast');if(!el)return;el.textContent=message;el.classList.add('show');clearTimeout(inventoryToastTimer);inventoryToastTimer=setTimeout(()=>el.classList.remove('show'),3800)
+}
+function closeInventoryModal(){const el=document.getElementById('inventoryModal');if(el)el.classList.remove('open');inventoryModalSaveAction=null}
+function openInventoryModal(title,sub,body,saveLabel,onSave){
+  document.getElementById('inventoryModalTitle').textContent=title;
+  document.getElementById('inventoryModalSub').textContent=sub;
+  document.getElementById('inventoryModalBody').innerHTML=body;
+  document.getElementById('inventoryModalSave').textContent=saveLabel;
+  inventoryModalSaveAction=onSave;
+  document.getElementById('inventoryModal').classList.add('open')
+}
+function inventoryEditItem(item){
+  if(!inventoryCanManage){showInventoryToast('This account can view inventory but cannot change counts or minimums.');return}
+  const units=['units','boxes','bags','rolls','bundles','pallets','pieces','boards','lengths','sticks'];
+  openInventoryModal('Set inventory levels',`${item.code} · ${item.description}`,`<div class="inventory-fields"><div class="inventory-field"><label for="inventoryQtyInput">Current count</label><input id="inventoryQtyInput" type="number" min="0" step="1" placeholder="Not counted" value="${item.qty??''}"></div><div class="inventory-field"><label for="inventoryUnitInput">Counted as</label><select id="inventoryUnitInput">${units.map(u=>`<option ${u===item.unit?'selected':''}>${u}</option>`).join('')}</select></div></div><div class="inventory-field"><label for="inventoryThresholdInput">Reorder when count is at or below</label><input id="inventoryThresholdInput" type="number" min="0" step="1" placeholder="Set minimum" value="${item.threshold??''}"></div><div class="inventory-help">Use the same unit for the stock count and reorder minimum. Saved changes are shared live with authorized users.</div>`,'Save stock',async()=>{
+    const q=document.getElementById('inventoryQtyInput').value.trim(),t=document.getElementById('inventoryThresholdInput').value.trim();
+    const qty=q===''?null:Number(q),threshold=t===''?null:Number(t);
+    if((qty!==null&&(!Number.isSafeInteger(qty)||qty<0))||(threshold!==null&&(!Number.isSafeInteger(threshold)||threshold<0))){showInventoryToast('Use zero or a positive whole number.');return}
+    closeInventoryModal();await inventoryRpc('set_inventory_item',{p_item_id:item.id,p_expected_version:item.version,p_quantity:qty,p_reorder_threshold:threshold,p_unit:document.getElementById('inventoryUnitInput')?.value||item.unit},'Inventory settings saved.')
+  })
+}
+function inventoryReceive(item){
+  if(!inventoryCanAdjust){showInventoryToast('This account has read-only inventory access.');return}
+  openInventoryModal('Receive stock',`${item.code} · ${item.description}`,`<div class="inventory-field"><label for="inventoryReceivedInput">How many ${htmlSafe(item.unit)} received?</label><input id="inventoryReceivedInput" type="number" min="1" step="1" placeholder="Enter quantity"></div><div class="inventory-help">The amount is added atomically to the shared count and the ordered marker is cleared.</div>`,'Receive stock',async()=>{
+    const amount=Number(document.getElementById('inventoryReceivedInput').value);if(!Number.isSafeInteger(amount)||amount<1){showInventoryToast('Enter a positive whole number.');return}closeInventoryModal();await inventoryRpc('receive_inventory_stock',{p_item_id:item.id,p_expected_version:item.version,p_quantity:amount},`Received ${amount} ${item.unit}.`)
+  })
+}
+function inventoryEmailPreview(item){
+  const remaining=item.qty===null?'Not counted':`${item.qty} ${item.unit}`;const threshold=item.threshold===null?'Not set':`${item.threshold} ${item.unit}`;
+  openInventoryModal('Reorder alert preview',`${item.code} · ${item.description}`,`<div class="inventory-help" style="white-space:normal"><strong>Recipients:</strong> Department owners will be assigned later<br><strong>Subject:</strong> Superior Inventory — REORDER: ${htmlSafe(item.description)}<br><br><strong>Material:</strong> ${htmlSafe(item.description)}<br><strong>Titan product:</strong> ${htmlSafe(item.code)}<br><strong>Remaining:</strong> ${htmlSafe(remaining)}<br><strong>Reorder threshold:</strong> ${htmlSafe(threshold)}<br><strong>Order status:</strong> ${item.ordered?'Ordered':'Not ordered'}<br><br>Open Superior Operations Hub → Inventory → Superior Walls → Production.</div><div class="inventory-help" style="margin-top:12px;border-left-color:#c17a13;background:#fff8e8">Email delivery is intentionally inactive until department owners and recipients are assigned.</div>`,'Close',closeInventoryModal)
+}
+async function updateInventoryQuantity(item,delta){
+  if(!inventoryCanAdjust){showInventoryToast('This account has read-only inventory access.');return}if(item.qty===null){inventoryEditItem(item);return}await inventoryRpc('adjust_inventory_quantity',{p_item_id:item.id,p_delta:delta},'Inventory count updated.')
+}
+function renderInventoryWatch(items,status){
+  if(!items.length)return `<div class="inventory-empty">${status==='reorder'?'No materials are currently at or below a reorder minimum.':'No materials are currently one unit above their reorder minimum.'}</div>`;
+  return `<div class="inventory-watch-list">${items.map(item=>`<div class="inventory-watch-item"><div><div class="inventory-watch-title"><span class="inventory-dot ${status==='low'?'amber':''}"></span>${htmlSafe(item.description)} <span class="muted">· ${htmlSafe(item.code)}</span></div><div class="inventory-watch-meta">${item.qty} ${htmlSafe(item.unit)} remaining · ${status==='reorder'?'reorder at':'minimum'} ${item.threshold} ${htmlSafe(item.unit)}${item.ordered?' · ORDERED':''}</div></div><div class="inventory-watch-actions"><button class="mini" data-inv-action="preview" data-code="${htmlSafe(item.code)}">Alert preview</button>${status==='reorder'&&inventoryCanManage?(item.ordered?`<button class="mini inventory-btn-blue" data-inv-action="receive" data-code="${htmlSafe(item.code)}">Receive stock</button>`:`<button class="mini inventory-btn-primary" data-inv-action="order" data-code="${htmlSafe(item.code)}">Mark ordered</button>`):''}</div></div>`).join('')}</div>`
+}
+function bindInventoryActions(){
+  const root=document.getElementById('view');if(!root)return;
+  root.querySelectorAll('[data-inv-action]').forEach(button=>button.onclick=async()=>{const item=inventoryItem(button.dataset.code);if(!item)return;const action=button.dataset.invAction;if(action==='edit')inventoryEditItem(item);else if(action==='minus')await updateInventoryQuantity(item,-1);else if(action==='plus')await updateInventoryQuantity(item,1);else if(action==='order'){if(!inventoryCanManage){showInventoryToast('Inventory management access is required.');return}await inventoryRpc('mark_inventory_ordered',{p_item_id:item.id,p_expected_version:item.version},`${item.description} marked ordered.`)}else if(action==='receive')inventoryReceive(item);else if(action==='preview')inventoryEmailPreview(item)});
+  const search=document.getElementById('inventorySearch'),filter=document.getElementById('inventoryFilter'),category=document.getElementById('inventoryCategory');
+  if(search)search.oninput=e=>{inventorySearch=e.target.value;renderInventory()};if(filter)filter.onchange=e=>{inventoryFilter=e.target.value;renderInventory()};if(category)category.onchange=e=>{inventoryCategory=e.target.value;renderInventory()};
+  document.querySelectorAll('[data-inv-show]').forEach(button=>button.onclick=()=>{inventoryFilter=button.dataset.invShow;renderInventory();document.getElementById('inventoryCatalog')?.scrollIntoView({behavior:'smooth',block:'start'})});
+  if(inventoryBusy)root.querySelectorAll('[data-inv-action]').forEach(button=>button.disabled=true)
+}
+function renderInventory(){
+  document.body.classList.add('inventory-active');
+  if(!inventoryReady){document.getElementById('view').innerHTML=`<div class="inventory-shell"><div class="inventory-review-banner"><div><strong>SHARED INVENTORY</strong><div>${htmlSafe(inventoryLoadError||'Loading Superior Walls Production inventory…')}</div></div><span class="small-note">Authenticated access</span></div><section class="inventory-section"><div class="inventory-empty">${inventoryLoadError?`Inventory could not be loaded. <button class="mini" id="inventoryRetry">Try again</button>`:'Connecting to the shared inventory…'}</div></section><div class="inventory-footer">Prepared by Scout for Wes Borgen</div></div>`;const retry=document.getElementById('inventoryRetry');if(retry)retry.onclick=loadInventory;return}
+  const reorders=inventoryItems.filter(x=>inventoryStatus(x)==='reorder'),low=inventoryItems.filter(x=>inventoryStatus(x)==='low'),setup=inventoryItems.filter(x=>inventoryStatus(x)==='setup'),ordered=inventoryItems.filter(x=>x.ordered),visible=inventoryFilteredItems();
+  document.getElementById('view').innerHTML=`<div class="inventory-shell">
+    <div class="inventory-review-banner" style="border-color:#b8d9c9;border-left-color:#237b57;background:#f1fbf6;color:#24533f"><div><strong style="color:#174a35">LIVE SHARED INVENTORY</strong><div>Counts update in realtime for authorized Superior Operations users.</div></div><span class="small-note" style="color:#386953">${inventoryCanManage?'Management access':inventoryCanAdjust?'Stock adjustment access':'Read-only access'} · Email recipients assigned later</span></div>
+    <div class="inventory-crumb">Inventory <span>›</span> Superior Walls <span>›</span> <b>Production</b></div>
+    <div class="inventory-heading"><div><div class="eyebrow">Superior Walls of North Dakota, LLC</div><h2>Production Inventory</h2><p>Fast stock updates, clear reorder visibility and a simple purchasing handoff.</p></div><div class="inventory-scope">30 Titan materials</div></div>
+    <div class="inventory-stats"><button class="inventory-stat green" data-inv-show="all"><div class="inventory-stat-label">Production materials</div><div class="inventory-stat-value">${inventoryItems.length}</div><div class="inventory-stat-sub">Exact Titan catalog</div></button><button class="inventory-stat red" data-inv-show="reorder"><div class="inventory-stat-label">Reorder now</div><div class="inventory-stat-value">${reorders.length}</div><div class="inventory-stat-sub">At or below minimum</div></button><button class="inventory-stat amber" data-inv-show="low"><div class="inventory-stat-label">Low stock</div><div class="inventory-stat-value">${low.length}</div><div class="inventory-stat-sub">One unit above minimum</div></button><button class="inventory-stat blue" data-inv-show="setup"><div class="inventory-stat-label">Needs initial setup</div><div class="inventory-stat-value">${setup.length}</div><div class="inventory-stat-sub">Count or minimum missing</div></button></div>
+    <section class="inventory-section watch"><div class="inventory-section-head"><h3><span class="inventory-dot"></span>Reorder needed</h3><small>${reorders.length} material${reorders.length===1?'':'s'} at or below minimum · ${ordered.length} ordered</small></div>${renderInventoryWatch(reorders,'reorder')}</section>
+    <section class="inventory-section low-watch"><div class="inventory-section-head"><h3><span class="inventory-dot amber"></span>Low stock watch</h3><small>${low.length} material${low.length===1?'':'s'} approaching minimum</small></div>${renderInventoryWatch(low,'low')}</section>
+    <section class="inventory-section" id="inventoryCatalog"><div class="inventory-section-head"><div><h3>Superior Walls — Production materials</h3><small>${inventoryCanManage?'Use − and + for fast changes; use Set / edit for exact counts and reorder minimums.':inventoryCanAdjust?'Use − and + for stock changes. Reorder settings are managed separately.':'View current counts, reorder levels and ordering status.'}</small></div><small>${visible.length} of ${inventoryItems.length} materials</small></div><div class="inventory-tools"><input id="inventorySearch" type="search" value="${htmlSafe(inventorySearch)}" placeholder="Search Titan product or description" aria-label="Search production inventory"><select id="inventoryCategory" aria-label="Filter category"><option value="all">All categories</option><option value="RM Misc. SW" ${inventoryCategory==='RM Misc. SW'?'selected':''}>RM Misc. SW</option><option value="RM Rebar" ${inventoryCategory==='RM Rebar'?'selected':''}>RM Rebar</option></select><select id="inventoryFilter" aria-label="Filter status"><option value="all">All stock statuses</option><option value="reorder" ${inventoryFilter==='reorder'?'selected':''}>Reorder now</option><option value="low" ${inventoryFilter==='low'?'selected':''}>Low stock</option><option value="setup" ${inventoryFilter==='setup'?'selected':''}>Needs initial setup</option><option value="ok" ${inventoryFilter==='ok'?'selected':''}>In stock</option><option value="ordered" ${inventoryFilter==='ordered'?'selected':''}>Already ordered</option></select></div><div class="inventory-table-wrap"><table class="inventory-table"><thead><tr><th>Titan product</th><th>Description</th><th>Category</th><th>Count remaining</th><th>Reorder at</th><th>Status</th><th>Actions</th></tr></thead><tbody>${visible.map(item=>{const status=inventoryStatus(item);const qty=item.qty===null?(inventoryCanManage?`<button class="mini" data-inv-action="edit" data-code="${htmlSafe(item.code)}">Set count</button>`:'Not counted'):(inventoryCanAdjust?`<div class="inventory-stepper"><button class="mini" data-inv-action="minus" data-code="${htmlSafe(item.code)}" ${item.qty===0?'disabled':''}>−</button><button class="mini inventory-qty" ${inventoryCanManage?'data-inv-action="edit"':''} data-code="${htmlSafe(item.code)}"><strong>${item.qty}</strong><small>${htmlSafe(item.unit)}</small></button><button class="mini" data-inv-action="plus" data-code="${htmlSafe(item.code)}">+</button></div>`:`<strong>${item.qty}</strong> ${htmlSafe(item.unit)}`);const actions=inventoryCanManage?`<button class="mini" data-inv-action="edit" data-code="${htmlSafe(item.code)}">Set / edit</button>${status==='reorder'?(item.ordered?`<button class="mini inventory-btn-blue" data-inv-action="receive" data-code="${htmlSafe(item.code)}">Receive</button>`:`<button class="mini inventory-btn-danger" data-inv-action="order" data-code="${htmlSafe(item.code)}">Order</button>`):''}`:(inventoryCanAdjust&&item.ordered?`<button class="mini inventory-btn-blue" data-inv-action="receive" data-code="${htmlSafe(item.code)}">Receive</button>`:'<span class="small-note">View only</span>');return `<tr class="${status==='reorder'?'reorder-row':status==='low'?'low-row':''}"><td><div class="inventory-product">${htmlSafe(item.code)}</div></td><td><div class="inventory-desc">${htmlSafe(item.description)}</div></td><td><div class="inventory-category">${htmlSafe(item.group)}</div></td><td>${qty}</td><td>${item.threshold===null?(inventoryCanManage?`<button class="mini" data-inv-action="edit" data-code="${htmlSafe(item.code)}">Set minimum</button>`:'Not set'):`${item.threshold} ${htmlSafe(item.unit)}`}</td><td>${inventoryPill(status)}${item.ordered?' <span class="inventory-pill blue">Ordered</span>':''}</td><td><div class="inventory-actions">${actions}</div></td></tr>`}).join('')||'<tr><td colspan="7"><div class="inventory-empty">No materials match this search or filter.</div></td></tr>'}</tbody></table></div></section>
+    <div class="inventory-footer">Shared Superior Operations data · Prepared by Scout for Wes Borgen</div>
+  </div>`;
+  bindInventoryActions()
+}
+
 function render(){
   const mobileNavStatus=document.getElementById('mobileNavStatus');
   if(mobileNavStatus)mobileNavStatus.style.display=window.matchMedia('(max-width:760px)').matches?'block':'none';
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===state.view));
   document.getElementById('weekTitle').textContent='Week of '+fmt(state.week);document.getElementById('roleSelect').value=state.role||'Management';document.getElementById('yearSelect').value=String(state.year||2026);populateWeekSelect();document.getElementById('globalSearch').value=state.searchQuery||'';
-  if(state.view==='overview')renderOverview();
+  document.body.classList.toggle('inventory-active',state.view==='inventory');
+  if(state.view==='inventory')renderInventory();
+  else if(state.view==='overview')renderOverview();
   else if(state.view==='walls')renderWalls();
   else if(state.view==='qc')renderQC();
   else if(state.view==='delivery')renderDelivery();
@@ -3145,7 +3323,16 @@ document.getElementById('assistantForm').onsubmit=e=>{e.preventDefault();const i
 document.getElementById('authBtn').onclick=signInWithPasswordLogin;
 document.getElementById('authEmail').addEventListener('keydown',e=>{if(e.key==='Enter')signInWithPasswordLogin()});
 document.getElementById('authPassword').addEventListener('keydown',e=>{if(e.key==='Enter')signInWithPasswordLogin()});
+document.getElementById('inventoryModalClose').onclick=closeInventoryModal;
+document.getElementById('inventoryModalCancel').onclick=closeInventoryModal;
+document.getElementById('inventoryModalSave').onclick=()=>{if(inventoryModalSaveAction)inventoryModalSaveAction()};
+document.getElementById('inventoryModal').onclick=e=>{if(e.target===e.currentTarget)closeInventoryModal()};
 async function bootstrap(){
+  if(INVENTORY_REVIEW_MODE){
+    state=clone(seed);state.view='inventory';ensureState();syncAllLinkedDeliveries();syncBilling();render();showAuthGate(false);remoteReady=false;currentUser=null;currentUserCanWrite=false;
+    const notice=document.querySelector('.notice');if(notice)notice.innerHTML='<span><strong>SAFE PROTOTYPE:</strong> inventory changes stay on this page only and reset on refresh.</span><span class="small-note" id="accessStatus">Inventory pilot review</span><span class="small-note" id="saveStatus">No live writes</span>';
+    return
+  }
   ensureState();syncAllLinkedDeliveries();syncBilling();render();showAuthGate(true);
   if(!sb){setAuthMessage('Supabase is not connected. Check config.js.',true);const s=document.getElementById('saveStatus');if(s)s.textContent='Live connection unavailable';return}
   const {data}=await sb.auth.getSession();
