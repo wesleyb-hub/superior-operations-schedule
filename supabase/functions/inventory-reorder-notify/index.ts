@@ -53,7 +53,15 @@ Deno.serve(async (request) => {
     let response: Response | null = null;
     let provider: Record<string, unknown> = {};
     for (let deliveryAttempt = 1; deliveryAttempt <= 3; deliveryAttempt += 1) {
-      response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { authorization: `Bearer ${resendKey}`, "content-type": "application/json" }, body: JSON.stringify({ from, to: recipients, subject, text, html }) });
+      response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${resendKey}`,
+          "content-type": "application/json",
+          "Idempotency-Key": `inventory-alert-${alert.alert_id}`,
+        },
+        body: JSON.stringify({ from, to: recipients, subject, text, html }),
+      });
       provider = await response.json().catch(() => ({}));
       if (response.ok || response.status < 500 || deliveryAttempt === 3) break;
       await new Promise((resolve) => setTimeout(resolve, deliveryAttempt * 1500));
