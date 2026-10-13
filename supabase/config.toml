@@ -1,0 +1,2 @@
+[functions.inventory-reorder-notify]
+verify_jwt = false

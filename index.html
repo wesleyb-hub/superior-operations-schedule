@@ -13,6 +13,7 @@
   --shadow:0 8px 24px rgba(19,40,61,.09);
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 button,input,select,textarea{font:inherit}button{cursor:pointer}
 .app{min-height:100vh}
@@ -680,7 +681,7 @@ const INVENTORY_SEED=[
   {code:'RE6',description:'Rebar #6',group:'RM Rebar'},
   {code:'RESW',description:'Rebar Support Wire',group:'RM Rebar'}
 ];
-let currentUser=null,currentUserRole='viewer',currentUserCanWrite=false,lastRevision=0,lastRemoteUpdatedAt='',lastRemoteData=null,structuredBackendReady=false,stateChannel=null,inventoryChannel=null,saveBusy=false,saveQueued=false,queuedReason='Saved',remoteReady=false,lastSharedJson='';
+let currentUser=null,currentUserRole='viewer',currentUserCanWrite=false,currentUserAuthorized=false,currentUserIsAdmin=false,currentAllowedViews=[],currentAllowedWallSubviews=[],lastRevision=0,lastRemoteUpdatedAt='',lastRemoteData=null,structuredBackendReady=false,stateChannel=null,inventoryChannel=null,saveBusy=false,saveQueued=false,queuedReason='Saved',remoteReady=false,lastSharedJson='';
 const divisionMeta={
   boxes:{label:'Box Culverts',unit:'pcs',capacity:2,itemLabel:'Box'},
   manholes:{label:'Manholes',unit:'pcs',capacity:4,itemLabel:'Manhole'},
@@ -798,14 +799,25 @@ async function signOut(){if(sb){if(inventoryChannel)await sb.removeChannel(inven
 function updateAccessStatus(){
   const el=document.getElementById('accessStatus');
   if(!el)return;
-  el.textContent=currentUserCanWrite?'Full access - '+currentUserRole:'Read-only - all dashboards';
+  el.textContent=currentUserCanWrite?'Full access - '+currentUserRole:(currentUserRole==='walls_inventory_counter'?'Superior Walls production + inventory counts':currentUserRole==='plant_manager_readonly'?'Plant manager - read only':'Restricted access');
   el.style.color=currentUserCanWrite?'#23643a':'#8a5a00'
 }
+function viewAllowed(view){return currentUserIsAdmin||currentAllowedViews.includes(view)}
+function wallSubviewAllowed(view){return currentUserIsAdmin||currentAllowedWallSubviews.includes(view)}
+function applyAccessNavigation(){
+  document.querySelectorAll('.tab[data-view]').forEach(button=>button.hidden=!viewAllowed(button.dataset.view));
+  document.querySelectorAll('.operations-nav-group').forEach(group=>group.hidden=!group.querySelector('.tab[data-view]:not([hidden])'));
+  const restricted=!currentUserIsAdmin;
+  ['roleSelect','importHeaderBtn','addBtn','exportBtn','resetBtn'].forEach(id=>{const el=document.getElementById(id);if(el)el.hidden=restricted});
+  if(!viewAllowed(state.view))state.view=currentAllowedViews[0]||'overview';
+  const wallSubview=state.subview?.walls||'current';if(!wallSubviewAllowed(wallSubview))state.subview.walls=currentAllowedWallSubviews[0]||'current';
+}
 async function loadCurrentAccess(user){
-  currentUserRole='viewer';currentUserCanWrite=false;
-  const {data,error}=await sb.from('app_user_roles').select('role,can_write').eq('user_id',user.id).maybeSingle();
+  currentUserRole='none';currentUserCanWrite=false;currentUserAuthorized=false;currentUserIsAdmin=false;currentAllowedViews=[];currentAllowedWallSubviews=[];
+  const {data,error}=await sb.rpc('get_app_access');
   if(error)console.error('Could not load application role:',error);
-  if(data){currentUserRole=data.role||'viewer';currentUserCanWrite=Boolean(data.can_write)}
+  if(data){currentUserAuthorized=Boolean(data.authorized);currentUserRole=data.profile_key||'viewer';currentUserCanWrite=Boolean(data.can_write);currentUserIsAdmin=Boolean(data.is_admin);currentAllowedViews=Array.isArray(data.allowed_views)?data.allowed_views:[];currentAllowedWallSubviews=Array.isArray(data.allowed_wall_subviews)?data.allowed_wall_subviews:[]}
+  applyAccessNavigation();
   updateAccessStatus()
 }
 async function applyRemoteRow(row,notice){
@@ -842,6 +854,7 @@ async function loadRemoteState(manual=false){
     structuredBackendReady=true;
     return await applyRemoteRow(structured.data,manual?'Refreshed structured hub':'Live structured hub')
   }
+  if(!currentUserIsAdmin){structuredBackendReady=false;if(s)s.textContent='Could not load authorized workspace';alert('Your authorized workspace could not be loaded. No unrestricted data was requested.');return false}
   structuredBackendReady=false;
   const {data,error}=await sb.from('schedule_state').select('id,payload,revision,updated_at,updated_by').eq('id',1).single();
   if(error){if(s)s.textContent='Could not load shared hub';alert('Could not load the shared hub: '+error.message);return false}
@@ -868,7 +881,7 @@ async function persistState(reason='Saved'){
   if(!sb||!currentUser||!remoteReady)return false;
   if(!currentUserCanWrite){
     const s=document.getElementById('saveStatus');if(s)s.textContent='Read-only - change discarded';
-    alert('Your account has read-only access. You can view every dashboard, but only authorized editors can save changes.');
+    alert('Your account cannot save shared schedule changes. You can use only the operational sections and inventory actions assigned to your profile.');
     await loadRemoteState(true);
     return false
   }
@@ -902,22 +915,27 @@ function subscribeLive(){
 async function startSession(user){
   if(!user)return;const email=(user.email||'').toLowerCase();
   if(!authAllowed(email)){setAuthMessage('This hub is limited to @'+ALLOWED_EMAIL_DOMAIN+' accounts.',true);await sb.auth.signOut();showAuthGate(true);return}
-  currentUser=user;await loadCurrentAccess(user);showAuthGate(false);const sign=document.getElementById('signOutBtn');if(sign){sign.style.display='inline-block';sign.textContent='Sign Out - '+email.split('@')[0]}
-  await loadRemoteState();subscribeLive();await loadInventory();subscribeInventory()
+  currentUser=user;await loadCurrentAccess(user);if(!currentUserAuthorized){setAuthMessage('This account has not been assigned access to the Superior Operations Hub.',true);await sb.auth.signOut();currentUser=null;showAuthGate(true);return}showAuthGate(false);const sign=document.getElementById('signOutBtn');if(sign){sign.style.display='inline-block';sign.textContent='Sign Out - '+email.split('@')[0]}
+  await loadRemoteState();
+  const requestedView=new URLSearchParams(location.search).get('view');
+  if(requestedView&&viewAllowed(requestedView)){state.view=requestedView;if(requestedView==='walls'&&!wallSubviewAllowed(state.subview.walls))state.subview.walls=currentAllowedWallSubviews[0]||'current';saveUiPrefs();render()}
+  subscribeLive();await loadInventory();subscribeInventory()
 }
 let state={...clone(seed),...loadUiPrefs()},editingWallId=null,editingWallCompletionDirty=false,editingPlanWallId=null,editingProjectId=null,editingPieceProjectId=null,editingPieceId=null,importData=null,importHeaders=[];
-let inventoryItems=[],inventoryReady=false,inventoryLoadError='',inventoryCanView=false,inventoryCanAdjust=false,inventoryCanManage=false,inventoryBusy=false;
+let inventoryItems=[],inventoryEvents=[],inventoryReady=false,inventoryLoadError='',inventoryCanView=false,inventoryCanAdjust=false,inventoryCanManage=false,inventoryBusy=false;
 let inventorySearch='',inventoryFilter='all',inventoryCategory='all',inventoryModalSaveAction=null,inventoryToastTimer=null;
 
 async function loadInventory(){
   if(!sb||!currentUser)return false;inventoryLoadError='';
-  const [itemsResult,accessResult]=await Promise.all([
+  const [itemsResult,accessResult,eventsResult]=await Promise.all([
     sb.from('inventory_items').select('item_id,titan_code,description,category,unit,quantity,reorder_threshold,ordered,version,updated_at,updated_by').eq('division_key','walls').eq('inventory_area','production').order('item_id'),
-    sb.rpc('get_inventory_access')
+    sb.rpc('get_inventory_access'),
+    sb.from('inventory_events').select('event_id,item_id,event_type,quantity_before,quantity_after,detail,occurred_at,actor_email').order('occurred_at',{ascending:false}).limit(50)
   ]);
-  if(itemsResult.error||accessResult.error){inventoryReady=false;inventoryLoadError=(itemsResult.error||accessResult.error).message;console.error('Inventory load failed:',itemsResult.error||accessResult.error);if(state.view==='inventory')renderInventory();return false}
+  if(itemsResult.error||accessResult.error||eventsResult.error){inventoryReady=false;inventoryLoadError=(itemsResult.error||accessResult.error||eventsResult.error).message;console.error('Inventory load failed:',itemsResult.error||accessResult.error||eventsResult.error);if(state.view==='inventory')renderInventory();return false}
   const access=accessResult.data||{};inventoryCanView=Boolean(access.can_view);inventoryCanAdjust=Boolean(access.can_adjust);inventoryCanManage=Boolean(access.can_manage);
   inventoryItems=(itemsResult.data||[]).map(x=>({id:x.item_id,code:x.titan_code,description:x.description,group:x.category,unit:x.unit,qty:x.quantity,threshold:x.reorder_threshold,ordered:Boolean(x.ordered),version:Number(x.version||1),updatedAt:x.updated_at,updatedBy:x.updated_by}));
+  inventoryEvents=(eventsResult.data||[]).map(x=>({id:x.event_id,itemId:x.item_id,type:x.event_type,before:x.quantity_before,after:x.quantity_after,detail:x.detail||{},at:x.occurred_at,actor:x.actor_email}));
   inventoryReady=inventoryCanView;inventoryLoadError=inventoryCanView?'':'Your account does not have inventory access.';if(state.view==='inventory')renderInventory();return inventoryReady
 }
 function subscribeInventory(){
@@ -1447,19 +1465,13 @@ function maybeCompleteProject(j){
 }
 
 function activeJobs(div){return state.jobs.filter(j=>j.division===div&&!j.completedDate)}
-function setView(v){state.view=v;saveState();render()}
-function setSubview(div,v){state.subview[div]=v;saveState();render()}
+function setView(v){if(!viewAllowed(v))return;state.view=v;saveState();render()}
+function setSubview(div,v){if(div==='walls'&&!wallSubviewAllowed(v))return;state.subview[div]=v;saveState();render()}
 function divisionSubtabs(div){
   const v=state.subview[div]||'current',middle=div==='walls'?'Overall Schedule':'Overall Production';
   if(div==='walls'){
-    return `<div class="subtabs">
-      <button class="subtab ${v==='current'?'active':''}" data-sub="current">Current Week</button>
-      <button class="subtab ${v==='overall'?'active':''}" data-sub="overall">Overall Schedule</button>
-      <button class="subtab ${v==='active'?'active':''}" data-sub="active">Active Jobs</button>
-      <button class="subtab ${v==='plans'?'active':''}" data-sub="plans">Plan Review</button>
-      <button class="subtab ${v==='monthly'?'active':''}" data-sub="monthly">Monthly Completion</button>
-      <button class="subtab ${v==='year'?'active':''}" data-sub="year">Year Outlook</button>
-    </div>`
+    const options=[['current','Current Week'],['overall','Overall Schedule'],['active','Active Jobs'],['plans','Plan Review'],['monthly','Monthly Completion'],['year','Year Outlook']];
+    return `<div class="subtabs">${options.filter(([key])=>wallSubviewAllowed(key)).map(([key,label])=>`<button class="subtab ${v===key?'active':''}" data-sub="${key}">${label}</button>`).join('')}</div>`
   }
   return `<div class="subtabs"><button class="subtab ${v==='current'?'active':''}" data-sub="current">Current Week</button><button class="subtab ${v==='overall'?'active':''}" data-sub="overall">${middle}</button><button class="subtab ${v==='monthly'?'active':''}" data-sub="monthly">Monthly Completion</button><button class="subtab ${v==='year'?'active':''}" data-sub="year">Year Outlook</button></div>`
 }
@@ -1495,7 +1507,12 @@ function openInventoryModal(title,sub,body,saveLabel,onSave){
   document.getElementById('inventoryModal').classList.add('open')
 }
 function inventoryEditItem(item){
-  if(!inventoryCanManage){showInventoryToast('This account can view inventory but cannot change counts or minimums.');return}
+  if(!inventoryCanAdjust){showInventoryToast('This account has read-only inventory access.');return}
+  if(!inventoryCanManage){
+    openInventoryModal('Record physical count',`${item.code} · ${item.description}`,`<div class="inventory-field"><label for="inventoryQtyInput">Current physical count (${htmlSafe(item.unit)})</label><input id="inventoryQtyInput" type="number" min="0" step="1" placeholder="Enter count" value="${item.qty??''}"></div><div class="inventory-help">This updates only the physical count. Reorder minimum, unit, item details and purchasing status remain management-controlled.</div>`,'Save count',async()=>{
+      const qty=Number(document.getElementById('inventoryQtyInput').value);if(!Number.isSafeInteger(qty)||qty<0){showInventoryToast('Use zero or a positive whole number.');return}closeInventoryModal();await inventoryRpc('set_inventory_count',{p_item_id:item.id,p_expected_version:item.version,p_quantity:qty},'Physical count saved.')
+    });return
+  }
   const units=['units','boxes','bags','rolls','bundles','pallets','pieces','boards','lengths','sticks'];
   openInventoryModal('Set inventory levels',`${item.code} · ${item.description}`,`<div class="inventory-fields"><div class="inventory-field"><label for="inventoryQtyInput">Current count</label><input id="inventoryQtyInput" type="number" min="0" step="1" placeholder="Not counted" value="${item.qty??''}"></div><div class="inventory-field"><label for="inventoryUnitInput">Counted as</label><select id="inventoryUnitInput">${units.map(u=>`<option ${u===item.unit?'selected':''}>${u}</option>`).join('')}</select></div></div><div class="inventory-field"><label for="inventoryThresholdInput">Reorder when count is at or below</label><input id="inventoryThresholdInput" type="number" min="0" step="1" placeholder="Set minimum" value="${item.threshold??''}"></div><div class="inventory-help">Use the same unit for the stock count and reorder minimum. Saved changes are shared live with authorized users.</div>`,'Save stock',async()=>{
     const q=document.getElementById('inventoryQtyInput').value.trim(),t=document.getElementById('inventoryThresholdInput').value.trim();
@@ -1505,14 +1522,14 @@ function inventoryEditItem(item){
   })
 }
 function inventoryReceive(item){
-  if(!inventoryCanAdjust){showInventoryToast('This account has read-only inventory access.');return}
+  if(!inventoryCanManage){showInventoryToast('Receiving and purchase-status changes require inventory management access.');return}
   openInventoryModal('Receive stock',`${item.code} · ${item.description}`,`<div class="inventory-field"><label for="inventoryReceivedInput">How many ${htmlSafe(item.unit)} received?</label><input id="inventoryReceivedInput" type="number" min="1" step="1" placeholder="Enter quantity"></div><div class="inventory-help">The amount is added atomically to the shared count and the ordered marker is cleared.</div>`,'Receive stock',async()=>{
     const amount=Number(document.getElementById('inventoryReceivedInput').value);if(!Number.isSafeInteger(amount)||amount<1){showInventoryToast('Enter a positive whole number.');return}closeInventoryModal();await inventoryRpc('receive_inventory_stock',{p_item_id:item.id,p_expected_version:item.version,p_quantity:amount},`Received ${amount} ${item.unit}.`)
   })
 }
 function inventoryEmailPreview(item){
   const remaining=item.qty===null?'Not counted':`${item.qty} ${item.unit}`;const threshold=item.threshold===null?'Not set':`${item.threshold} ${item.unit}`;
-  openInventoryModal('Reorder alert preview',`${item.code} · ${item.description}`,`<div class="inventory-help" style="white-space:normal"><strong>Recipients:</strong> Department owners will be assigned later<br><strong>Subject:</strong> Superior Inventory — REORDER: ${htmlSafe(item.description)}<br><br><strong>Material:</strong> ${htmlSafe(item.description)}<br><strong>Titan product:</strong> ${htmlSafe(item.code)}<br><strong>Remaining:</strong> ${htmlSafe(remaining)}<br><strong>Reorder threshold:</strong> ${htmlSafe(threshold)}<br><strong>Order status:</strong> ${item.ordered?'Ordered':'Not ordered'}<br><br>Open Superior Operations Hub → Inventory → Superior Walls → Production.</div><div class="inventory-help" style="margin-top:12px;border-left-color:#c17a13;background:#fff8e8">Email delivery is intentionally inactive until department owners and recipients are assigned.</div>`,'Close',closeInventoryModal)
+  openInventoryModal('Reorder alert preview',`${item.code} · ${item.description}`,`<div class="inventory-help" style="white-space:normal"><strong>Recipient:</strong> Lance Thompson<br><strong>Subject:</strong> Superior Inventory — REORDER: ${htmlSafe(item.description)}<br><br><strong>Material:</strong> ${htmlSafe(item.description)}<br><strong>Titan product:</strong> ${htmlSafe(item.code)}<br><strong>Current quantity:</strong> ${htmlSafe(remaining)}<br><strong>Reorder minimum:</strong> ${htmlSafe(threshold)}<br><strong>Updated by:</strong> ${htmlSafe(item.updatedBy||'Authorized inventory user')}<br><strong>Purchase status:</strong> ${item.ordered?'Ordered':'Not ordered'}<br><br>Open Superior Operations Hub → Inventory → Superior Walls → Production.</div><div class="inventory-help" style="margin-top:12px;border-left-color:#c17a13;background:#fff8e8">Delivery remains inactive until the approved email provider and final message are enabled by management.</div>`,'Close',closeInventoryModal)
 }
 async function updateInventoryQuantity(item,delta){
   if(!inventoryCanAdjust){showInventoryToast('This account has read-only inventory access.');return}if(item.qty===null){inventoryEditItem(item);return}await inventoryRpc('adjust_inventory_quantity',{p_item_id:item.id,p_delta:delta},'Inventory count updated.')
@@ -1534,19 +1551,21 @@ function renderInventory(){
   if(!inventoryReady){document.getElementById('view').innerHTML=`<div class="inventory-shell"><div class="inventory-review-banner"><div><strong>SHARED INVENTORY</strong><div>${htmlSafe(inventoryLoadError||'Loading Superior Walls Production inventory…')}</div></div><span class="small-note">Authenticated access</span></div><section class="inventory-section"><div class="inventory-empty">${inventoryLoadError?`Inventory could not be loaded. <button class="mini" id="inventoryRetry">Try again</button>`:'Connecting to the shared inventory…'}</div></section><div class="inventory-footer">Prepared by Scout for Wes Borgen</div></div>`;const retry=document.getElementById('inventoryRetry');if(retry)retry.onclick=loadInventory;return}
   const reorders=inventoryItems.filter(x=>inventoryStatus(x)==='reorder'),low=inventoryItems.filter(x=>inventoryStatus(x)==='low'),setup=inventoryItems.filter(x=>inventoryStatus(x)==='setup'),ordered=inventoryItems.filter(x=>x.ordered),visible=inventoryFilteredItems();
   document.getElementById('view').innerHTML=`<div class="inventory-shell">
-    <div class="inventory-review-banner" style="border-color:#b8d9c9;border-left-color:#237b57;background:#f1fbf6;color:#24533f"><div><strong style="color:#174a35">LIVE SHARED INVENTORY</strong><div>Counts update in realtime for authorized Superior Operations users.</div></div><span class="small-note" style="color:#386953">${inventoryCanManage?'Management access':inventoryCanAdjust?'Stock adjustment access':'Read-only access'} · Email recipients assigned later</span></div>
+    <div class="inventory-review-banner" style="border-color:#b8d9c9;border-left-color:#237b57;background:#f1fbf6;color:#24533f"><div><strong style="color:#174a35">LIVE SHARED INVENTORY</strong><div>Counts update in realtime for authorized Superior Operations users.</div></div><span class="small-note" style="color:#386953">${inventoryCanManage?'Management access':inventoryCanAdjust?'Physical count access':'Read-only access'} · Reorder alerts route to Lance after activation</span></div>
     <div class="inventory-crumb">Inventory <span>›</span> Superior Walls <span>›</span> <b>Production</b></div>
     <div class="inventory-heading"><div><div class="eyebrow">Superior Walls of North Dakota, LLC</div><h2>Production Inventory</h2><p>Fast stock updates, clear reorder visibility and a simple purchasing handoff.</p></div><div class="inventory-scope">30 Titan materials</div></div>
     <div class="inventory-stats"><button class="inventory-stat green" data-inv-show="all"><div class="inventory-stat-label">Production materials</div><div class="inventory-stat-value">${inventoryItems.length}</div><div class="inventory-stat-sub">Exact Titan catalog</div></button><button class="inventory-stat red" data-inv-show="reorder"><div class="inventory-stat-label">Reorder now</div><div class="inventory-stat-value">${reorders.length}</div><div class="inventory-stat-sub">At or below minimum</div></button><button class="inventory-stat amber" data-inv-show="low"><div class="inventory-stat-label">Low stock</div><div class="inventory-stat-value">${low.length}</div><div class="inventory-stat-sub">One unit above minimum</div></button><button class="inventory-stat blue" data-inv-show="setup"><div class="inventory-stat-label">Needs initial setup</div><div class="inventory-stat-value">${setup.length}</div><div class="inventory-stat-sub">Count or minimum missing</div></button></div>
     <section class="inventory-section watch"><div class="inventory-section-head"><h3><span class="inventory-dot"></span>Reorder needed</h3><small>${reorders.length} material${reorders.length===1?'':'s'} at or below minimum · ${ordered.length} ordered</small></div>${renderInventoryWatch(reorders,'reorder')}</section>
     <section class="inventory-section low-watch"><div class="inventory-section-head"><h3><span class="inventory-dot amber"></span>Low stock watch</h3><small>${low.length} material${low.length===1?'':'s'} approaching minimum</small></div>${renderInventoryWatch(low,'low')}</section>
-    <section class="inventory-section" id="inventoryCatalog"><div class="inventory-section-head"><div><h3>Superior Walls — Production materials</h3><small>${inventoryCanManage?'Use − and + for fast changes; use Set / edit for exact counts and reorder minimums.':inventoryCanAdjust?'Use − and + for stock changes. Reorder settings are managed separately.':'View current counts, reorder levels and ordering status.'}</small></div><small>${visible.length} of ${inventoryItems.length} materials</small></div><div class="inventory-tools"><input id="inventorySearch" type="search" value="${htmlSafe(inventorySearch)}" placeholder="Search Titan product or description" aria-label="Search production inventory"><select id="inventoryCategory" aria-label="Filter category"><option value="all">All categories</option><option value="RM Misc. SW" ${inventoryCategory==='RM Misc. SW'?'selected':''}>RM Misc. SW</option><option value="RM Rebar" ${inventoryCategory==='RM Rebar'?'selected':''}>RM Rebar</option></select><select id="inventoryFilter" aria-label="Filter status"><option value="all">All stock statuses</option><option value="reorder" ${inventoryFilter==='reorder'?'selected':''}>Reorder now</option><option value="low" ${inventoryFilter==='low'?'selected':''}>Low stock</option><option value="setup" ${inventoryFilter==='setup'?'selected':''}>Needs initial setup</option><option value="ok" ${inventoryFilter==='ok'?'selected':''}>In stock</option><option value="ordered" ${inventoryFilter==='ordered'?'selected':''}>Already ordered</option></select></div><div class="inventory-table-wrap"><table class="inventory-table"><thead><tr><th>Titan product</th><th>Description</th><th>Category</th><th>Count remaining</th><th>Reorder at</th><th>Status</th><th>Actions</th></tr></thead><tbody>${visible.map(item=>{const status=inventoryStatus(item);const qty=item.qty===null?(inventoryCanManage?`<button class="mini" data-inv-action="edit" data-code="${htmlSafe(item.code)}">Set count</button>`:'Not counted'):(inventoryCanAdjust?`<div class="inventory-stepper"><button class="mini" data-inv-action="minus" data-code="${htmlSafe(item.code)}" ${item.qty===0?'disabled':''}>−</button><button class="mini inventory-qty" ${inventoryCanManage?'data-inv-action="edit"':''} data-code="${htmlSafe(item.code)}"><strong>${item.qty}</strong><small>${htmlSafe(item.unit)}</small></button><button class="mini" data-inv-action="plus" data-code="${htmlSafe(item.code)}">+</button></div>`:`<strong>${item.qty}</strong> ${htmlSafe(item.unit)}`);const actions=inventoryCanManage?`<button class="mini" data-inv-action="edit" data-code="${htmlSafe(item.code)}">Set / edit</button>${status==='reorder'?(item.ordered?`<button class="mini inventory-btn-blue" data-inv-action="receive" data-code="${htmlSafe(item.code)}">Receive</button>`:`<button class="mini inventory-btn-danger" data-inv-action="order" data-code="${htmlSafe(item.code)}">Order</button>`):''}`:(inventoryCanAdjust&&item.ordered?`<button class="mini inventory-btn-blue" data-inv-action="receive" data-code="${htmlSafe(item.code)}">Receive</button>`:'<span class="small-note">View only</span>');return `<tr class="${status==='reorder'?'reorder-row':status==='low'?'low-row':''}"><td><div class="inventory-product">${htmlSafe(item.code)}</div></td><td><div class="inventory-desc">${htmlSafe(item.description)}</div></td><td><div class="inventory-category">${htmlSafe(item.group)}</div></td><td>${qty}</td><td>${item.threshold===null?(inventoryCanManage?`<button class="mini" data-inv-action="edit" data-code="${htmlSafe(item.code)}">Set minimum</button>`:'Not set'):`${item.threshold} ${htmlSafe(item.unit)}`}</td><td>${inventoryPill(status)}${item.ordered?' <span class="inventory-pill blue">Ordered</span>':''}</td><td><div class="inventory-actions">${actions}</div></td></tr>`}).join('')||'<tr><td colspan="7"><div class="inventory-empty">No materials match this search or filter.</div></td></tr>'}</tbody></table></div></section>
+    <section class="inventory-section" id="inventoryCatalog"><div class="inventory-section-head"><div><h3>Superior Walls — Production materials</h3><small>${inventoryCanManage?'Use − and + for fast changes; use Set / edit for exact counts and reorder minimums.':inventoryCanAdjust?'Use − and + or Record count. Reorder settings and purchasing remain management-controlled.':'View current counts, reorder levels and ordering status.'}</small></div><small>${visible.length} of ${inventoryItems.length} materials</small></div><div class="inventory-tools"><input id="inventorySearch" type="search" value="${htmlSafe(inventorySearch)}" placeholder="Search Titan product or description" aria-label="Search production inventory"><select id="inventoryCategory" aria-label="Filter category"><option value="all">All categories</option><option value="RM Misc. SW" ${inventoryCategory==='RM Misc. SW'?'selected':''}>RM Misc. SW</option><option value="RM Rebar" ${inventoryCategory==='RM Rebar'?'selected':''}>RM Rebar</option></select><select id="inventoryFilter" aria-label="Filter status"><option value="all">All stock statuses</option><option value="reorder" ${inventoryFilter==='reorder'?'selected':''}>Reorder now</option><option value="low" ${inventoryFilter==='low'?'selected':''}>Low stock</option><option value="setup" ${inventoryFilter==='setup'?'selected':''}>Needs initial setup</option><option value="ok" ${inventoryFilter==='ok'?'selected':''}>In stock</option><option value="ordered" ${inventoryFilter==='ordered'?'selected':''}>Already ordered</option></select></div><div class="inventory-table-wrap"><table class="inventory-table"><thead><tr><th>Titan product</th><th>Description</th><th>Category</th><th>Count remaining</th><th>Reorder at</th><th>Status</th><th>Actions</th></tr></thead><tbody>${visible.map(item=>{const status=inventoryStatus(item);const qty=item.qty===null?(inventoryCanAdjust?`<button class="mini" data-inv-action="edit" data-code="${htmlSafe(item.code)}">Record count</button>`:'Not counted'):(inventoryCanAdjust?`<div class="inventory-stepper"><button class="mini" data-inv-action="minus" data-code="${htmlSafe(item.code)}" ${item.qty===0?'disabled':''}>−</button><button class="mini inventory-qty" data-inv-action="edit" data-code="${htmlSafe(item.code)}"><strong>${item.qty}</strong><small>${htmlSafe(item.unit)}</small></button><button class="mini" data-inv-action="plus" data-code="${htmlSafe(item.code)}">+</button></div>`:`<strong>${item.qty}</strong> ${htmlSafe(item.unit)}`);const actions=inventoryCanManage?`<button class="mini" data-inv-action="edit" data-code="${htmlSafe(item.code)}">Set / edit</button>${status==='reorder'?(item.ordered?`<button class="mini inventory-btn-blue" data-inv-action="receive" data-code="${htmlSafe(item.code)}">Receive</button>`:`<button class="mini inventory-btn-danger" data-inv-action="order" data-code="${htmlSafe(item.code)}">Order</button>`):''}`:(inventoryCanAdjust?`<button class="mini" data-inv-action="edit" data-code="${htmlSafe(item.code)}">Record count</button>`:'<span class="small-note">View only</span>');return `<tr class="${status==='reorder'?'reorder-row':status==='low'?'low-row':''}"><td><div class="inventory-product">${htmlSafe(item.code)}</div></td><td><div class="inventory-desc">${htmlSafe(item.description)}</div></td><td><div class="inventory-category">${htmlSafe(item.group)}</div></td><td>${qty}</td><td>${item.threshold===null?(inventoryCanManage?`<button class="mini" data-inv-action="edit" data-code="${htmlSafe(item.code)}">Set minimum</button>`:'Not set'):`${item.threshold} ${htmlSafe(item.unit)}`}</td><td>${inventoryPill(status)}${item.ordered?' <span class="inventory-pill blue">Ordered</span>':''}</td><td><div class="inventory-actions">${actions}</div></td></tr>`}).join('')||'<tr><td colspan="7"><div class="inventory-empty">No materials match this search or filter.</div></td></tr>'}</tbody></table></div></section>
+    <section class="inventory-section"><div class="inventory-section-head"><div><h3>Recent inventory activity</h3><small>Physical counts and management actions are recorded with employee and timestamp.</small></div><small>${inventoryEvents.length} recent event${inventoryEvents.length===1?'':'s'}</small></div><div class="inventory-table-wrap"><table class="inventory-table"><thead><tr><th>When</th><th>Material</th><th>Action</th><th>Previous</th><th>New</th><th>Employee</th></tr></thead><tbody>${inventoryEvents.map(event=>{const item=inventoryItems.find(x=>x.id===event.itemId);return `<tr><td>${new Date(event.at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</td><td><strong>${htmlSafe(item?.code||'Material')}</strong><br><span class="small-note">${htmlSafe(item?.description||'')}</span></td><td>${htmlSafe(event.type.replaceAll('_',' '))}</td><td>${event.before??'—'}</td><td>${event.after??'—'}</td><td>${htmlSafe(event.actor||'Authorized user')}</td></tr>`}).join('')||'<tr><td colspan="6"><div class="inventory-empty">No inventory activity has been recorded yet.</div></td></tr>'}</tbody></table></div></section>
     <div class="inventory-footer">Shared Superior Operations data · Prepared by Scout for Wes Borgen</div>
   </div>`;
   bindInventoryActions()
 }
 
 function render(){
+  applyAccessNavigation();
   const mobileNavStatus=document.getElementById('mobileNavStatus');
   if(mobileNavStatus)mobileNavStatus.style.display=window.matchMedia('(max-width:760px)').matches?'block':'none';
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===state.view));
@@ -1571,6 +1590,20 @@ function renderOverview(){
 
   const wd=weekDates();
   const activeWallsList=state.walls.filter(w=>!wallIsCompleted(w));
+  if(!currentUserIsAdmin){
+    const wallDigs=activeWallsList.filter(w=>weekStart(w.digDate)===state.week).length;
+    const wallProduction=activeWallsList.filter(w=>weekStart(w.productionDate)===state.week).length;
+    const wallInstalls=activeWallsList.filter(w=>weekStart(w.installDate)===state.week).length;
+    const wallWeekJobs=activeWallsList.filter(w=>[weekStart(w.digDate),weekStart(w.productionDate),weekStart(w.installDate)].includes(state.week));
+    const missingDates=activeWallsList.filter(w=>!w.productionDate||!w.installDate);
+    document.getElementById('view').innerHTML=`
+      <div class="stats">${kpi('Active Wall Jobs',activeWallsList.length)}${kpi('Digs This Week',wallDigs)}${kpi('Production This Week',wallProduction)}${kpi('Installs This Week',wallInstalls)}</div>
+      <div class="overview-heading"><div><h2>Superior Walls Production</h2><p>Your assigned operations view for the week of ${fmt(state.week)}.</p></div></div>
+      <div class="product-scorecards"><button type="button" class="product-scorecard" data-score-jump="walls"><div class="product-score-head"><div class="product-score-name">Superior Walls</div><div class="product-score-arrow">→</div></div><div class="product-score-main"><div class="product-score-value">${wallWeekJobs.length}</div><div class="product-score-label">jobs touching this week's schedule</div></div><div class="product-score-grid"><div class="product-score-metric"><span>Digs</span><strong>${wallDigs}</strong></div><div class="product-score-metric"><span>Production</span><strong>${wallProduction}</strong></div><div class="product-score-metric"><span>Installs</span><strong>${wallInstalls}</strong></div></div><div class="product-score-alert ${missingDates.length?'risk':'good'}">${missingDates.length?`${missingDates.length} active job${missingDates.length===1?'':'s'} missing a production or install date`:'No missing production or install dates'}</div></button></div>
+      <section class="section"><div class="section-head"><h3>Production Schedule Attention</h3><span class="muted" style="font-size:11px">Superior Walls only</span></div><div class="section-body"><div class="attention-grid">${missingDates.length?missingDates.slice(0,12).map(w=>`<div class="attention-card"><div class="attention-title">Missing wall date — ${htmlSafe(w.job)}</div><div class="attention-text">${!w.productionDate?'Production date':''}${!w.productionDate&&!w.installDate?' and ':''}${!w.installDate?'Install date':''} missing.</div></div>`).join(''):'<div class="attention-card ok"><div class="attention-title">No schedule-date exceptions</div><div class="attention-text">All active jobs have production and install dates.</div></div>'}</div></div></section>`;
+    document.querySelectorAll('[data-score-jump="walls"]').forEach(b=>b.onclick=()=>{state.subview.walls='current';state.view='walls';saveState();render()});
+    return
+  }
   const activeWalls=activeWallsList.length;
   const activePrecast=state.jobs.filter(j=>!j.completedDate).length;
 
@@ -1704,16 +1737,18 @@ function wallStageLabel(stage){
   return stage==='dig'?'Dig':stage==='prod'?'Production':'Install'
 }
 function wallCard(w,stage,date,dragMode=false){
-  const dragAttrs=dragMode?` draggable="true" data-drag-wall="${w.id}" data-drag-stage="${stage}"`:'';
+  const canManage=currentUserIsAdmin;
+  const canDrag=canManage&&dragMode;
+  const dragAttrs=canDrag?` draggable="true" data-drag-wall="${w.id}" data-drag-stage="${stage}"`:'';
   return `<div class="wall-job ${wallIsCompleted(w)?'complete':''} ${dragMode?'draggable':''}"${dragAttrs}>
-    <div class="wall-job-top"><button type="button" draggable="false" class="job-link" data-wall="${w.id}">${w.job}</button><div class="badges"><span class="badge ${w.source==='Verity'?'verity':'other'}">${w.source}</span><span class="badge ${w.saleType==='Pre-Sold'?'presold':w.saleType==='Inventory'?'inventory':w.saleType==='BTR'?'btr':w.saleType==='Mixed'?'mixed':'other'}">${w.saleType}</span></div></div>
+    <div class="wall-job-top">${canManage?`<button type="button" draggable="false" class="job-link" data-wall="${w.id}">${w.job}</button>`:`<strong>${htmlSafe(w.job)}</strong>`}<div class="badges"><span class="badge ${w.source==='Verity'?'verity':'other'}">${w.source}</span><span class="badge ${w.saleType==='Pre-Sold'?'presold':w.saleType==='Inventory'?'inventory':w.saleType==='BTR'?'btr':w.saleType==='Mixed'?'mixed':'other'}">${w.saleType}</span></div></div>
     <div class="wall-model">${w.type||'—'}</div><div class="wall-dev">${w.project||w.development||'—'}</div>${w.development&&w.development!==w.project?`<div class="job-sub">${w.development}</div>`:''}<div class="wall-address">${w.address||'—'}</div>
     ${w.constraint?`<div class="job-sub" style="margin-top:5px;color:#9a5d16"><strong>Constraint:</strong> ${w.constraint}</div>`:''}${linkListHtml(w.links)}
     <div class="milestone ${stage}">${stage==='dig'?'Dig Week':stage==='prod'?'Production':'Install'}: ${fmt(date)}</div>${w.deliveryDate?`<div class="job-sub" style="margin-top:5px;font-weight:850">Delivery: ${fmt(w.deliveryDate)}</div>`:''}
-    ${stage==='prod'?(wallPlanReleased(w)?`<div class="plan-ok">✓ Released for Production</div>`:`<div class="plan-warning">⚠ NOT RELEASED FOR PRODUCTION · ${wallPlanCurrentStage(w).label}</div>`):''}
-    ${dragMode?`<div class="drag-hint">Grab anywhere on this card and drag it to the same lane in another week.</div>`:''}
+    ${canManage&&stage==='prod'?(wallPlanReleased(w)?`<div class="plan-ok">✓ Released for Production</div>`:`<div class="plan-warning">⚠ NOT RELEASED FOR PRODUCTION · ${wallPlanCurrentStage(w).label}</div>`):''}
+    ${canDrag?`<div class="drag-hint">Grab anywhere on this card and drag it to the same lane in another week.</div>`:''}
     ${wallLfSummary(w)?`<div class="wall-lf-breakdown">${wallLfSummary(w)}</div>`:''}
-    <div class="wall-foot"><span>${w.units||1} unit${Number(w.units||1)===1?'':'s'} / shell${Number(w.units||1)===1?'':'s'}${Number(w.lf||0)>0?' · '+Number(w.lf).toLocaleString()+' total LF':''}</span><div class="wall-actions">${dragMode?`<button type="button" draggable="false" data-move-wall="${w.id}|${stage}|-7">← 1 wk</button><button type="button" draggable="false" data-move-wall="${w.id}|${stage}|7">1 wk →</button>`:''}<button type="button" draggable="false" data-wall="${w.id}">Edit</button><button type="button" draggable="false" data-plan-review="${w.id}">Plans</button>${!wallIsCompleted(w)?`<button type="button" draggable="false" data-complete-wall="${w.id}">Complete</button>`:''}</div></div>
+    <div class="wall-foot"><span>${w.units||1} unit${Number(w.units||1)===1?'':'s'} / shell${Number(w.units||1)===1?'':'s'}${Number(w.lf||0)>0?' · '+Number(w.lf).toLocaleString()+' total LF':''}</span>${canManage?`<div class="wall-actions">${canDrag?`<button type="button" draggable="false" data-move-wall="${w.id}|${stage}|-7">← 1 wk</button><button type="button" draggable="false" data-move-wall="${w.id}|${stage}|7">1 wk →</button>`:''}<button type="button" draggable="false" data-wall="${w.id}">Edit</button><button type="button" draggable="false" data-plan-review="${w.id}">Plans</button>${!wallIsCompleted(w)?`<button type="button" draggable="false" data-complete-wall="${w.id}">Complete</button>`:''}</div>`:''}</div>
   </div>`
 }
 function wallWeekCard(week,dragMode=false){
@@ -1753,14 +1788,14 @@ function renderWalls(){
       ${kpi('Active Wall Jobs',active.length)}
       ${kpi('Digs This Week',digs.length)}
       ${kpi('Production This Week',prods.length)}
-      ${kpi('Released for Production',released)}
-      ${kpi('Plan Review Hold',planHold,planHold?'Production scheduled but not released':'')}
+      ${currentUserIsAdmin?kpi('Released for Production',released):''}
+      ${currentUserIsAdmin?kpi('Plan Review Hold',planHold,planHold?'Production scheduled but not released':''):''}
       ${kpi('Installs This Week',installs.length)}
       ${kpi('Completed This Month',cm.length)}
     </div>
     <div class="toolbar" style="margin:0 0 12px">
       <div class="muted" style="font-size:11px">Current Week is intentionally focused only on this week’s Digs, Production, and Installs.</div>
-      <button type="button" class="mini" id="addWallBtn">+ Add Wall Job</button>
+      ${currentUserIsAdmin?'<button type="button" class="mini" id="addWallBtn">+ Add Wall Job</button>':''}
     </div>
     <div class="wall-week-grid">${wallWeekCard(state.week,false)}</div>`;
   bindWallControls()
@@ -1790,28 +1825,27 @@ function renderWallsActive(){
           <h3>All Active Wall Jobs</h3>
           <div class="muted" style="font-size:11px">For older jobs, choose the month the work was actually completed, then mark it complete. You do not need to invent an exact day.</div>
         </div>
-        <div class="active-jobs-toolbar no-print">
+        ${currentUserIsAdmin?`<div class="active-jobs-toolbar no-print">
           <input id="activeWallSearch" placeholder="Search job, model, project, development..." />
           <input id="bulkCompletionMonth" class="completion-month" type="month" title="Completion month for selected jobs" />
           <button type="button" class="bulk-complete" id="completeSelectedWalls">Complete Selected</button>
           <button type="button" class="mini" id="addWallBtn">+ Add Wall Job</button>
-        </div>
+        </div>`:''}
       </div>
       <div class="section-body lookahead">
         <table id="activeWallsTable">
           <thead><tr>
-            <th class="no-print"><input type="checkbox" id="selectAllActiveWalls" title="Select all visible jobs"></th>
+            ${currentUserIsAdmin?'<th class="no-print"><input type="checkbox" id="selectAllActiveWalls" title="Select all visible jobs"></th>':''}
             <th>Job #</th><th>Model</th><th>Project</th><th>Development</th>
-            <th>Dig</th><th>Production</th><th>Install</th><th>Status</th><th>Plan Review</th>
-            <th class="no-print">Completion Month / Action</th>
+            <th>Dig</th><th>Production</th><th>Install</th><th>Status</th>${currentUserIsAdmin?'<th>Plan Review</th><th class="no-print">Completion Month / Action</th>':''}
           </tr></thead>
           <tbody>
             ${active.length?active.map(w=>{
               const late=w.installDate&&normalizeDate(w.installDate)<today;
               const search=[w.job,w.type,w.project,w.development,w.customer,w.address].join(' ').toLowerCase();
               return `<tr class="${late?'past-due':''}" data-active-wall-row="${w.id}" data-search="${search.replace(/"/g,'&quot;')}">
-                <td class="no-print"><input type="checkbox" data-wall-select="${w.id}"></td>
-                <td><button class="job-link" data-wall="${w.id}">${w.job}</button></td>
+                ${currentUserIsAdmin?`<td class="no-print"><input type="checkbox" data-wall-select="${w.id}"></td>`:''}
+                <td>${currentUserIsAdmin?`<button class="job-link" data-wall="${w.id}">${w.job}</button>`:htmlSafe(w.job)}</td>
                 <td>${w.type||'—'}</td>
                 <td>${w.project||'—'}</td>
                 <td>${w.development||'—'}</td>
@@ -1819,13 +1853,13 @@ function renderWallsActive(){
                 <td>${fmt(w.productionDate)}</td>
                 <td>${fmt(w.installDate)}</td>
                 <td>${late?'<span class="past-due-label">Past Install Date</span>':'Active'}</td>
-                <td><button type="button" class="mini" data-plan-review="${w.id}">${wallPlanReleased(w)?'Released':wallPlanCurrentStage(w).label}</button></td>
+                ${currentUserIsAdmin?`<td><button type="button" class="mini" data-plan-review="${w.id}">${wallPlanReleased(w)?'Released':wallPlanCurrentStage(w).label}</button></td>
                 <td class="no-print">
                   <div class="completion-cell">
                     <input class="completion-month" type="month" data-completion-month="${w.id}" />
                     <button type="button" class="quick-complete" data-quick-complete-wall="${w.id}">Complete</button>
                   </div>
-                </td>
+                </td>`:''}
               </tr>`
             }).join(''):'<tr><td colspan="11" class="empty">No active Wall jobs.</td></tr>'}
           </tbody>
@@ -2066,10 +2100,10 @@ function quickCompleteWall(id,month,rerender=true){
 function renderWallsOverall(){
   const weeks=[-14,-7,0,7,14,21,28,35,42,49].map(n=>addDays(state.week,n));
   document.getElementById('view').innerHTML=`${divisionSubtabs('walls')}
-    <div class="notice"><span><strong>Simple Wall scheduling:</strong> grab the job card itself and drag it up or down to another week in the same column. Dig moves Dig, Production moves Production, and Install moves Install. The Current Week screen changes automatically because it is the same job record.</span><span>← 1 wk / 1 wk → still works as a backup.</span></div>
-    <div class="wall-week-grid">${weeks.map(w=>wallWeekCard(w,true)).join('')}</div>`;
+    ${currentUserIsAdmin?'<div class="notice"><span><strong>Simple Wall scheduling:</strong> grab the job card itself and drag it up or down to another week in the same column. Dig moves Dig, Production moves Production, and Install moves Install. The Current Week screen changes automatically because it is the same job record.</span><span>← 1 wk / 1 wk → still works as a backup.</span></div>':''}
+    <div class="wall-week-grid">${weeks.map(w=>wallWeekCard(w,currentUserIsAdmin)).join('')}</div>`;
   bindWallControls();
-  bindWallDragDrop()
+  if(currentUserIsAdmin)bindWallDragDrop()
 }
 function moveWallMilestone(wallId,stage,targetWeek){
   const w=state.walls.find(x=>x.id===wallId);if(!w)return;
@@ -3402,7 +3436,11 @@ document.getElementById('inventoryModalSave').onclick=()=>{if(inventoryModalSave
 document.getElementById('inventoryModal').onclick=e=>{if(e.target===e.currentTarget)closeInventoryModal()};
 async function bootstrap(){
   if(INVENTORY_REVIEW_MODE){
-    state=clone(seed);state.view='inventory';ensureState();syncAllLinkedDeliveries();syncBilling();render();showAuthGate(false);remoteReady=false;currentUser=null;currentUserCanWrite=false;
+    currentUserAuthorized=true;currentUserIsAdmin=false;currentUserRole='walls_inventory_counter';currentAllowedViews=['overview','walls','inventory'];currentAllowedWallSubviews=['current','overall','active'];currentUserCanWrite=false;
+    inventoryCanView=true;inventoryCanAdjust=true;inventoryCanManage=false;inventoryReady=true;
+    inventoryItems=INVENTORY_SEED.map((item,index)=>({id:index+1,...item,unit:'units',qty:index%7===0?0:Math.max(3,34-index),threshold:index%7===0?5:10,ordered:index===7,version:1,updatedAt:new Date().toISOString(),updatedBy:'review@superiorwallsnd.com'}));
+    inventoryEvents=inventoryItems.slice(0,6).map((item,index)=>({id:index+1,itemId:item.id,type:'corrected',before:item.qty+2,after:item.qty,detail:{count_only:true},at:new Date(Date.now()-index*3600000).toISOString(),actor:'review@superiorwallsnd.com'}));
+    state=clone(seed);state.view='inventory';ensureState();syncAllLinkedDeliveries();syncBilling();render();showAuthGate(false);remoteReady=false;currentUser=null;
     const notice=document.querySelector('.notice');if(notice)notice.innerHTML='<span><strong>SAFE PROTOTYPE:</strong> inventory changes stay on this page only and reset on refresh.</span><span class="small-note" id="accessStatus">Inventory pilot review</span><span class="small-note" id="saveStatus">No live writes</span>';
     return
   }
