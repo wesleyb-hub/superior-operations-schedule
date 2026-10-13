@@ -428,6 +428,28 @@ body.inventory-active .header-actions{display:none}
 .inventory-modal-backdrop{position:fixed;inset:0;z-index:220;background:rgba(10,24,38,.68);display:none;align-items:center;justify-content:center;padding:18px}.inventory-modal-backdrop.open{display:flex}.inventory-modal{width:min(520px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:13px;box-shadow:0 24px 80px rgba(0,0,0,.3)}.inventory-modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:15px;padding:18px 19px;border-bottom:1px solid #e2e7eb}.inventory-modal-head h3{margin:0 0 4px;color:#17334d}.inventory-modal-body{padding:18px 19px}.inventory-modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:13px 19px;border-top:1px solid #e2e7eb;background:#fafbfc}.inventory-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}.inventory-field{margin-bottom:13px}.inventory-field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.055em;font-weight:900;color:#5d6e7d;margin-bottom:6px}.inventory-field input,.inventory-field select{width:100%;min-height:43px;border:1px solid #ccd6de;border-radius:8px;padding:9px 11px;font-size:16px}.inventory-help{background:#f1f6fa;border-left:3px solid #4380ae;padding:11px 12px;border-radius:6px;color:#506d84;font-size:11px;line-height:1.5}.inventory-toast{position:fixed;right:18px;bottom:18px;z-index:260;background:#17334d;color:#fff;border-radius:9px;padding:12px 15px;max-width:min(440px,calc(100vw - 36px));box-shadow:0 14px 34px rgba(0,0,0,.24);font-size:12px;display:none}.inventory-toast.show{display:block}
 @media(max-width:900px){.inventory-stats{grid-template-columns:1fr 1fr}.inventory-heading{align-items:flex-start;flex-direction:column}.inventory-watch-item{grid-template-columns:1fr}.inventory-watch-actions{justify-content:flex-start}}
 @media(max-width:620px){.inventory-stats{grid-template-columns:1fr 1fr}.inventory-review-banner{align-items:flex-start;flex-direction:column}.inventory-section-head{align-items:flex-start;flex-direction:column}.inventory-tools{flex-direction:column}.inventory-tools input,.inventory-tools select{width:100%;min-width:0}.inventory-table{min-width:0}.inventory-table thead{display:none}.inventory-table,.inventory-table tbody{display:block}.inventory-table tr{display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:14px;border-top:1px solid #e1e7ec}.inventory-table td{display:block;border:0;padding:0}.inventory-table td:nth-child(1),.inventory-table td:nth-child(2),.inventory-table td:nth-child(3),.inventory-table td:nth-child(7){grid-column:1/-1}.inventory-table td:nth-child(5){text-align:right}.inventory-actions .btn{flex:1}.inventory-fields{grid-template-columns:1fr}.inventory-modal-backdrop{align-items:flex-end;padding:0}.inventory-modal{width:100%;border-radius:15px 15px 0 0}}
+
+/* 2026-10-13 navigation shell: layout-only; operational views and identifiers are unchanged. */
+:root{--operations-side:258px}
+.operations-sidebar{position:fixed;inset:0 auto 0 0;width:var(--operations-side);z-index:75;display:flex;flex-direction:column;color:#c8d7e2;background:linear-gradient(180deg,#132d44 0%,#10263b 66%,#0c2033 100%);box-shadow:3px 0 20px rgba(13,30,45,.13);transition:width .2s ease,transform .22s ease}
+.operations-brand{height:78px;display:flex;align-items:center;gap:11px;padding:15px 16px;border-bottom:1px solid rgba(255,255,255,.09);flex:0 0 auto}
+.operations-brandmark{height:41px;width:41px;display:grid;place-items:center;border-radius:11px;background:var(--accent);color:var(--navy);font-size:21px;font-weight:950;letter-spacing:-.08em;flex:0 0 auto}
+.operations-brandcopy{min-width:0}.operations-brandcopy strong{display:block;color:#fff;font-size:14px;letter-spacing:.04em}.operations-brandcopy span{display:block;color:#a9bfd0;font-size:9px;letter-spacing:.11em;margin-top:3px;white-space:nowrap}
+.operations-sidebar .tabs{display:block;flex:1;overflow-y:auto;overflow-x:hidden;margin:0;padding:13px 10px 16px;background:transparent;border-radius:0;scrollbar-width:thin;scrollbar-color:#40627a transparent}
+.operations-nav-group{margin-bottom:14px}.operations-nav-heading{padding:7px 12px 6px;color:#7393aa;font-size:9px;font-weight:900;letter-spacing:.16em;text-transform:uppercase;white-space:nowrap}
+.operations-sidebar .tab{width:100%;min-height:42px;display:flex;align-items:center;gap:11px;margin:2px 0;padding:10px 11px;border-radius:9px;color:#c6d5e1;background:transparent;text-align:left;font-size:12px;font-weight:720;white-space:nowrap;transition:background .12s ease,color .12s ease}
+.operations-sidebar .tab:hover{background:rgba(255,255,255,.09);color:#fff}.operations-sidebar .tab.active{background:#31526e;color:#fff;box-shadow:inset 3px 0 0 #d8a34e}
+.operations-nav-symbol{height:24px;min-width:24px;padding:0 4px;display:grid;place-items:center;border-radius:7px;background:rgba(255,255,255,.09);color:#b9cfdd;font-size:8px;font-weight:950;letter-spacing:.02em;flex:0 0 auto}.operations-sidebar .tab.active .operations-nav-symbol{background:rgba(239,193,125,.15);color:#efc17d}
+.operations-nav-label{overflow:hidden;text-overflow:ellipsis}
+.operations-sidebottom{flex:0 0 auto;padding:11px;border-top:1px solid rgba(255,255,255,.11)}
+.operations-side-status{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.065)}.operations-side-dot{width:8px;height:8px;border-radius:50%;background:#43a878;flex:0 0 auto}.operations-sidecopy{min-width:0}.operations-sidecopy strong{display:block;color:#fff;font-size:10px}.operations-sidecopy span{display:block;color:#91abbd;font-size:9px;margin-top:3px;white-space:nowrap}
+.operations-collapse,.operations-menu{border:0;display:grid;place-items:center;color:inherit}.operations-collapse{margin-left:auto;width:31px;height:31px;border-radius:7px;background:transparent;color:#a4bbca;font-size:18px}.operations-collapse:hover{background:rgba(255,255,255,.13);color:#fff}
+.operations-frame{min-width:0;margin-left:var(--operations-side);transition:margin-left .2s ease}.operations-frame .topbar{background:#fff;color:var(--navy);border-bottom:1px solid var(--line);box-shadow:0 3px 14px rgba(19,40,61,.05)}.operations-frame .topbar-inner{max-width:none}.operations-frame .topbar .eyebrow{color:#718393}.operations-frame .topbar h1{font-size:23px}.operations-frame .topbar .btn{border-color:#d1dbe3;background:#f7f9fb;color:#35516a}.operations-frame .topbar .btn:hover{background:#eef3f6}.operations-frame .topbar .btn.light{background:#fff;color:var(--navy)}.operations-frame .topbar .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.operations-frame .role-select{border-color:#cbd6de;background:#fff;color:var(--navy)}
+.operations-menu{display:none;width:42px;height:42px;border-radius:9px;background:#eef3f6;color:var(--navy);font-size:22px;flex:0 0 auto}.operations-title-wrap{display:flex;align-items:center;gap:12px}.operations-backdrop{display:none}
+body.operations-nav-collapsed{--operations-side:76px}body.operations-nav-collapsed .operations-brand{justify-content:center;padding:15px 8px}body.operations-nav-collapsed .operations-brandcopy,body.operations-nav-collapsed .operations-nav-heading,body.operations-nav-collapsed .operations-nav-label,body.operations-nav-collapsed .operations-sidecopy{display:none}body.operations-nav-collapsed .operations-sidebar .tabs{padding:13px 9px}body.operations-nav-collapsed .operations-sidebar .tab{justify-content:center;padding:10px 0}body.operations-nav-collapsed .operations-nav-symbol{height:30px;min-width:34px}body.operations-nav-collapsed .operations-side-status{justify-content:center;padding:11px 4px}body.operations-nav-collapsed .operations-side-dot{display:none}body.operations-nav-collapsed .operations-collapse{margin:0}
+@media print{.operations-sidebar,.operations-menu,.operations-backdrop{display:none!important}.operations-frame{margin-left:0!important}}
+@media(max-width:900px){:root,body.operations-nav-collapsed{--operations-side:268px}.operations-sidebar{width:268px;transform:translateX(-103%);box-shadow:none}.operations-sidebar.open{transform:translateX(0);box-shadow:8px 0 35px rgba(8,22,33,.3)}.operations-frame{margin-left:0!important}.operations-menu{display:grid}.operations-collapse{display:none}.operations-backdrop.open{display:block;position:fixed;inset:0;z-index:70;background:rgba(9,26,40,.47)}.operations-sidebar .tabs{position:static;z-index:auto;margin:0;padding:13px 10px 16px;border:0;background:transparent;overflow-y:auto;overflow-x:hidden;flex-wrap:initial}.operations-sidebar .tab{min-height:44px;padding:10px 11px}.operations-title-wrap{width:100%}.operations-frame .topbar{position:sticky;top:0;z-index:60}.operations-frame .brand-row{align-items:flex-start}.operations-frame .topbar h1{font-size:20px}}
+@media(max-width:760px){.operations-frame .topbar-inner{padding:10px}.operations-frame .brand-row{gap:9px}.operations-frame .header-actions{margin-left:54px;width:calc(100% - 54px)}.operations-frame .topbar .eyebrow{font-size:9px}.operations-frame .topbar h1{font-size:18px}.operations-frame .main{padding-top:14px}}
 </style>
 </head>
 <body>
@@ -443,9 +465,39 @@ body.inventory-active .header-actions{display:none}
   </div>
 </div>
 <div class="app">
+<aside class="operations-sidebar" id="operationsSidebar" aria-label="Primary navigation">
+  <div class="operations-brand"><div class="operations-brandmark">S</div><div class="operations-brandcopy"><strong>SUPERIOR</strong><span>OPERATIONS HUB</span></div></div>
+  <div class="tabs" aria-label="Main operations sections">
+    <div class="operations-nav-group"><div class="operations-nav-heading">Workspace</div>
+      <button class="tab" data-view="overview" title="Overview"><span class="operations-nav-symbol">O</span><span class="operations-nav-label">Overview</span></button>
+    </div>
+    <div class="operations-nav-group"><div class="operations-nav-heading">Product Divisions</div>
+      <button class="tab active" data-view="walls" title="Superior Walls"><span class="operations-nav-symbol">SW</span><span class="operations-nav-label">Superior Walls</span></button>
+      <button class="tab" data-view="boxes" title="Box Culverts"><span class="operations-nav-symbol">BC</span><span class="operations-nav-label">Box Culverts</span></button>
+      <button class="tab" data-view="manholes" title="Manholes"><span class="operations-nav-symbol">MH</span><span class="operations-nav-label">Manholes</span></button>
+      <button class="tab" data-view="fence" title="Precast Fence"><span class="operations-nav-symbol">PF</span><span class="operations-nav-label">Precast Fence</span></button>
+      <button class="tab" data-view="block" title="Precast Block"><span class="operations-nav-symbol">PB</span><span class="operations-nav-label">Precast Block</span></button>
+    </div>
+    <div class="operations-nav-group"><div class="operations-nav-heading">Operations</div>
+      <button class="tab" data-view="qc" title="Quality Control"><span class="operations-nav-symbol">QC</span><span class="operations-nav-label">QC</span></button>
+      <button class="tab" data-view="delivery" title="Delivery"><span class="operations-nav-symbol">DL</span><span class="operations-nav-label">Delivery</span></button>
+      <button class="tab" data-view="inventory" title="Inventory"><span class="operations-nav-symbol">IN</span><span class="operations-nav-label">Inventory</span></button>
+      <button class="tab" data-view="billing" title="Billing / Completions"><span class="operations-nav-symbol">BL</span><span class="operations-nav-label">Billing / Completions</span></button>
+      <button class="tab" data-view="exceptions" title="Exceptions"><span class="operations-nav-symbol">EX</span><span class="operations-nav-label">Exceptions</span></button>
+    </div>
+    <div class="operations-nav-group"><div class="operations-nav-heading">Tools &amp; Records</div>
+      <button class="tab" data-view="import" title="Import Center"><span class="operations-nav-symbol">IM</span><span class="operations-nav-label">Import Center</span></button>
+      <button class="tab" data-view="audit" title="Weekly Change Log"><span class="operations-nav-symbol">CL</span><span class="operations-nav-label">Weekly Change Log</span></button>
+      <button class="tab" data-view="history" title="History"><span class="operations-nav-symbol">H</span><span class="operations-nav-label">History</span></button>
+    </div>
+  </div>
+  <div class="operations-sidebottom"><div class="operations-side-status"><span class="operations-side-dot"></span><div class="operations-sidecopy"><strong>Live team hub</strong><span>Shared operational data</span></div><button class="operations-collapse" id="operationsNavCollapse" type="button" aria-label="Collapse navigation" title="Collapse navigation">‹</button></div></div>
+</aside>
+<div class="operations-backdrop" id="operationsNavBackdrop"></div>
+<div class="operations-frame">
 <header class="topbar"><div class="topbar-inner">
   <div class="brand-row">
-    <div><div class="eyebrow">Superior Operations</div><h1>Master Operations Hub</h1></div>
+    <div class="operations-title-wrap"><button class="operations-menu" id="operationsNavMenu" type="button" aria-label="Open navigation" aria-expanded="false">☰</button><div><div class="eyebrow">Superior Operations</div><h1>Master Operations Hub</h1></div></div>
     <div class="header-actions">
       <select id="roleSelect" class="role-select" title="Quick role view"><option>Management</option><option>Production</option><option>QC</option><option>Delivery</option><option>Accounting</option></select><button class="btn light" id="currentWeekBtn">Current Week</button><button class="btn" id="importHeaderBtn">Import Schedule</button>
       <button class="btn primary" id="addBtn">+ Add Work</button>
@@ -458,16 +510,6 @@ body.inventory-active .header-actions{display:none}
 </div></header>
 
 <main class="main">
-  <div class="tabs">
-    <button class="tab" data-view="overview">Overview</button>
-    <button class="tab active" data-view="walls">Superior Walls</button>
-    <button class="tab" data-view="boxes">Box Culverts</button>
-    <button class="tab" data-view="manholes">Manholes</button>
-    <button class="tab" data-view="fence">Precast Fence</button>
-    <button class="tab" data-view="block">Precast Block</button>
-    <button class="tab" data-view="qc">QC</button>
-    <button class="tab" data-view="delivery">Delivery</button><button class="tab" data-view="inventory">Inventory</button><button class="tab" data-view="billing">Billing / Completions</button><button class="tab" data-view="exceptions">Exceptions</button><button class="tab" data-view="import">Import Center</button><button class="tab" data-view="audit">Weekly Change Log</button><button class="tab" data-view="history">History</button>
-  </div>
   <div class="toolbar">
     <div><div class="muted" style="font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em">Planning Week</div><div class="week-title" id="weekTitle"></div><div id="mobileNavStatus" class="muted" style="display:none;font-size:9px;margin-top:2px">Mobile navigation active</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="yearSelect" class="toolbar-input" title="Select year"><option value="2026">2026</option><option value="2027">2027</option><option value="2028">2028</option></select><select id="weekSelect" class="toolbar-input week-select" title="Select week"></select><input id="globalSearch" class="toolbar-input search-input" placeholder="Search job, customer, address, piece..." /><button type="button" class="mini" id="searchBtn">Search</button><button type="button" class="mini" id="prevWeek">← Prior Week</button><button type="button" class="mini" id="nextWeek">Next Week →</button></div>
@@ -475,6 +517,7 @@ body.inventory-active .header-actions{display:none}
   <div class="notice" style="margin-bottom:12px"><span><span class="live-dot"></span><strong>LIVE TEAM HUB:</strong> changes save to the shared Superior Operations database.</span><span class="small-note" id="accessStatus">Checking access...</span><span class="small-note" id="saveStatus">Connecting...</span></div>
   <div id="view"></div>
 </main>
+</div>
 
 <div class="inventory-modal-backdrop" id="inventoryModal" role="presentation">
   <div class="inventory-modal" role="dialog" aria-modal="true" aria-labelledby="inventoryModalTitle">
@@ -3249,12 +3292,42 @@ function closeModal(id){document.getElementById(id).style.display='none'}
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));
 document.querySelectorAll('.modal-backdrop').forEach(m=>m.onclick=e=>{if(e.target===m)closeModal(m.id)});
 const mainTabs=document.querySelector('.tabs');
+const operationsSidebar=document.getElementById('operationsSidebar');
+const operationsNavMenu=document.getElementById('operationsNavMenu');
+const operationsNavBackdrop=document.getElementById('operationsNavBackdrop');
+const operationsNavCollapse=document.getElementById('operationsNavCollapse');
+function closeOperationsNav(){
+  operationsSidebar?.classList.remove('open');
+  operationsNavBackdrop?.classList.remove('open');
+  operationsNavMenu?.setAttribute('aria-expanded','false');
+}
+function toggleOperationsNav(){
+  const open=!operationsSidebar?.classList.contains('open');
+  operationsSidebar?.classList.toggle('open',open);
+  operationsNavBackdrop?.classList.toggle('open',open);
+  operationsNavMenu?.setAttribute('aria-expanded',String(open));
+}
+if(operationsNavMenu)operationsNavMenu.onclick=toggleOperationsNav;
+if(operationsNavBackdrop)operationsNavBackdrop.onclick=closeOperationsNav;
+if(operationsNavCollapse){
+  operationsNavCollapse.onclick=()=>{
+    const collapsed=document.body.classList.toggle('operations-nav-collapsed');
+    operationsNavCollapse.setAttribute('aria-label',collapsed?'Expand navigation':'Collapse navigation');
+    operationsNavCollapse.setAttribute('title',collapsed?'Expand navigation':'Collapse navigation');
+    operationsNavCollapse.textContent=collapsed?'›':'‹';
+  }
+}
+window.addEventListener('resize',()=>{
+  if(!window.matchMedia('(max-width:900px)').matches)closeOperationsNav();
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeOperationsNav()});
 if(mainTabs){
   mainTabs.addEventListener('click',e=>{
     const tab=e.target.closest('.tab[data-view]');
     if(!tab)return;
     e.preventDefault();
-    setView(tab.dataset.view)
+    setView(tab.dataset.view);
+    closeOperationsNav();
   })
 }
 document.getElementById('roleSelect').value=state.role||'Management';
