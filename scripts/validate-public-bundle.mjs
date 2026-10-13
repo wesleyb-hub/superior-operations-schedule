@@ -28,7 +28,7 @@ const checks = [
     message: 'Unsupported payloads do not fail closed.',
   },
   {
-    ok: html.includes("from('app_user_roles').select('role,can_write')"),
+    ok: html.includes("sb.rpc('get_app_access')"),
     message: 'The client does not load server-enforced application access.',
   },
   {
@@ -44,12 +44,12 @@ for (const [index, match] of inlineScripts.entries()) {
   try {
     new Function(match[1]);
   } catch (error) {
-    failures.push({ message: `Inline script ${index + 1} has invalid JavaScript: ${error.message}` });
+    failures.push({ message: 'Inline script ' + (index + 1) + ' has invalid JavaScript: ' + error.message });
   }
 }
 
 if (failures.length) {
-  failures.forEach((failure) => console.error(`FAIL: ${failure.message}`));
+  failures.forEach((failure) => console.error('FAIL: ' + failure.message));
   process.exitCode = 1;
 } else {
   console.log('PASS: public bundle contains no seeded wall jobs and remote payloads fail closed.');
