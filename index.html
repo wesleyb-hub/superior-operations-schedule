@@ -147,6 +147,7 @@ td{padding:9px 10px;border-bottom:1px solid #edf0f2;vertical-align:top}
 
 /* MODALS */
 .modal-backdrop{position:fixed;inset:0;background:rgba(8,19,29,.55);z-index:80;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-backdrop.open{display:flex}
 .modal{width:min(900px,100%);max-height:90vh;overflow:hidden;background:#fff;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.28);display:flex;flex-direction:column}
 .modal-head{padding:16px 18px 10px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.modal-head h2{margin:0;font-size:18px;color:var(--navy)}
 .modal-body{padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow-y:auto;min-height:0;flex:1 1 auto}.field.full{grid-column:1/-1}.field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:850;color:#6c7781;margin-bottom:4px}.field input,.field select,.field textarea{width:100%;border:1px solid #ccd5dc;border-radius:7px;padding:9px;color:#27323a;background:#fff}.field textarea{min-height:70px;resize:vertical}
@@ -1776,8 +1777,8 @@ const PRODUCTION_STAGE_LABELS={planned:'Planned / Queued',setup_in_progress:'Set
 function productionDatePart(value){return value?String(value).slice(0,10):''}
 function productionTime(value){if(!value)return'—';const text=String(value),time=text.includes('T')?text.slice(11,16):text.slice(11,16);if(!/^\d{2}:\d{2}$/.test(time))return'—';const [h,m]=time.split(':').map(Number);return new Date(2000,0,1,h,m).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}
 function productionDateTimeLocal(value){return value?String(value).slice(0,16):''}
-function productionJob(id){return (wallsProduction.jobs||[]).find(j=>j.id===id)||state.walls.find(w=>w.id===id)||{id,job:'Unknown job',totalLf:0,assignedLf:0,releaseStatus:'Not Released for Production',documentLinks:[]}}
-function productionTable(id){return (wallsProduction.tables||[]).find(t=>t.table_id===id)||{table_id:id,label:'Table '+id,capacity_lf:null}}
+function productionJob(id){return (wallsProduction.jobs||[]).find(j=>String(j.id)===String(id))||state.walls.find(w=>String(w.id)===String(id))||{id,job:'Unknown job',totalLf:0,assignedLf:0,releaseStatus:'Not Released for Production',documentLinks:[]}}
+function productionTable(id){return (wallsProduction.tables||[]).find(t=>String(t.table_id)===String(id))||{table_id:id,label:'Table '+id,capacity_lf:null}}
 function productionOpenIssues(a){return (wallsProduction.issues||[]).filter(i=>i.status==='open'&&(i.assignment_id===a.assignment_id||(!i.assignment_id&&i.wall_record_id===a.wall_record_id)))}
 function productionHeightLabel(value){return Number(value)+"′ walls"}
 function productionLfBreakdown(job){const h=job.lfByHeight||{};return [['h4','4′'],['h5','5′'],['h8','8′'],['h9','9′'],['h10','10′'],['h12','12′']].filter(([k])=>Number(h[k]||0)>0).map(([k,l])=>`${l}: ${Number(h[k]).toLocaleString()} LF`).join(' · ')||'Wall-height LF not entered'}
