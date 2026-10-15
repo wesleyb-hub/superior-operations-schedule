@@ -3171,7 +3171,10 @@ function appendAssistantProposal(proposal){
 }
 async function askOperationsAgent(question){
   if(!sb||!currentUser){appendAssistantMessage('bot',answerOperationsQuestion(question));return}
-  const {data,error}=await sb.functions.invoke('operations-agent',{body:{message:question}});
+  const {data:authState,error:authError}=await sb.auth.getSession();
+  const accessToken=authState?.session?.access_token||'';
+  if(authError||!accessToken){appendAssistantMessage('bot','Your live session could not be verified, so no change was made. Sign out and sign back in, then try again.');return}
+  const {data,error}=await sb.functions.invoke('operations-agent',{headers:{Authorization:`Bearer ${accessToken}`},body:{message:question}});
   if(error||!data){appendAssistantMessage('bot',`The live AI action service is unavailable, so no change was made. Read-only fallback:\n${answerOperationsQuestion(question)}`);return}
   if(data.type==='proposal'&&data.proposal){appendAssistantProposal(data.proposal);return}
   if(data.type==='answer'){appendAssistantMessage('bot',data.message||'No reliable answer was returned.');return}
