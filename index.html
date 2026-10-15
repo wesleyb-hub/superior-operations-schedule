@@ -315,7 +315,7 @@ td{padding:9px 10px;border-bottom:1px solid #edf0f2;vertical-align:top}
 .year-unscheduled strong{color:var(--navy)}
 @media(max-width:760px){.year-gantt{--label-w:210px;--week-w:32px}.year-row-label{min-height:46px}.year-cell{min-height:46px}}
 
-/* EXCEPTIONS + READ-ONLY OPERATIONS ASSISTANT */
+/* EXCEPTIONS + CONTROLLED OPERATIONS ASSISTANT */
 .exception-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
 .exception-card{border:1px solid var(--line);border-left:5px solid var(--orange);border-radius:10px;padding:12px;background:#fff}
 .exception-card.critical{border-left-color:var(--red)}.exception-card.medium{border-left-color:var(--blue)}
@@ -324,6 +324,7 @@ td{padding:9px 10px;border-bottom:1px solid #edf0f2;vertical-align:top}
 .assistant-panel{position:fixed;right:18px;bottom:72px;z-index:70;width:min(410px,calc(100vw - 24px));height:min(560px,calc(100vh - 110px));background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px rgba(19,40,61,.25);display:none;flex-direction:column;overflow:hidden}
 .assistant-panel.open{display:flex}.assistant-head{padding:12px 14px;background:var(--navy);color:#fff;display:flex;justify-content:space-between;align-items:center}.assistant-head strong{font-size:14px}.assistant-head button{border:0;background:rgba(255,255,255,.15);color:#fff;border-radius:6px;padding:5px 8px}
 .assistant-note{padding:8px 12px;background:#f5f8fa;border-bottom:1px solid var(--line);font-size:9px;color:#667681}.assistant-log{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}.assistant-message{max-width:88%;border-radius:10px;padding:9px 10px;font-size:11px;line-height:1.45;white-space:pre-wrap}.assistant-message.user{align-self:flex-end;background:#e7eef5;color:var(--navy)}.assistant-message.bot{align-self:flex-start;background:#f3f5f6;color:#33434f}.assistant-source{font-size:8px;color:#7b8791;margin-top:4px}.assistant-form{border-top:1px solid var(--line);padding:10px;display:flex;gap:7px}.assistant-form input{flex:1;min-width:0;border:1px solid #cbd5dc;border-radius:8px;padding:9px}.assistant-form button{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:9px 12px;font-weight:900}
+.assistant-form button:disabled,.assistant-form input:disabled{opacity:.6}.assistant-proposal{border:1px solid #d4a04b;border-left:5px solid var(--orange);border-radius:10px;padding:10px;background:#fffaf0;font-size:11px;line-height:1.45}.assistant-proposal-title{font-weight:950;color:var(--navy);margin-bottom:5px}.assistant-proposal-detail{color:#596874;white-space:pre-wrap}.assistant-proposal-actions{display:flex;gap:7px;margin-top:9px}.assistant-proposal-actions button{border:0;border-radius:7px;padding:7px 9px;font-size:10px;font-weight:900}.assistant-confirm{background:#2d7f5e;color:#fff}.assistant-reject{background:#e9edf0;color:#33434f}.assistant-proposal-status{font-size:9px;color:#667681;margin-top:7px}.assistant-warning{font-weight:850;color:#8a5816}
 @media(max-width:760px){.exception-summary{grid-template-columns:1fr}.assistant-launch{right:10px;bottom:10px}.assistant-panel{right:10px;bottom:62px;width:calc(100vw - 20px)}}
 
 
@@ -404,7 +405,6 @@ button,.tab,.subtab,.mini,.btn,select,input[type="date"],input[type="month"]{tou
 }
 /* INVENTORY PILOT REVIEW — scoped styles only */
 body.inventory-active .toolbar{display:none}
-body.inventory-active #assistantLaunch{display:none}
 body.inventory-active .header-actions{display:none}
 .inventory-shell{display:grid;gap:14px}
 .inventory-review-banner{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:13px 15px;border:1px solid #efd08c;border-left:5px solid #d08b18;border-radius:10px;background:#fff8e8;color:#664816;line-height:1.45}
@@ -548,9 +548,9 @@ body.operations-nav-collapsed{--operations-side:76px}body.operations-nav-collaps
 </div>
 
 <button type="button" class="assistant-launch no-print" id="assistantLaunch">Ask Operations</button>
-<section class="assistant-panel no-print" id="assistantPanel" aria-label="Read-only Operations Assistant">
+<section class="assistant-panel no-print" id="assistantPanel" aria-label="Controlled Operations Assistant">
   <div class="assistant-head"><strong>Operations Assistant</strong><button type="button" id="assistantClose">Close</button></div>
-  <div class="assistant-note">Read-only. Answers come from the authenticated live schedule and cannot change dates or statuses.</div>
+  <div class="assistant-note">Can answer live questions and prepare limited routine updates. Nothing changes until you review and confirm.</div>
   <div class="assistant-log" id="assistantLog"></div>
   <form class="assistant-form" id="assistantForm"><input id="assistantInput" autocomplete="off" placeholder="Ask about jobs, exceptions, production, QC, delivery, or billing"><button type="submit">Ask</button></form>
 </section>
@@ -3114,7 +3114,7 @@ function renderExceptions(){
   document.getElementById('view').innerHTML=`<div class="stats">${kpi('Critical Exceptions',critical)}${kpi('High Exceptions',high)}${kpi('Medium Exceptions',medium)}${kpi('Last Verified',sourceVerifiedLabel())}</div><div class="notice"><span><strong>Management attention queue:</strong> ranked from authenticated live schedule evidence. An exception is not proof that the underlying work is incomplete; verify the named blocker against its authoritative source.</span></div><div class="exception-summary">${rows.length?rows.map(x=>`<article class="exception-card ${x.severity.toLowerCase()}"><div class="exception-title">${htmlSafe(x.severity)} · ${htmlSafe(x.type)}</div><div class="project-name" style="margin-top:5px">${htmlSafe(x.record)}</div><div class="exception-meta"><strong>Division:</strong> ${htmlSafe(x.division)}<br><strong>Owner:</strong> ${htmlSafe(x.owner)}<br><strong>Next action:</strong> ${htmlSafe(x.next)}<br><strong>Due:</strong> ${htmlSafe(x.due)}<br><strong>Blocker:</strong> ${htmlSafe(x.blocker)}<br><strong>Source:</strong> ${htmlSafe(x.source)} · verified ${htmlSafe(x.lastVerified)}</div></article>`).join(''):'<div class="empty">No current exceptions were derived from the live schedule.</div>'}</div>`
 }
 
-/* READ-ONLY OPERATIONS ASSISTANT */
+/* CONTROLLED OPERATIONS ASSISTANT */
 function assistantSource(){return `Live schedule revision ${lastRevision||'not loaded'} · verified ${sourceVerifiedLabel()}`}
 function matchingOperationsRecords(q){
   const matches=[];
@@ -3132,10 +3132,52 @@ function answerOperationsQuestion(question){
   if(q.includes('delivery')||q.includes('load')){const active=state.loads.filter(l=>l.status!=='Delivered');return `${active.length} active delivery load(s):\n${active.slice(0,12).map(l=>`${l.date||'No date'} — ${l.project} — ${l.status}`).join('\n')||'None'}.`}
   if(q.includes('qc')||q.includes('hold')){const items=allProducts().filter(x=>['hold','pre-ready','final-needed'].includes(x.product.status));return `${items.length} product(s) need QC attention:\n${items.slice(0,12).map(x=>`${x.project.name} — ${x.product.label}: ${productStatusText(x.product)}`).join('\n')||'None'}.`}
   if(q.includes('bill')||q.includes('invoice')){const ready=state.billing.filter(b=>b.status==='Ready to Bill'),holds=state.billing.filter(b=>b.status==='Hold');return `${ready.length} record(s) are Ready to Bill and ${holds.length} are on Hold.\nReady: ${ready.slice(0,10).map(b=>b.project).join(', ')||'none'}\nHolds: ${holds.slice(0,10).map(b=>b.project).join(', ')||'none'}.`}
-  return 'I can answer read-only questions such as: “What needs attention?”, “Which jobs are missing production dates?”, “What is producing this week?”, “What deliveries are active?”, “What needs QC?”, “What is ready to bill?”, or a specific job/customer name.'
+  return 'I can answer questions such as: “What needs attention?”, “Which jobs are missing production dates?”, “What is producing this week?”, “What deliveries are active?”, “What needs QC?”, “What is ready to bill?”, or a specific job/customer name.'
 }
 function appendAssistantMessage(kind,text){const log=document.getElementById('assistantLog'),wrap=document.createElement('div'),msg=document.createElement('div');msg.className='assistant-message '+kind;msg.textContent=text;wrap.appendChild(msg);if(kind==='bot'){const source=document.createElement('div');source.className='assistant-source';source.textContent=assistantSource();wrap.appendChild(source)}log.appendChild(wrap);log.scrollTop=log.scrollHeight}
-function openAssistant(){const panel=document.getElementById('assistantPanel');panel.classList.add('open');if(!document.getElementById('assistantLog').children.length)appendAssistantMessage('bot','Ask me about live schedule exceptions, production, QC, delivery, billing, or a specific job. I am read-only.');document.getElementById('assistantInput').focus()}
+function agentActionDetail(proposal){
+  const p=proposal?.parameters||{};
+  if(proposal?.action_type==='set_inventory_count')return `Inventory item ${p.item_id}: set the physical count to ${p.quantity}.`;
+  if(proposal?.action_type==='update_setup_progress')return `Production assignment ${p.assignment_id}: record setup progress at ${p.setup_progress}%.`;
+  if(proposal?.action_type==='advance_production_stage')return `Production assignment ${p.assignment_id}: advance to ${String(p.new_stage||'').replaceAll('_',' ')}${p.actual_lf!=null?` with ${p.actual_lf} actual LF`:''}.`;
+  return 'Review this proposed Operations Hub update.'
+}
+async function refreshAfterAgentAction(actionType){
+  if(actionType==='set_inventory_count')await loadInventory();
+  else await loadWallsProduction()
+}
+function appendAssistantProposal(proposal){
+  const log=document.getElementById('assistantLog'),card=document.createElement('div');card.className='assistant-proposal';
+  const title=document.createElement('div');title.className='assistant-proposal-title';title.textContent='Review proposed action';card.appendChild(title);
+  const summary=document.createElement('div');summary.textContent=proposal.summary||'Review this proposed Operations Hub change.';card.appendChild(summary);
+  const detail=document.createElement('div');detail.className='assistant-proposal-detail';detail.textContent=agentActionDetail(proposal);card.appendChild(detail);
+  const warning=document.createElement('div');warning.className='assistant-warning';warning.textContent='No change has been made yet.';card.appendChild(warning);
+  const actions=document.createElement('div');actions.className='assistant-proposal-actions';
+  const confirmButton=document.createElement('button');confirmButton.type='button';confirmButton.className='assistant-confirm';confirmButton.textContent='Confirm and apply';
+  const rejectButton=document.createElement('button');rejectButton.type='button';rejectButton.className='assistant-reject';rejectButton.textContent='Reject';
+  const status=document.createElement('div');status.className='assistant-proposal-status';status.textContent='This preview expires in 10 minutes.';
+  actions.append(confirmButton,rejectButton);card.append(actions,status);log.appendChild(card);log.scrollTop=log.scrollHeight;
+  confirmButton.onclick=async()=>{
+    confirmButton.disabled=true;rejectButton.disabled=true;status.textContent='Checking current data and permissions...';
+    const {data,error}=await sb.rpc('execute_operations_agent_action',{p_action_id:proposal.action_id,p_confirmation:'CONFIRM'});
+    if(error||!data?.ok){status.textContent=error?.message||data?.message||'The action was not applied.';card.style.borderColor='#a8473f';return}
+    status.textContent='Applied and recorded in the audit trail.';warning.textContent='Change completed.';warning.style.color='#2d7f5e';await refreshAfterAgentAction(proposal.action_type)
+  };
+  rejectButton.onclick=async()=>{
+    confirmButton.disabled=true;rejectButton.disabled=true;status.textContent='Rejecting proposal...';
+    const {data,error}=await sb.rpc('reject_operations_agent_action',{p_action_id:proposal.action_id});
+    status.textContent=error?.message||(!data?.ok?'The proposal could not be rejected.':'Rejected. No operational data was changed.');if(error){confirmButton.disabled=false;rejectButton.disabled=false}
+  }
+}
+async function askOperationsAgent(question){
+  if(!sb||!currentUser){appendAssistantMessage('bot',answerOperationsQuestion(question));return}
+  const {data,error}=await sb.functions.invoke('operations-agent',{body:{message:question}});
+  if(error||!data){appendAssistantMessage('bot',`The live AI action service is unavailable, so no change was made. Read-only fallback:\n${answerOperationsQuestion(question)}`);return}
+  if(data.type==='proposal'&&data.proposal){appendAssistantProposal(data.proposal);return}
+  if(data.type==='answer'){appendAssistantMessage('bot',data.message||'No reliable answer was returned.');return}
+  appendAssistantMessage('bot',(data.error||'The request could not be completed.')+' No change was made.')
+}
+function openAssistant(){const panel=document.getElementById('assistantPanel');panel.classList.add('open');if(!document.getElementById('assistantLog').children.length)appendAssistantMessage('bot','Ask about live operations, or ask me to prepare an inventory count or routine production update. I will show a preview and nothing changes until you confirm.');document.getElementById('assistantInput').focus()}
 
 /* AUDIT LOG */
 function renderAudit(){
@@ -3603,7 +3645,7 @@ document.getElementById('refreshLiveBtn').onclick=()=>loadRemoteState(true);
 document.getElementById('signOutBtn').onclick=signOut;
 document.getElementById('assistantLaunch').onclick=openAssistant;
 document.getElementById('assistantClose').onclick=()=>document.getElementById('assistantPanel').classList.remove('open');
-document.getElementById('assistantForm').onsubmit=e=>{e.preventDefault();const input=document.getElementById('assistantInput'),q=input.value.trim();if(!q)return;appendAssistantMessage('user',q);input.value='';appendAssistantMessage('bot',answerOperationsQuestion(q))};
+document.getElementById('assistantForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,input=document.getElementById('assistantInput'),button=form.querySelector('button'),q=input.value.trim();if(!q||button.disabled)return;appendAssistantMessage('user',q);input.value='';input.disabled=true;button.disabled=true;button.textContent='Working...';try{await askOperationsAgent(q)}finally{input.disabled=false;button.disabled=false;button.textContent='Ask';input.focus()}};
 document.getElementById('authBtn').onclick=signInWithPasswordLogin;
 document.getElementById('authEmail').addEventListener('keydown',e=>{if(e.key==='Enter')signInWithPasswordLogin()});
 document.getElementById('authPassword').addEventListener('keydown',e=>{if(e.key==='Enter')signInWithPasswordLogin()});
