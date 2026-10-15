@@ -97,8 +97,6 @@ Deno.serve(async (request) => {
     global: { headers: { authorization } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: userData, error: userError } = await client.auth.getUser(authorization.replace(/^Bearer\s+/i, ""));
-  if (userError || !userData.user) return json({ error: "Authentication required" }, 401);
 
   const incoming = await request.json().catch(() => ({}));
   const message = String(incoming?.message ?? "").trim();
@@ -120,7 +118,10 @@ Deno.serve(async (request) => {
     }),
   });
   const result = await response.json().catch(() => ({}));
-  if (!response.ok) return json({ error: "AI service request failed", detail: result?.error?.message ?? "Unknown provider error" }, 502);
+  if (!response.ok) {
+    console.error("AI service request failed", response.status, result?.error?.message ?? "Unknown provider error");
+    return json({ error: "AI service request failed", detail: result?.error?.message ?? "Unknown provider error" }, 502);
+  }
 
   const functionCall = Array.isArray(result.output) ? result.output.find((item: Record<string, unknown>) => item.type === "function_call") : null;
   if (!functionCall) {
