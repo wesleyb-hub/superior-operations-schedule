@@ -340,7 +340,11 @@ td{padding:9px 10px;border-bottom:1px solid #edf0f2;vertical-align:top}
 .auth-card h2{margin:3px 0 6px;color:#13283d;font-size:22px}.auth-card p{margin:0 0 16px;color:#66727d;font-size:13px;line-height:1.45}
 .auth-card input{width:100%;border:1px solid #ccd5dc;border-radius:8px;padding:11px 12px;font-size:16px;margin-bottom:10px}
 .auth-card button{width:100%;border:0;border-radius:8px;background:#13283d;color:#fff;padding:11px 12px;font-weight:800}.auth-card button:disabled{opacity:.55}
-.auth-message{min-height:20px;margin-top:10px;font-size:12px}.small-note{font-size:10px;color:#82909b;font-weight:750}
+.auth-field-label{display:block;margin:1px 0 5px;color:#536678;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.auth-password-hint{margin:0 0 10px!important;font-size:11px!important}
+.auth-actions{margin-top:9px;text-align:center}
+.auth-actions button{width:auto;padding:6px 8px;background:transparent;color:#2c5d7f;text-decoration:underline;font-size:12px}
+.auth-message{min-height:20px;margin-top:10px;font-size:12px}.auth-message:focus{outline:2px solid #2c5d7f;outline-offset:2px}.small-note{font-size:10px;color:#82909b;font-weight:750}
 .live-dot{width:8px;height:8px;border-radius:50%;background:#2d7f5e;display:inline-block;margin-right:5px}
 
 @media(max-width:760px){.topbar-inner,.main{padding-left:14px;padding-right:14px}.brand-row{align-items:flex-start;flex-direction:column}.grid.days{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.modal-body{grid-template-columns:1fr}.field.full{grid-column:auto}.delivery-row,.history-row{grid-template-columns:1fr}}
@@ -474,12 +478,29 @@ body.operations-nav-collapsed{--operations-side:76px}body.operations-nav-collaps
 <div class="auth-gate" id="authGate">
   <div class="auth-card">
     <div class="eyebrow" style="color:#6b7d8d">Superior Operations</div>
-    <h2>Sign in to the Master Operations Hub</h2>
-    <p>Use your Superior work email and schedule password. Changes are shared live with the team.</p>
-    <input id="authEmail" type="email" autocomplete="email" placeholder="you@superiorwallsnd.com" />
-    <input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" />
-    <button type="button" id="authBtn">Sign in</button>
-    <div class="auth-message" id="authMessage"></div>
+    <h2 id="authTitle">Sign in to the Master Operations Hub</h2>
+    <p id="authDescription">Use your Superior work email and password. Changes are shared live with the team.</p>
+    <form id="authForm" novalidate>
+      <label class="auth-field-label" for="authEmail">Superior work email</label>
+      <input id="authEmail" type="email" autocomplete="email" placeholder="you@superiorwallsnd.com" required />
+      <div id="authLoginPasswordGroup">
+        <label class="auth-field-label" for="authPassword">Password</label>
+        <input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" />
+      </div>
+      <div id="authNewPasswordGroup" hidden>
+        <label class="auth-field-label" for="authNewPassword">New password</label>
+        <input id="authNewPassword" type="password" autocomplete="new-password" minlength="12" placeholder="At least 12 characters" />
+        <label class="auth-field-label" for="authConfirmPassword">Confirm new password</label>
+        <input id="authConfirmPassword" type="password" autocomplete="new-password" minlength="12" placeholder="Enter the new password again" />
+        <p class="auth-password-hint">Choose a unique password with at least 12 characters. Do not reuse a shared or old password.</p>
+      </div>
+      <button type="submit" id="authBtn">Sign in</button>
+    </form>
+    <div class="auth-actions">
+      <button type="button" id="forgotPasswordBtn">Forgot your password?</button>
+      <button type="button" id="backToLoginBtn" hidden>Back to sign in</button>
+    </div>
+    <div class="auth-message" id="authMessage" role="status" aria-live="polite" tabindex="-1"></div>
   </div>
 </div>
 <div class="app">
@@ -814,18 +835,57 @@ function mergeRemoteData(data){
   state={...clone(seed),...ui,...clone(data||{})};
   ensureState();syncAllLinkedDeliveries();syncBilling()
 }
+let authMode='login';
 function authAllowed(email=''){return email.toLowerCase().endsWith('@'+ALLOWED_EMAIL_DOMAIN)}
 function setAuthMessage(msg,isError=false){const el=document.getElementById('authMessage');if(!el)return;el.textContent=msg||'';el.style.color=isError?'#b94141':'#52616d'}
 function showAuthGate(show){const el=document.getElementById('authGate');if(el)el.style.display=show?'flex':'none';const app=document.querySelector('.app');if(app){app.style.filter=show?'blur(2px)':'none';app.style.pointerEvents=show?'none':'auto'}}
-async function signInWithPasswordLogin(){
-  if(!sb){setAuthMessage('Supabase is not connected. Check config.js.',true);return}
-  const email=(document.getElementById('authEmail').value||'').trim().toLowerCase(),password=document.getElementById('authPassword').value||'';
-  if(!authAllowed(email)){setAuthMessage('Use your @'+ALLOWED_EMAIL_DOMAIN+' work email.',true);return}
-  if(!password){setAuthMessage('Enter your password.',true);return}
-  const btn=document.getElementById('authBtn');btn.disabled=true;setAuthMessage('Signing in...');
-  const {error}=await sb.auth.signInWithPassword({email,password});btn.disabled=false;if(error)setAuthMessage(error.message,true)
+function authCallbackType(){const sources=[location.search.slice(1),location.hash.slice(1)];for(const source of sources){const type=new URLSearchParams(source).get('type');if(type)return type}return''}
+function clearAuthCallbackFromUrl(){const url=new URL(location.href);['code','type','token_hash','error','error_code','error_description'].forEach(key=>url.searchParams.delete(key));url.hash='';history.replaceState(null,document.title,url.pathname+url.search)}
+function showPasswordSetup(session,message){const email=session?.user?.email;if(email)document.getElementById('authEmail').value=email;setAuthMode('recovery',message);showAuthGate(true);clearAuthCallbackFromUrl()}
+function setAuthMode(mode,message=''){
+  authMode=mode;const recovery=mode==='recovery',forgot=mode==='forgot';
+  document.getElementById('authTitle').textContent=recovery?'Create a new password':forgot?'Reset your password':'Sign in to the Master Operations Hub';
+  document.getElementById('authDescription').textContent=recovery?'Choose a new password for your account, then sign in with it on any computer.':forgot?'Enter your Superior work email. If it has an active Hub account, Supabase will email a secure reset link.':'Use your Superior work email and password. Changes are shared live with the team.';
+  document.getElementById('authLoginPasswordGroup').hidden=forgot||recovery;
+  document.getElementById('authNewPasswordGroup').hidden=!recovery;
+  document.getElementById('authBtn').textContent=recovery?'Save new password':forgot?'Send reset link':'Sign in';
+  document.getElementById('forgotPasswordBtn').hidden=mode!=='login';
+  document.getElementById('backToLoginBtn').hidden=mode==='login';
+  if(mode==='login')document.getElementById('authPassword').value='';
+  if(!recovery){document.getElementById('authNewPassword').value='';document.getElementById('authConfirmPassword').value=''}
+  setAuthMessage(message)
 }
-async function signOut(){if(sb){if(inventoryChannel)await sb.removeChannel(inventoryChannel);if(productionChannel)await sb.removeChannel(productionChannel);if(weeklyPlannerChannel)await sb.removeChannel(weeklyPlannerChannel);await sb.auth.signOut()}currentUser=null;remoteReady=false;inventoryReady=false;wallsProductionReady=false;weeklyPlannerReady=false;showAuthGate(true);setAuthMessage('Signed out.')}
+async function handleAuthSubmit(event){
+  event?.preventDefault();if(!sb){setAuthMessage('Supabase is not connected. Check config.js.',true);return}
+  const email=(document.getElementById('authEmail').value||'').trim().toLowerCase();
+  if(!authAllowed(email)){setAuthMessage('Use your @'+ALLOWED_EMAIL_DOMAIN+' work email.',true);return}
+  const btn=document.getElementById('authBtn');btn.disabled=true;
+  try{
+    if(authMode==='forgot'){
+      setAuthMessage('Requesting a secure reset link...');
+      const redirectTo=window.location.origin+window.location.pathname;
+      const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo});
+      if(error)setAuthMessage('Could not start password recovery. Please wait a moment and try again.',true);
+      else setAuthMessage('If this email has an active Hub account, a password reset link will arrive shortly. Check your inbox and spam folder.');
+      return
+    }
+    if(authMode==='recovery'){
+      const password=document.getElementById('authNewPassword').value||'',confirmation=document.getElementById('authConfirmPassword').value||'';
+      if(password.length<12){setAuthMessage('Choose a password with at least 12 characters.',true);return}
+      if(password!==confirmation){setAuthMessage('The passwords do not match.',true);return}
+      setAuthMessage('Saving your new password...');
+      const {error}=await sb.auth.updateUser({password});
+      if(error){setAuthMessage(error.message||'Could not update the password. Request a new reset link and try again.',true);return}
+      await sb.auth.signOut();setAuthMode('login','Password saved. Sign in with your new password.');
+      document.getElementById('authEmail').value=email;showAuthGate(true);return
+    }
+    const password=document.getElementById('authPassword').value||'';
+    if(!password){setAuthMessage('Enter your password.',true);return}
+    setAuthMessage('Signing in...');
+    const {error}=await sb.auth.signInWithPassword({email,password});if(error)setAuthMessage(error.message,true)
+  }finally{btn.disabled=false}
+}
+async function signOut(){if(sb){if(inventoryChannel)await sb.removeChannel(inventoryChannel);if(productionChannel)await sb.removeChannel(productionChannel);if(weeklyPlannerChannel)await sb.removeChannel(weeklyPlannerChannel);await sb.auth.signOut()}currentUser=null;remoteReady=false;inventoryReady=false;wallsProductionReady=false;weeklyPlannerReady=false;setAuthMode('login','Signed out.');showAuthGate(true)}
 function updateAccessStatus(){
   const el=document.getElementById('accessStatus');
   if(!el)return;
@@ -3697,9 +3757,9 @@ document.getElementById('signOutBtn').onclick=signOut;
 document.getElementById('assistantLaunch').onclick=openAssistant;
 document.getElementById('assistantClose').onclick=()=>document.getElementById('assistantPanel').classList.remove('open');
 document.getElementById('assistantForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,input=document.getElementById('assistantInput'),button=form.querySelector('button'),q=input.value.trim();if(!q||button.disabled)return;appendAssistantMessage('user',q);input.value='';input.disabled=true;button.disabled=true;button.textContent='Working...';try{await askOperationsAgent(q)}finally{input.disabled=false;button.disabled=false;button.textContent='Ask';input.focus()}};
-document.getElementById('authBtn').onclick=signInWithPasswordLogin;
-document.getElementById('authEmail').addEventListener('keydown',e=>{if(e.key==='Enter')signInWithPasswordLogin()});
-document.getElementById('authPassword').addEventListener('keydown',e=>{if(e.key==='Enter')signInWithPasswordLogin()});
+document.getElementById('authForm').addEventListener('submit',handleAuthSubmit);
+document.getElementById('forgotPasswordBtn').onclick=()=>setAuthMode('forgot');
+document.getElementById('backToLoginBtn').onclick=()=>setAuthMode('login');
 document.getElementById('inventoryModalClose').onclick=closeInventoryModal;
 document.getElementById('inventoryModalCancel').onclick=closeInventoryModal;
 document.getElementById('inventoryModalSave').onclick=()=>{if(inventoryModalSaveAction)inventoryModalSaveAction()};
@@ -3720,12 +3780,15 @@ async function bootstrap(){
   }
   ensureState();syncAllLinkedDeliveries();syncBilling();render();showAuthGate(true);
   if(!sb){setAuthMessage('Supabase is not connected. Check config.js.',true);const s=document.getElementById('saveStatus');if(s)s.textContent='Live connection unavailable';return}
-  const {data}=await sb.auth.getSession();
-  if(data.session)await startSession(data.session.user);else showAuthGate(true);
   sb.auth.onAuthStateChange(async(event,session)=>{
+    if(event==='PASSWORD_RECOVERY'&&session){currentUser=null;showPasswordSetup(session,'Use this secure link to choose your password.');return}
+    if(session&&session.user&&(event==='SIGNED_IN'||event==='INITIAL_SESSION')&&['invite','signup'].includes(authCallbackType())){currentUser=null;showPasswordSetup(session,'Your account is confirmed. Choose a private password to finish setup.');return}
+    if(authMode==='recovery')return;
     if(session&&session.user&&!currentUser)await startSession(session.user);
     if(!session&&event==='SIGNED_OUT'){currentUser=null;remoteReady=false;showAuthGate(true)}
-  })
+  });
+  const {data}=await sb.auth.getSession();
+  if(data.session&&authMode!=='recovery')await startSession(data.session.user);else showAuthGate(true)
 }
 bootstrap();
 </script>
