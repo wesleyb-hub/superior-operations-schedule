@@ -25,6 +25,7 @@ const checks=[
   [html.includes('INACTIVE · retained for history'),'Inactive approved packets are not clearly distinguished from the active packet.'],
   [html.includes('class="header-more"')&&html.includes('id="importHeaderBtn"')&&html.includes('id="refreshLiveBtn"')&&html.includes('id="exportBtn"')&&html.includes('id="resetBtn"')&&html.includes('id="signOutBtn"'),'Mobile header compaction removed or obscured an existing action.'],
   [html.includes('.assistant-launch{position:static'),'The mobile Operations Assistant may obscure dashboard controls.'],
+  [html.includes('<th>Planned pour date</th><th>Actual pour date</th>')&&html.includes("r.actualPourDate?fmt(r.actualPourDate):'—'"),'Weekly Forecast does not distinguish the actual pour date from the planned date.'],
   [reapprovalMigration.includes("status='reapproval_required'")&&reapprovalMigration.includes("'section_reapproval_required'")&&reapprovalMigration.includes('planning_inputs_saved_after_approval'),'Planning-input changes do not invalidate stale approvals with an audit trail.'],
   [reapprovalMigration.includes('approved_source_fingerprint=null')&&reapprovalMigration.includes('approved_at=null'),'Invalidated sections still appear to carry current approval metadata.'],
   [!(/delete\s+from\s+public\.weekly_planner_(section_revisions|packs)/i.test(reapprovalMigration)),'Planner reapproval migration must preserve frozen section and packet history.'],
