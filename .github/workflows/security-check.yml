@@ -20,3 +20,5 @@ jobs:
         run: node scripts/validate-public-bundle.mjs
       - name: Verify database migrations
         run: node scripts/validate-migrations.mjs
+      - name: Verify Weekly Planner controls
+        run: node scripts/validate-weekly-planner.mjs
