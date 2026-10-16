@@ -35,6 +35,26 @@ const checks = [
     ok: html.includes('if(!currentUserCanWrite)'),
     message: 'Read-only users are not prevented from attempting schedule writes.',
   },
+  {
+    ok: html.includes('id="forgotPasswordBtn"') && html.includes('id="authNewPasswordGroup"'),
+    message: 'The sign-in screen is missing self-service password recovery/setup controls.',
+  },
+  {
+    ok: html.includes('sb.auth.resetPasswordForEmail(email,{redirectTo})'),
+    message: 'Password recovery does not use Supabase Auth with an explicit safe redirect.',
+  },
+  {
+    ok: html.includes("event==='PASSWORD_RECOVERY'") && html.includes("['invite','signup'].includes(authCallbackType())"),
+    message: 'Password recovery and invitation/setup links are not handled by the public app.',
+  },
+  {
+    ok: html.includes('sb.auth.updateUser({password})') && html.includes('password.length<12'),
+    message: 'Password setup does not enforce the minimum length and update the authenticated user.',
+  },
+  {
+    ok: html.includes('window.location.origin+window.location.pathname'),
+    message: 'Password recovery does not return to the current approved Hub URL.',
+  },
 ];
 
 const failures = checks.filter((check) => !check.ok);
@@ -52,5 +72,5 @@ if (failures.length) {
   failures.forEach((failure) => console.error('FAIL: ' + failure.message));
   process.exitCode = 1;
 } else {
-  console.log('PASS: public bundle contains no seeded wall jobs and remote payloads fail closed.');
+  console.log('PASS: public bundle remains fail-closed and includes guarded self-service password recovery/setup.');
 }
