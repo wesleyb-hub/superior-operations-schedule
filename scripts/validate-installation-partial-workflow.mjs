@@ -30,6 +30,7 @@ const checks=[
   ['UI: compact installation job cards adapt to phone-sized screens',/\.install-job-card\{[\s\S]*\.install-job-progress\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/.test(html)],
   ['UI: weekly plan is organized as job rows and adapts on mobile',/function renderInstallationJobWeek/.test(html)&&/\.install-week-grid\{grid-template-columns:minmax\(0,1fr\)/.test(html)],
   ['UI: issue, resolution, and resource status use in-app forms',/function openWallsInstallationIssueForm/.test(html)&&/function openWallsInstallationResolveForm/.test(html)&&/function openWallsInstallationResourceStatusForm/.test(html)],
+  ['UI: employee and equipment assignments use selectors with an explicit add-name fallback',/function installationResourceNameChoices/.test(html)&&/data-resource-choice/.test(html)&&/Add a name not listed/.test(html)&&/data-resource-custom/.test(html)],
   ['UI: scope updates refresh across connected clients',/walls_installation_activity_assignments','walls_installation_resources/.test(html)&&/activity_id,assignment_id,load_record_id/.test(html)],
   ['Weekly Planner receives the explicit production run scope',/Runs: '\|\|string_agg\('Table '\|\|p\.table_id/.test(plannerMigration)],
 ];
@@ -54,5 +55,22 @@ if(stageStart<0||compactStart<0){console.log('FAIL: job-progress helpers are ext
   ];
   for(const [label,ok]of behaviorChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
   if(behaviorChecks.some(([,ok])=>!ok))process.exitCode=1;
+}
+const resourceStart=html.indexOf('function installationResourceNameChoices');
+const resourceEnd=html.indexOf('function installationResourceRowsHtml',resourceStart);
+if(resourceStart<0||resourceEnd<0){console.log('FAIL: resource selector helpers are extractable for behavior tests');process.exitCode=1}else{
+  const resourceHelpers=new Function('wallsInstallation','weeklyPlanner','installResources','htmlSafe',`${html.slice(resourceStart,resourceEnd)};return{installationResourceNameChoices,installationResourceRowHtml}`)(
+    {jobs:[{activities:[{resources:[{resource_type:'crane',resource_name:'Crane 1'},{resource_type:'employee',resource_name:'Taylor'}]}]}]},
+    {availability:[{employee_name:'Taylor'},{employee_name:'Jordan'}],resources:[{resource_name:'Truck 2'}]},
+    a=>a.resources||[],s=>String(s).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+  );
+  const employees=resourceHelpers.installationResourceRowHtml({resource_type:'employee'}),equipment=resourceHelpers.installationResourceRowHtml({resource_type:'crane',resource_name:'Crane 1'}),custom=resourceHelpers.installationResourceRowHtml({resource_type:'truck',resource_name:'New truck'});
+  const resourceChecks=[
+    ['employee selector includes existing planner employees',employees.includes('value="Jordan"')&&employees.includes('value="Taylor"')],
+    ['equipment selector reuses known equipment and planner resources',equipment.includes('value="Crane 1"')&&equipment.includes('value="Truck 2"')],
+    ['unlisted resources retain a controlled custom-name option',custom.includes('value="__custom" selected')&&custom.includes('value="New truck"')],
+  ];
+  for(const [label,ok]of resourceChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
+  if(resourceChecks.some(([,ok])=>!ok))process.exitCode=1;
 }
 if(failures.length)process.exitCode=1;
