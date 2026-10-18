@@ -53,7 +53,7 @@ td{font-size:12px;padding:10px}
 .install-scope-row{display:grid;grid-template-columns:22px minmax(130px,.7fr) minmax(220px,1.3fr);align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:9px;background:#fff}
 .install-scope-row small{display:block;color:var(--muted);font-size:11px;margin-top:3px}
 .install-job-tabs{display:flex;gap:5px;overflow:auto;padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:12px}
-.install-job-tabs button{white-space:nowrap}
+.install-job-tabs button{white-space:nowrap;flex:0 0 auto;min-height:38px}
 .install-job-panel{min-height:220px}
 .install-resource-editor{display:flex;flex-direction:column;gap:7px;margin:7px 0}
 .install-resource-entry{display:grid;grid-template-columns:1fr 1.4fr 1.1fr 1fr 1fr auto;gap:6px;align-items:center}
@@ -188,7 +188,7 @@ function openWallsInstallationLoadMap(loadRecordId){const load=state.loads.find(
 .modal-backdrop.open{display:flex}
 .modal{width:min(900px,100%);max-height:90vh;overflow:hidden;background:#fff;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.28);display:flex;flex-direction:column}
 .modal-head{padding:16px 18px 10px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.modal-head h2{margin:0;font-size:18px;color:var(--navy)}
-.modal-body{padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow-y:auto;min-height:0;flex:1 1 auto}.field.full{grid-column:1/-1}.field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:850;color:#6c7781;margin-bottom:4px}.field input,.field select,.field textarea{width:100%;border:1px solid #ccd5dc;border-radius:7px;padding:9px;color:#27323a;background:#fff}.field textarea{min-height:70px;resize:vertical}
+.modal-body{padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow-y:auto;min-height:0;flex:1 1 auto}.modal-body.install-job-modal-body{display:block}.field.full{grid-column:1/-1}.field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:850;color:#6c7781;margin-bottom:4px}.field input,.field select,.field textarea{width:100%;border:1px solid #ccd5dc;border-radius:7px;padding:9px;color:#27323a;background:#fff}.field textarea{min-height:70px;resize:vertical}
 .wall-height-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
 .wall-height-entry{border:1px solid #dce4e9;border-radius:9px;background:#f8fafb;padding:8px}
 .wall-height-entry label{font-size:9px;margin-bottom:5px;color:var(--navy)}
@@ -1146,7 +1146,7 @@ async function wallsProductionRpc(name,args,success){
 }
 function closeProductionModal(){document.getElementById('productionModal')?.classList.remove('open');productionModalSaveAction=null}
 function openProductionModal(title,sub,body,saveLabel,onSave){
-  document.getElementById('productionModalTitle').textContent=title;document.getElementById('productionModalSub').textContent=sub||'';document.getElementById('productionModalBody').innerHTML=body;
+  document.getElementById('productionModalTitle').textContent=title;document.getElementById('productionModalSub').textContent=sub||'';const modalBody=document.getElementById('productionModalBody');modalBody.classList.toggle('install-job-modal-body',body.includes('class="install-job-tabs"'));modalBody.innerHTML=body;
   const save=document.getElementById('productionModalSave');save.textContent=saveLabel||'Save';save.hidden=!onSave;productionModalSaveAction=onSave||null;document.getElementById('productionModal').classList.add('open')
 }
 
