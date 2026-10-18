@@ -8,6 +8,7 @@ const statusMigration=fs.readFileSync(path.join(root,'supabase','migrations','20
 const plannerMigration=fs.readFileSync(path.join(root,'supabase','migrations','20261018_025_weekly_planner_partial_run_scope.sql'),'utf8');
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const previous=fs.readFileSync(path.join(root,'supabase','migrations','20261017173729_walls_delivery_qc_status_transition_only_20261017.sql'),'utf8');
+const mappingMigration=fs.readFileSync(path.join(root,'supabase','migrations','20261018192049_serialize_walls_delivery_mapping.sql'),'utf8');
 const checks=[
   ['A: delivery validates the explicitly mapped assignment set',/from public\.walls_installation_load_assignments m[\s\S]*where m\.load_record_id=new\.record_id and a\.wall_record_id=v_link_id/.test(migration)],
   ['B: selected shipment runs require stripped stage and final QC release',/count\(\*\) filter\(where a\.stage='stripped' and q\.status='released'\)/.test(migration)],
@@ -20,6 +21,9 @@ const checks=[
   ['F: site and stone activities are excluded from the QC-gated set',/p_activity_type in \('loading_hauling','wall_installation'\)/.test(migration)&&!/p_activity_type in \('loading_hauling','wall_installation','field_closeout'\)/.test(migration)],
   ['G: absent or invalid scope fails closed',/Select at least one run and its linked load/.test(html)&&/Select explicitly released production assignments/.test(migration)],
   ['H: shipment release validation remains transition-only',/v_new_status in \('Loaded','Delivered'\)[\s\S]*v_old_status is distinct from v_new_status/.test(previous)],
+  ['H: batch-map edits lock the load row and reject shipped statuses',/from public\.schedule_records l[\s\S]*where l\.collection='loads'[\s\S]*for update;[\s\S]*if v_load_status in \('Loaded','Delivered'\)\s+then\s+raise exception 'Production-batch mapping cannot be changed after a delivery load has shipped'/.test(mappingMigration)],
+  ['Permissions: delivery batch mapping stays authenticated-only',/revoke all on function public\.link_walls_installation_load_assignments\(text,uuid\[\]\) from public,anon/.test(mappingMigration)&&/grant execute on function public\.link_walls_installation_load_assignments\(text,uuid\[\]\) to authenticated/.test(mappingMigration)],
+  ['Data safety: migration has no DML/backfill outside the stored function',!/\$\$;[\s\S]*\b(insert into|update public\.|delete from)\b/i.test(mappingMigration)],
   ['I: schedule date edits do not create a new load release transition',/v_new_status in \('Loaded','Delivered'\)[\s\S]*v_old_status is distinct from v_new_status/.test(migration)],
   ['J: concurrent activity-scope updates use row lock and version checking',/where activity_id=p_activity_id for update[\s\S]*v_activity\.version<>p_expected_version/.test(migration)],
   ['J: activity writes retain optimistic concurrency checks',/if v_row\.version<>p_expected_version then raise exception 'Installation activity changed; refresh and retry'/.test(migration)],
