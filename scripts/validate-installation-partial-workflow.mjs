@@ -41,6 +41,8 @@ const checks=[
   ['UI: scope updates refresh across connected clients',/walls_installation_activity_assignments','walls_installation_resources/.test(html)&&/activity_id,assignment_id,load_record_id/.test(html)],
   ['UI: superseded activity-first renderer, modal, and binder are removed',!/function renderWallsInstallation\(/.test(html)&&!/function bindWallsInstallationControls\(/.test(html)&&!/function openWallsInstallationActivityModal\(/.test(html)&&/function renderWallsInstallationEnhanced\(/.test(html)],
   ['UI: held scope remains fixed and Resume re-enters in-progress state',/scope\.required&&canManage&&status==='planned'/.test(html)&&/data-install-status="\$\{a\.activity_id\}\|in_progress">Resume/.test(html)],
+  ['UI: only unstarted, unscoped planned activities expose a delete action',/function installationActivityCanBeRemoved\(activity\)\{return Boolean\(activity&&activity\.status==='planned'&&!\(activity\.production_scope\|\|\[\]\)\.length\)\}/.test(html)&&/canRemove=canManage&&installationActivityCanBeRemoved\(a\)/.test(html)&&/data-install-cancel-activity/.test(html)],
+  ['UI: removal requires a reason, preserves the row as cancelled, and uses version checking',/Reason for removing this activity/.test(html)&&/p_status:'cancelled'/.test(html)&&/p_expected_version:activity\.version/.test(html)&&/status<>'cancelled'/.test(fs.readFileSync(path.join(root,'supabase','migrations','20261016_017_walls_installation_execution.sql'),'utf8'))],
   ['UI: Resources board labels held work separately from planned work',html.includes("x._activity.status==='on_hold'")&&html.includes("installationStatusLabel(x._activity.status)")],
   ['Weekly Planner receives the explicit production run scope',/Runs: '\|\|string_agg\('Table '\|\|p\.table_id/.test(plannerMigration)],
 ];
@@ -100,3 +102,17 @@ if(conflictStart<0||conflictEnd<0){console.log('FAIL: resource conflict helper i
   if(conflictChecks.some(([,ok])=>!ok))process.exitCode=1;
 }
 if(failures.length)process.exitCode=1;
+const removableStart=html.indexOf('function installationActivityCanBeRemoved');
+const removableEnd=html.indexOf('\nasync function cancelWallsInstallationActivity',removableStart);
+if(removableStart<0||removableEnd<0){console.log('FAIL: activity-removal eligibility helper is extractable for behavior tests');process.exitCode=1}else{
+  const canRemove=new Function(`${html.slice(removableStart,removableEnd)};return installationActivityCanBeRemoved`)();
+  const removalChecks=[
+    ['unstarted planned activity without run scope may be removed',canRemove({status:'planned',production_scope:[]})],
+    ['started activity is protected',!canRemove({status:'in_progress',production_scope:[]})],
+    ['held activity is protected',!canRemove({status:'on_hold',production_scope:[]})],
+    ['completed activity is protected',!canRemove({status:'completed',production_scope:[]})],
+    ['planned activity with linked production runs is protected',!canRemove({status:'planned',production_scope:[{assignment_id:'fixture'}]})],
+  ];
+  for(const [label,ok]of removalChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
+  if(removalChecks.some(([,ok])=>!ok))process.exitCode=1;
+}
