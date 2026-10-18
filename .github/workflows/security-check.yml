@@ -22,3 +22,5 @@ jobs:
         run: node scripts/validate-migrations.mjs
       - name: Verify Weekly Planner controls
         run: node scripts/validate-weekly-planner.mjs
+      - name: Verify partial installation release safeguards
+        run: node scripts/validate-installation-partial-workflow.mjs
