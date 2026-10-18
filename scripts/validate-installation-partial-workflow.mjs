@@ -74,7 +74,7 @@ if(resourceStart<0||resourceEnd<0){console.log('FAIL: resource selector helpers 
   if(resourceChecks.some(([,ok])=>!ok))process.exitCode=1;
 }
 const conflictStart=html.indexOf('function installationResourceConflicts');
-const conflictEnd=html.indexOf('\\nconst installationActivityCardBase',conflictStart);
+const conflictEnd=html.indexOf('\nconst installationActivityCardBase',conflictStart);
 if(conflictStart<0||conflictEnd<0){console.log('FAIL: resource conflict helper is extractable for behavior tests');process.exitCode=1}else{
   const conflictCode=html.slice(conflictStart,conflictEnd);
   const conflictHelper=new Function('installResources',conflictCode+';return installationResourceConflicts')(a=>a.resources||[]);
