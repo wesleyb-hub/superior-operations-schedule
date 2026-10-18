@@ -25,6 +25,9 @@ const checks=[
   ['J: activity writes retain optimistic concurrency checks',/if v_row\.version<>p_expected_version then raise exception 'Installation activity changed; refresh and retry'/.test(migration)],
   ['Permissions: new scope RPC is management-gated and not public/anon callable',/walls_installation_permission\('manage'\)/.test(migration)&&/revoke all on function public\.set_walls_installation_activity_assignments\(uuid,bigint,jsonb\) from public,anon/.test(migration)],
   ['UI: new job workspace includes required linked records and history',/\['overview','Overview'\][\s\S]*\['production','Production & Loads'\][\s\S]*\['history','History'\]/.test(html)],
+  ['UI: Today is job-first with explicit next action and actual activity-based stages',/function installationJobCompactCard/.test(html)&&/function installationJobStageStatus/.test(html)&&/Next action/.test(html)&&/fieldJobs\.map\(j=>installationJobCompactCard\(j,day\)\)/.test(html)],
+  ['UI: Update Progress opens the same job workspace at Field Activities',/data-install-update-job/.test(html)&&/openInstallationJobWorkspace\(b\.dataset\.installUpdateJob,'activities'\)/.test(html)],
+  ['UI: compact installation job cards adapt to phone-sized screens',/\.install-job-card\{[\s\S]*\.install-job-progress\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/.test(html)],
   ['UI: weekly plan is organized as job rows and adapts on mobile',/function renderInstallationJobWeek/.test(html)&&/\.install-week-grid\{grid-template-columns:minmax\(0,1fr\)/.test(html)],
   ['UI: issue, resolution, and resource status use in-app forms',/function openWallsInstallationIssueForm/.test(html)&&/function openWallsInstallationResolveForm/.test(html)&&/function openWallsInstallationResourceStatusForm/.test(html)],
   ['UI: scope updates refresh across connected clients',/walls_installation_activity_assignments','walls_installation_resources/.test(html)&&/activity_id,assignment_id,load_record_id/.test(html)],
@@ -32,4 +35,22 @@ const checks=[
 ];
 const failures=checks.filter(([,ok])=>!ok);
 for(const [label,ok] of checks)console.log(`${ok?'PASS':'FAIL'}: ${label}`);
+
+const stageStart=html.indexOf('function installationJobStageStatus');
+const compactStart=html.indexOf('function installationJobCompactCard',stageStart);
+if(stageStart<0||compactStart<0){console.log('FAIL: job-progress helpers are extractable for behavior tests');process.exitCode=1}else{
+  const helpers=new Function('normalizeDate',`${html.slice(stageStart,compactStart)};return{installationJobStageStatus,installationJobNextAction}`)(value=>value||null);
+  const job=(activities=[],extra={})=>({activities,issues:[],job:{},installation:{},...extra});
+  const behaviorChecks=[
+    ['past scheduled date alone does not mark site work complete',helpers.installationJobStageStatus(job([]),'site_preparation')==='not_started'],
+    ['scheduled activity remains scheduled, not complete',helpers.installationJobStageStatus(job([{activity_type:'stone_footing',status:'planned',activity_date:'2026-10-12'}]),'stone_footing')==='scheduled'],
+    ['in-progress activity reflects real progress',helpers.installationJobStageStatus(job([{activity_type:'wall_installation',status:'in_progress'}]),'wall_installation')==='in_progress'],
+    ['completed activity is complete from its recorded status',helpers.installationJobStageStatus(job([{activity_type:'stone_footing',status:'completed'}]),'stone_footing')==='complete'],
+    ['partial multi-day work remains in progress while another activity is active',helpers.installationJobStageStatus(job([{activity_type:'wall_installation',status:'completed'},{activity_type:'wall_installation',status:'in_progress'}]),'wall_installation')==='in_progress'],
+    ['open field issue becomes the explicit next action',helpers.installationJobNextAction({...job(),issues:[{status:'open',severity:'hold'}]}).startsWith('Resolve 1 open field issue')],
+    ['planned activity prompts resource confirmation before start',helpers.installationJobNextAction(job([{activity_type:'stone_footing',status:'planned',activity_date:'2026-10-20'}])).startsWith('Confirm resources')],
+  ];
+  for(const [label,ok]of behaviorChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
+  if(behaviorChecks.some(([,ok])=>!ok))process.exitCode=1;
+}
 if(failures.length)process.exitCode=1;
