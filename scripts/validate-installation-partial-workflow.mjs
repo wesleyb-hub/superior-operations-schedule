@@ -73,4 +73,17 @@ if(resourceStart<0||resourceEnd<0){console.log('FAIL: resource selector helpers 
   for(const [label,ok]of resourceChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
   if(resourceChecks.some(([,ok])=>!ok))process.exitCode=1;
 }
+const conflictStart=html.indexOf('function installationResourceConflicts');
+const conflictEnd=html.indexOf('\\nconst installationActivityCardBase',conflictStart);
+if(conflictStart<0||conflictEnd<0){console.log('FAIL: resource conflict helper is extractable for behavior tests');process.exitCode=1}else{
+  const conflictHelper=new Function('installResources',`\\u0024{html.slice(conflictStart,conflictEnd)};return installationResourceConflicts`)(a=>a.resources||[]);
+  const assignment=(status,start_time,end_time)=>({activity_id:`\\u0024{status}-\\u0024{start_time}`,status,activity_date:'2026-10-19',start_time,end_time,resources:[{resource_type:'employee',resource_name:'Taylor',availability_status:'unconfirmed'}]});
+  const conflictChecks=[
+    ['on-hold activities do not reserve resources or create false conflicts',conflictHelper([{activities:[assignment('planned','07:00','17:00'),assignment('on_hold','07:00','17:00')]}]).length===0],
+    ['overlapping planned/in-progress resource windows are still flagged',conflictHelper([{activities:[assignment('planned','07:00','12:00')]},{activities:[assignment('in_progress','10:00','17:00')]}]).length===1],
+    ['non-overlapping resource windows on the same day are allowed',conflictHelper([{activities:[assignment('planned','07:00','10:00')]},{activities:[assignment('planned','13:00','17:00')]}]).length===0],
+  ];
+  for(const [label,ok]of conflictChecks)console.log(`\\u0024{ok?'PASS':'FAIL'}: behavior — ${label}`);
+  if(conflictChecks.some(([,ok])=>!ok))process.exitCode=1;
+}
 if(failures.length)process.exitCode=1;
