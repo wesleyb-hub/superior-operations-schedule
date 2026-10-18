@@ -8,6 +8,7 @@ const statusMigration=fs.readFileSync(path.join(root,'supabase','migrations','20
 const plannerMigration=fs.readFileSync(path.join(root,'supabase','migrations','20261018_025_weekly_planner_partial_run_scope.sql'),'utf8');
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const previous=fs.readFileSync(path.join(root,'supabase','migrations','20261017173729_walls_delivery_qc_status_transition_only_20261017.sql'),'utf8');
+const mappingMigration=fs.readFileSync(path.join(root,'supabase','migrations','20261018192049_serialize_walls_delivery_mapping.sql'),'utf8');
 const checks=[
   ['A: delivery validates the explicitly mapped assignment set',/from public\.walls_installation_load_assignments m[\s\S]*where m\.load_record_id=new\.record_id and a\.wall_record_id=v_link_id/.test(migration)],
   ['B: selected shipment runs require stripped stage and final QC release',/count\(\*\) filter\(where a\.stage='stripped' and q\.status='released'\)/.test(migration)],
@@ -20,6 +21,7 @@ const checks=[
   ['F: site and stone activities are excluded from the QC-gated set',/p_activity_type in \('loading_hauling','wall_installation'\)/.test(migration)&&!/p_activity_type in \('loading_hauling','wall_installation','field_closeout'\)/.test(migration)],
   ['G: absent or invalid scope fails closed',/Select at least one run and its linked load/.test(html)&&/Select explicitly released production assignments/.test(migration)],
   ['H: shipment release validation remains transition-only',/v_new_status in \('Loaded','Delivered'\)[\s\S]*v_old_status is distinct from v_new_status/.test(previous)],
+  ['H: batch-map edits lock the load row and reject shipped statuses',/from public\.schedule_records l[\s\S]*where l\.collection='loads'[\s\S]*for update;[\s\S]*if v_load_status in \('Loaded','Delivered'\)\s+then\s+raise exception 'Production-batch mapping cannot be changed after a delivery load has shipped'/.test(mappingMigration)],
   ['I: schedule date edits do not create a new load release transition',/v_new_status in \('Loaded','Delivered'\)[\s\S]*v_old_status is distinct from v_new_status/.test(migration)],
   ['J: concurrent activity-scope updates use row lock and version checking',/where activity_id=p_activity_id for update[\s\S]*v_activity\.version<>p_expected_version/.test(migration)],
   ['J: activity writes retain optimistic concurrency checks',/if v_row\.version<>p_expected_version then raise exception 'Installation activity changed; refresh and retry'/.test(migration)],
@@ -28,9 +30,9 @@ const checks=[
   ['UI: Today is job-first with explicit next action and actual activity-based stages',/function installationJobCompactCard/.test(html)&&/function installationJobStageStatus/.test(html)&&/Next action/.test(html)&&/fieldJobs\.map\(j=>installationJobCompactCard\(j,day\)\)/.test(html)],
   ['UI: Update Progress opens the same job workspace at Field Activities',/data-install-update-job/.test(html)&&/openInstallationJobWorkspace\(b\.dataset\.installUpdateJob,'activities'\)/.test(html)],
   ['UI: compact installation job cards adapt to phone-sized screens',/\.install-job-card\{[\s\S]*\.install-job-progress\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/.test(html)],
+  ['UI: weekly plan is organized as job rows and adapts on mobile',/function renderInstallationJobWeek/.test(html)&&/\.install-week-grid\{grid-template-columns:minmax\(0,1fr\)/.test(html)],
   ['UI: catch-up day row is composed inside the active job-week renderer',/function renderInstallationJobWeek\(jobs,dates,activities,cards,canManage\)[\s\S]*?renderInstallationCatchupWeekRow\(dates,cards,canManage\)/.test(html)&&/renderInstallationJobWeek\(jobs,dates,activities,catchupCards,canManage\)/.test(html)&&!html.includes('body=body.replace(/<\\/div>$/')&&!html.includes('function injectInstallationCatchupUI')],
   ['UI: today catch-up cards render before control binding',/function renderInstallationCatchupToday/.test(html)&&/renderInstallationCatchupToday\(day,catchupCards,canManage\)/.test(html)&&/bindInstallationCatchupControls\(\)/.test(html)],
-  ['UI: weekly plan is organized as job rows and adapts on mobile',/function renderInstallationJobWeek/.test(html)&&/\.install-week-grid\{grid-template-columns:minmax\(0,1fr\)/.test(html)],
   ['UI: issue, resolution, and resource status use in-app forms',/function openWallsInstallationIssueForm/.test(html)&&/function openWallsInstallationResolveForm/.test(html)&&/function openWallsInstallationResourceStatusForm/.test(html)],
   ['UI: employee and equipment assignments use selectors with an explicit add-name fallback',/function installationResourceNameChoices/.test(html)&&/data-resource-choice/.test(html)&&/Add a name not listed/.test(html)&&/data-resource-custom/.test(html)],
   ['UI: scope updates refresh across connected clients',/walls_installation_activity_assignments','walls_installation_resources/.test(html)&&/activity_id,assignment_id,load_record_id/.test(html)],
@@ -93,3 +95,4 @@ if(conflictStart<0||conflictEnd<0){console.log('FAIL: resource conflict helper i
   if(conflictChecks.some(([,ok])=>!ok))process.exitCode=1;
 }
 if(failures.length)process.exitCode=1;
+
