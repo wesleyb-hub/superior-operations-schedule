@@ -523,6 +523,23 @@ body.operations-nav-collapsed{--operations-side:76px}body.operations-nav-collaps
 <style>
 .install-flow{display:grid;grid-template-columns:repeat(5,minmax(180px,1fr));gap:9px;overflow-x:auto}.install-day{background:#f1f5f8;border:1px solid #dce4ea;border-radius:9px;min-height:210px;padding:9px}.install-day h3{font-size:12px;margin:2px 0 9px;color:#17334d}.install-card{background:#fff;border:1px solid #dae3e9;border-left:4px solid #2d6f9f;border-radius:7px;padding:9px;margin:7px 0;font-size:10px}.install-card.hold{border-left-color:#b64747;background:#fffafa}.install-card.completed{border-left-color:#2f7c5a}.install-card.warning{border-left-color:#bd7b18}.install-board-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.install-resource{background:#fff;border:1px solid #dce4ea;border-radius:9px;padding:12px}.install-status{display:inline-flex;border-radius:999px;padding:3px 8px;background:#e8eff4;color:#25455d;font-size:9px;font-weight:900;text-transform:uppercase}.install-status.hold,.install-status.on_hold{background:#fae8e8;color:#9e3434}.install-status.completed,.install-status.released{background:#e4f2e9;color:#23643a}.install-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}@media(max-width:760px){.install-board-grid{grid-template-columns:1fr}.install-flow{grid-template-columns:repeat(5,minmax(210px,1fr))}}
 </style>
+<style id="hub-shared-design-standard">
+:root{--hub-page-title:22px;--hub-kpi-value:22px;--hub-control-height:38px;--hub-card-radius:10px}
+#view .production-heading,#view .planner-heading,#view .inventory-heading,#view .overview-heading{min-height:56px;margin:4px 0 14px;align-items:center}
+#view .production-heading h2,#view .planner-heading h2,#view .inventory-heading h2,#view .overview-heading h2{font-size:var(--hub-page-title);line-height:1.2;letter-spacing:-.015em;margin:0 0 4px;color:var(--navy)}
+#view .production-heading p,#view .planner-heading p,#view .inventory-heading p,#view .overview-heading p{font-size:12px;line-height:1.45;margin:0;color:var(--muted)}
+#view .tabs,#view .subtabs,#view .production-inner-nav{align-items:center;gap:4px;border-radius:var(--hub-card-radius)}
+#view .tab,#view .subtab,#view .production-inner-nav button{min-height:var(--hub-control-height);padding:8px 12px;border-radius:7px;font-size:12px}
+#view .mini{min-height:36px;padding:7px 10px;border-radius:7px;font-size:11px}
+#view .stat,#view .production-kpi,#view .planner-kpi,#view .inventory-stat{min-height:76px;padding:11px 12px;border-radius:var(--hub-card-radius)}
+#view .stat-value,#view .production-kpi strong,#view .planner-kpi strong,#view .inventory-stat-value{font-size:var(--hub-kpi-value);line-height:1.15}
+#view .stat-label,#view .production-kpi span,#view .planner-kpi span,#view .inventory-stat-label{font-size:10px;line-height:1.3}
+#view .section,#view .inventory-section,#view .planner-panel,#view .planner-review-main{border-radius:var(--hub-card-radius)}
+#view .inventory-table th,#view .planner-table th{min-height:38px;padding:10px 11px;font-size:10px}
+#view .inventory-table td,#view .planner-table td{padding:10px 11px;font-size:11px}
+#view .field input,#view .field select,#view .field textarea,#view .planner-input,#view .planner-table input,#view .planner-table select,#view .inventory-tools input,#view .inventory-tools select{min-height:var(--hub-control-height);border-radius:7px}
+@media(max-width:760px){#view .production-heading,#view .planner-heading,#view .inventory-heading,#view .overview-heading{min-height:0;align-items:flex-start;flex-direction:column;gap:10px}#view .production-kpis,#view .planner-kpis,#view .inventory-stats,#view .stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#view .production-kpi,#view .planner-kpi,#view .inventory-stat,#view .stat{min-height:66px;padding:9px 10px}#view .stat-value,#view .production-kpi strong,#view .planner-kpi strong,#view .inventory-stat-value{font-size:20px}}
+</style>
 </head>
 <body>
 <div class="auth-gate" id="authGate">
