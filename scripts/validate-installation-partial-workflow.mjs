@@ -32,6 +32,8 @@ const checks=[
   ['UI: issue, resolution, and resource status use in-app forms',/function openWallsInstallationIssueForm/.test(html)&&/function openWallsInstallationResolveForm/.test(html)&&/function openWallsInstallationResourceStatusForm/.test(html)],
   ['UI: employee and equipment assignments use selectors with an explicit add-name fallback',/function installationResourceNameChoices/.test(html)&&/data-resource-choice/.test(html)&&/Add a name not listed/.test(html)&&/data-resource-custom/.test(html)],
   ['UI: scope updates refresh across connected clients',/walls_installation_activity_assignments','walls_installation_resources/.test(html)&&/activity_id,assignment_id,load_record_id/.test(html)],
+  ['UI: superseded activity-first renderer, modal, and binder are removed',!/function renderWallsInstallation\(/.test(html)&&!/function bindWallsInstallationControls\(/.test(html)&&!/function openWallsInstallationActivityModal\(/.test(html)&&/function renderWallsInstallationEnhanced\(/.test(html)],
+  ['UI: held scope remains fixed and Resume re-enters in-progress state',/scope\.required&&canManage&&status==='planned'/.test(html)&&/data-install-status="\$\{a\.activity_id\}\|in_progress">Resume/.test(html)],
   ['UI: Resources board labels held work separately from planned work',html.includes("x._activity.status==='on_hold'")&&html.includes("installationStatusLabel(x._activity.status)")],
   ['Weekly Planner receives the explicit production run scope',/Runs: '\|\|string_agg\('Table '\|\|p\.table_id/.test(plannerMigration)],
 ];
@@ -75,7 +77,7 @@ if(resourceStart<0||resourceEnd<0){console.log('FAIL: resource selector helpers 
   if(resourceChecks.some(([,ok])=>!ok))process.exitCode=1;
 }
 const conflictStart=html.indexOf('function installationResourceConflicts');
-const conflictEnd=html.indexOf('\nconst installationActivityCardBase',conflictStart);
+const conflictEnd=html.indexOf('\nfunction installationActivityScopeState',conflictStart);
 if(conflictStart<0||conflictEnd<0){console.log('FAIL: resource conflict helper is extractable for behavior tests');process.exitCode=1}else{
   const conflictCode=html.slice(conflictStart,conflictEnd);
   const conflictHelper=new Function('installResources',conflictCode+';return installationResourceConflicts')(a=>a.resources||[]);
