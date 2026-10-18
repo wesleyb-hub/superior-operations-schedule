@@ -55,6 +55,10 @@ const checks = [
     ok: html.includes('window.location.origin+window.location.pathname'),
     message: 'Password recovery does not return to the current approved Hub URL.',
   },
+  {
+    ok: html.includes('Reorder sender active; recipient delivery unverified') && !html.includes('Reorder alerts route to Lance after activation'),
+    message: 'Inventory email status must distinguish an active sender from verified recipient delivery.',
+  },
 ];
 
 const failures = checks.filter((check) => !check.ok);
