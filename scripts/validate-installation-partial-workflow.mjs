@@ -32,6 +32,7 @@ const checks=[
   ['UI: issue, resolution, and resource status use in-app forms',/function openWallsInstallationIssueForm/.test(html)&&/function openWallsInstallationResolveForm/.test(html)&&/function openWallsInstallationResourceStatusForm/.test(html)],
   ['UI: employee and equipment assignments use selectors with an explicit add-name fallback',/function installationResourceNameChoices/.test(html)&&/data-resource-choice/.test(html)&&/Add a name not listed/.test(html)&&/data-resource-custom/.test(html)],
   ['UI: scope updates refresh across connected clients',/walls_installation_activity_assignments','walls_installation_resources/.test(html)&&/activity_id,assignment_id,load_record_id/.test(html)],
+  ['UI: Resources board labels held work separately from planned work',html.includes("x._activity.status==='on_hold'")&&html.includes("installationStatusLabel(x._activity.status)")],
   ['Weekly Planner receives the explicit production run scope',/Runs: '\|\|string_agg\('Table '\|\|p\.table_id/.test(plannerMigration)],
 ];
 const failures=checks.filter(([,ok])=>!ok);
