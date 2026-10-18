@@ -48,6 +48,8 @@ if(stageStart<0||compactStart<0){console.log('FAIL: job-progress helpers are ext
     ['completed activity is complete from its recorded status',helpers.installationJobStageStatus(job([{activity_type:'stone_footing',status:'completed'}]),'stone_footing')==='complete'],
     ['partial multi-day work remains in progress while another activity is active',helpers.installationJobStageStatus(job([{activity_type:'wall_installation',status:'completed'},{activity_type:'wall_installation',status:'in_progress'}]),'wall_installation')==='in_progress'],
     ['open field issue becomes the explicit next action',helpers.installationJobNextAction({...job(),issues:[{status:'open',severity:'hold'}]}).startsWith('Resolve 1 open field issue')],
+    ['on-hold work takes priority over another planned activity',helpers.installationJobNextAction(job([{activity_type:'stone_footing',status:'planned',activity_date:'2026-10-19'},{activity_type:'stone_footing',status:'on_hold',activity_date:'2026-10-19'}])).startsWith('Review on-hold activity before dispatch')],
+    ['changed master schedule is reviewed before field activity proceeds',helpers.installationJobNextAction({...job([{activity_type:'stone_footing',status:'planned'}]),installation:{needs_review:true}})==='Review field plan after master schedule change'],
     ['planned activity prompts resource confirmation before start',helpers.installationJobNextAction(job([{activity_type:'stone_footing',status:'planned',activity_date:'2026-10-20'}])).startsWith('Confirm resources')],
   ];
   for(const [label,ok]of behaviorChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
