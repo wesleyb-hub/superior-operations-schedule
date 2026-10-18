@@ -31,6 +31,8 @@ const checks=[
   ['UI: catch-up day row is composed inside the active job-week renderer',/function renderInstallationJobWeek\(jobs,dates,activities,cards,canManage\)[\s\S]*?renderInstallationCatchupWeekRow\(dates,cards,canManage\)/.test(html)&&/renderInstallationJobWeek\(jobs,dates,activities,catchupCards,canManage\)/.test(html)&&!html.includes('body=body.replace(/<\\/div>$/')&&!html.includes('function injectInstallationCatchupUI')],
   ['UI: today catch-up cards render before control binding',/function renderInstallationCatchupToday/.test(html)&&/renderInstallationCatchupToday\(day,catchupCards,canManage\)/.test(html)&&/bindInstallationCatchupControls\(\)/.test(html)],
   ['UI: Installation KPI cards use a readable three-column desktop layout and two-column mobile layout',/installation-kpis\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)\}/.test(html)&&/@media\(max-width:760px\)[\s\S]*#view \.installation-kpis\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/.test(html)&&/production-kpis installation-kpis/.test(html)],
+  ['UI: Today field-hold KPI counts jobs with on-hold activities or open hold issues',/function installationFieldHoldCount\(jobs,day\)/.test(html)&&/fieldHolds=installationFieldHoldCount\(fieldJobs,day\)/.test(html)&&/Jobs on hold \/ restricted/.test(html)],
+  ['UI: job workspace overview de-duplicates resource names across multiple activities',html.includes("resourceSummary=[...new Map(resources.map(r=>[`${r.resource_type}|${String(r.resource_name||'').toLowerCase()}`,r.resource_name]).filter(([key,name])=>name)).values()]")&&/Resources:<\/strong> \$\{resourceSummary\.length/.test(html)],
   ['UI: job progress stages wrap status below labels instead of compressing across five narrow columns',/\.install-job-progress\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)/.test(html)&&/\.install-stage\{display:grid;grid-template-columns:9px minmax\(0,1fr\)/.test(html)&&/\.install-stage small\{display:block;grid-column:2;margin:0/.test(html)],
   ['UI: weekly plan is organized as job rows and adapts on mobile',/function renderInstallationJobWeek/.test(html)&&/\.install-week-grid\{grid-template-columns:minmax\(0,1fr\)/.test(html)],
   ['UI: issue, resolution, and resource status use in-app forms',/function openWallsInstallationIssueForm/.test(html)&&/function openWallsInstallationResolveForm/.test(html)&&/function openWallsInstallationResourceStatusForm/.test(html)],
@@ -47,7 +49,7 @@ for(const [label,ok] of checks)console.log(`${ok?'PASS':'FAIL'}: ${label}`);
 const stageStart=html.indexOf('function installationJobStageStatus');
 const compactStart=html.indexOf('function installationJobCompactCard',stageStart);
 if(stageStart<0||compactStart<0){console.log('FAIL: job-progress helpers are extractable for behavior tests');process.exitCode=1}else{
-  const helpers=new Function('normalizeDate',`${html.slice(stageStart,compactStart)};return{installationJobStageStatus,installationJobNextAction}`)(value=>value||null);
+  const helpers=new Function('normalizeDate',`${html.slice(stageStart,compactStart)};return{installationJobStageStatus,installationJobNextAction,installationFieldHoldCount}`)(value=>value||null);
   const job=(activities=[],extra={})=>({activities,issues:[],job:{},installation:{},...extra});
   const behaviorChecks=[
     ['past scheduled date alone does not mark site work complete',helpers.installationJobStageStatus(job([]),'site_preparation')==='not_started'],
@@ -59,6 +61,8 @@ if(stageStart<0||compactStart<0){console.log('FAIL: job-progress helpers are ext
     ['on-hold work takes priority over another planned activity',helpers.installationJobNextAction(job([{activity_type:'stone_footing',status:'planned',activity_date:'2026-10-19'},{activity_type:'stone_footing',status:'on_hold',activity_date:'2026-10-19'}])).startsWith('Review on-hold activity before dispatch')],
     ['changed master schedule is reviewed before field activity proceeds',helpers.installationJobNextAction({...job([{activity_type:'stone_footing',status:'planned'}]),installation:{needs_review:true}})==='Review field plan after master schedule change'],
     ['planned activity prompts resource confirmation before start',helpers.installationJobNextAction(job([{activity_type:'stone_footing',status:'planned',activity_date:'2026-10-20'}])).startsWith('Confirm resources')],
+    ['field-hold KPI counts one job once across multiple held activities',helpers.installationFieldHoldCount([{activities:[{activity_date:'2026-10-19',status:'on_hold'},{activity_date:'2026-10-19',status:'on_hold'}],issues:[]}],'2026-10-19')===1],
+    ['field-hold KPI counts a job with an open hold issue',helpers.installationFieldHoldCount([{activities:[],issues:[{status:'open',severity:'hold'}]}],'2026-10-19')===1],
   ];
   for(const [label,ok]of behaviorChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
   if(behaviorChecks.some(([,ok])=>!ok))process.exitCode=1;
