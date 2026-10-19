@@ -182,11 +182,13 @@ const workspaceStart=html.indexOf('function openInstallationJobWorkspace(');
 const workspaceEnd=html.indexOf('function openWallsInstallationIssueForm',workspaceStart);
 const workspaceSource=html.slice(workspaceStart,workspaceEnd);
 const workspaceBindingChecks=[
-  ['workspace tab buttons are explicit non-submit controls',/<button type="button" class="mini \$\{k===active\?/.test(workspaceSource)],
-  ['workspace tabs delegate clicks from their own navigation',/tabNav\?\.addEventListener\('click',event=>/.test(workspaceSource)],
-  ['workspace panel binds controls within its own panel',/bindWallsInstallationEnhancedControls\(panel\)/.test(workspaceSource)],
-  ['workspace control binder supports a scoped root',/function bindWallsInstallationEnhancedControls\(root=document\)/.test(html)],
-  ['activity editor remains delegated after panel changes',/bindWallsInstallationEditControls\(\)/.test(workspaceSource)],
+  ['workspace tab buttons are explicit non-submit controls',/<button type="button" class="mini \\${k===active\\?/.test(workspaceSource)],
+  ['workspace tabs delegate clicks from their own navigation',/tabNav\\?\\.addEventListener\\('click',event=>/.test(workspaceSource)],
+  ['workspace panel binds controls within its own panel',/bindWallsInstallationEnhancedControls\\(panel\\)/.test(workspaceSource)],
+  ['workspace control binder supports a scoped root',/function bindWallsInstallationEnhancedControls\\(root=document\\)/.test(html)],
+  ['activity editor remains delegated after panel changes',/bindWallsInstallationEditControls\\(\\)/.test(workspaceSource)],
+  ['job workspace activities use the focused workspace card renderer',/activities\\.map\\(a=>installationWorkspaceActivityCard\\(job,a\\)\\)/.test(workspaceSource)],
+  ['focused workspace activity cards preserve edit and progress controls',/function installationWorkspaceActivityCard\\(job,a\\)/.test(html)&&/data-install-edit-activity/.test(html)],
 ];
 for(const [label,ok] of workspaceBindingChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
 if(workspaceBindingChecks.some(([,ok])=>!ok))process.exitCode=1;
