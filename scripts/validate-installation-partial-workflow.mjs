@@ -116,3 +116,29 @@ if(removableStart<0||removableEnd<0){console.log('FAIL: activity-removal eligibi
   for(const [label,ok]of removalChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
   if(removalChecks.some(([,ok])=>!ok))process.exitCode=1;
 }
+
+const editStart=html.indexOf('function openWallsInstallationEditActivity(');
+const editEnd=html.indexOf('\nfunction ',editStart+1);
+if(editStart<0||editEnd<0){console.log('FAIL: field-activity editor is present for regression checks');process.exitCode=1}else{
+  const editFn=html.slice(editStart,editEnd);
+  const saveStart=editFn.indexOf("'Save activity',async()=>{");
+  const closeAt=editFn.indexOf('closeProductionModal()',saveStart);
+  const editChecks=[
+    ['editor uses Installation management permission',editFn.includes('installationCanManage()')&&!editFn.includes('if(!currentUserIsAdmin)return;')],
+    ['date, times, and notes are captured before modal close',closeAt>saveStart&&editFn.indexOf("const date=document.getElementById('installEditDate').value",saveStart)<closeAt&&editFn.indexOf("const start=document.getElementById('installEditStart').value",saveStart)<closeAt&&editFn.indexOf("notes=document.getElementById('installEditNotes').value",saveStart)<closeAt],
+    ['edit save retains optimistic version and current status',editFn.includes('p_expected_version:a.version')&&editFn.includes('p_status:a.status')],
+    ['field edit retains final QC gate',editFn.includes('!installationQcReady(job)')],
+    ['edit rejects a non-positive activity time window',editFn.includes('start>=end')],
+  ];
+  for(const [label,ok]of editChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
+  if(editChecks.some(([,ok])=>!ok))process.exitCode=1;
+}
+const catchupMigration=fs.readFileSync(path.join(root,'supabase','migrations','20261019_028_walls_installation_multiple_day_cards.sql'),'utf8');
+const catchupChecks=[
+  ['multiple active catch-up cards per date are allowed',/drop\s+index\s+if\s+exists\s+public\.walls_installation_one_active_day_card_idx/i.test(catchupMigration)],
+  ['multiple-day-card migration preserves existing card/task rows',!/(delete\s+from|truncate\s+table)\s+public\.walls_installation_day_(cards|tasks)/i.test(catchupMigration)],
+  ['catch-up editor tells managers how to separate jobs',html.includes('multiple cards for one day')&&html.includes('identify the job or crew in each title')],
+  ['Today and 5-Day views retain add-card controls with existing cards',html.includes('data-catchup-add-day=')&&html.includes('existing.map(installationDayCardHtml)')&&html.includes('rows.map(card=>')],
+];
+for(const [label,ok]of catchupChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
+if(catchupChecks.some(([,ok])=>!ok))process.exitCode=1;
