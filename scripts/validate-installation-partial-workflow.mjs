@@ -6,6 +6,7 @@ const root=path.resolve(import.meta.dirname,'..');
 const migration=fs.readFileSync(path.join(root,'supabase','migrations','20261018_022_walls_installation_partial_scope.sql'),'utf8');
 const statusMigration=fs.readFileSync(path.join(root,'supabase','migrations','20261018_023_walls_installation_partial_status.sql'),'utf8');
 const plannerMigration=fs.readFileSync(path.join(root,'supabase','migrations','20261018_025_weekly_planner_partial_run_scope.sql'),'utf8');
+const resourceStatusMigration=fs.readFileSync(path.join(root,'supabase','migrations','20261019152227_normalize_installation_resource_status_defaults.sql'),'utf8');
 const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const previous=fs.readFileSync(path.join(root,'supabase','migrations','20261017173729_walls_delivery_qc_status_transition_only_20261017.sql'),'utf8');
 const checks=[
@@ -24,13 +25,14 @@ const checks=[
   ['J: concurrent activity-scope updates use row lock and version checking',/where activity_id=p_activity_id for update[\s\S]*v_activity\.version<>p_expected_version/.test(migration)],
   ['J: activity writes retain optimistic concurrency checks',/if v_row\.version<>p_expected_version then raise exception 'Installation activity changed; refresh and retry'/.test(migration)],
   ['Permissions: new scope RPC is management-gated and not public/anon callable',/walls_installation_permission\('manage'\)/.test(migration)&&/revoke all on function public\.set_walls_installation_activity_assignments\(uuid,bigint,jsonb\) from public,anon/.test(migration)],
+  ['Resource saves convert empty availability/readiness to the safe unconfirmed state',/coalesce\(nullif\(btrim\(v_item->>'availability_status'\),''\),'unconfirmed'\)/.test(resourceStatusMigration)&&/coalesce\(nullif\(btrim\(v_item->>'readiness_status'\),''\),'unconfirmed'\)/.test(resourceStatusMigration)],
   ['UI: new job workspace includes required linked records and history',/\['overview','Overview'\][\s\S]*\['production','Production & Loads'\][\s\S]*\['history','History'\]/.test(html)],
   ['UI: Today is job-first with explicit next action and actual activity-based stages',/function installationJobCompactCard/.test(html)&&/function installationJobStageStatus/.test(html)&&/Next action/.test(html)&&/fieldJobs\.map\(j=>installationJobCompactCard\(j,day\)\)/.test(html)],
   ['UI: Update Progress opens the same job workspace at Field Activities',/data-install-update-job/.test(html)&&/openInstallationJobWorkspace\(b\.dataset\.installUpdateJob,'activities'\)/.test(html)],
   ['UI: installation job workspace gets a full-width modal layout and nonshrinking tabs',/modalBody\.classList\.toggle\('install-job-modal-body',body\.includes\('class="install-job-tabs"'\)\)/.test(html)&&/\.modal-body\.install-job-modal-body\{display:block\}/.test(html)&&/\.install-job-tabs button\{white-space:nowrap;flex:0 0 auto;min-height:38px\}/.test(html)],
   ['UI: compact installation job cards adapt to phone-sized screens',/\.install-job-card\{[\s\S]*\.install-job-progress\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/.test(html)],
   ['UI: catch-up day row is composed inside the active job-week renderer',/function renderInstallationJobWeek\(jobs,dates,activities,cards,canManage\)[\s\S]*?renderInstallationCatchupWeekRow\(dates,cards,canManage\)/.test(html)&&/renderInstallationJobWeek\(jobs,dates,activities,catchupCards,canManage\)/.test(html)&&!html.includes('body=body.replace(/<\\/div>$/')&&!html.includes('function injectInstallationCatchupUI')],
-  ['UI: today catch-up cards render before control binding',/function renderInstallationCatchupToday/.test(html)&&/renderInstallationCatchupToday\(day,catchupCards,canManage\)/.test(html)&&/bindInstallationCatchupControls\(\)/.test(html)],
+  ['UI: Today field-work board combines jobs and active catch-up cards before showing the empty state',html.includes('function installationTodayFieldWorkContent(jobs,day,cards,canManage)')&&html.includes("cards.filter(card=>card.work_date===day&&card.status!=='cancelled')")&&html.includes('...jobs.map(job=>installationJobCompactCard(job,day)),...activeCards.map(installationDayCardHtml)')&&html.includes("const boardContent=fieldWork.cardsMarkup||'<div class=\"production-empty\">")&&html.includes('body.slice(0,boardStart)+fieldWork.addCardMarkup')&&html.includes('bindInstallationCatchupControls()')],
   ['UI: Installation KPI cards use a readable three-column desktop layout and two-column mobile layout',/installation-kpis\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)\}/.test(html)&&/@media\(max-width:760px\)[\s\S]*#view \.installation-kpis\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/.test(html)&&/production-kpis installation-kpis/.test(html)],
   ['UI: Today field-hold KPI counts jobs with on-hold activities or open hold issues',/function installationFieldHoldCount\(jobs,day\)/.test(html)&&/fieldHolds=installationFieldHoldCount\(fieldJobs,day\)/.test(html)&&/Jobs on hold \/ restricted/.test(html)],
   ['UI: job workspace overview de-duplicates resource names across multiple activities',html.includes("resourceSummary=[...new Map(resources.map(r=>[`${r.resource_type}|${String(r.resource_name||'').toLowerCase()}`,r.resource_name]).filter(([key,name])=>name)).values()]")&&/Resources:<\/strong> \$\{resourceSummary\.length/.test(html)],
@@ -82,6 +84,25 @@ if(stageStart<0||compactStart<0){console.log('FAIL: job-progress helpers are ext
   ];
   for(const [label,ok]of behaviorChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
   if(behaviorChecks.some(([,ok])=>!ok))process.exitCode=1;
+}
+const todayContentStart=html.indexOf('function installationTodayFieldWorkContent');
+const todayContentEnd=html.indexOf('\nfunction renderInstallationJobWeek',todayContentStart);
+if(todayContentStart<0||todayContentEnd<0){console.log('FAIL: Today field-work board helper is extractable for behavior tests');process.exitCode=1}else{
+  const makeTodayContent=new Function('installationJobCompactCard','installationDayCardHtml','renderInstallationCatchupToday',`${html.slice(todayContentStart,todayContentEnd)};return installationTodayFieldWorkContent`);
+  const todayContent=makeTodayContent(job=>`<job:${job.id}>`,card=>`<catchup:${card.title}>`,()=>'<button>Add catch-up</button>');
+  const active={work_date:'2026-10-19',status:'planned',title:'Geo Foam'},cancelled={work_date:'2026-10-19',status:'cancelled',title:'Duplicate'};
+  const populated=todayContent([],'2026-10-19',[active,cancelled],true);
+  const regularJob=todayContent([{id:'2912'}],'2026-10-19',[active],true);
+  const empty=todayContent([],'2026-10-19',[cancelled],true);
+  const todayChecks=[
+    ['active catch-up task appears on Today when no job-linked field activity exists',populated.hasWork&&populated.cardsMarkup==='<catchup:Geo Foam>'],
+    ['cancelled catch-up card is excluded from Today',!populated.cardsMarkup.includes('Duplicate')],
+    ['job-linked work and catch-up cards appear together',regularJob.cardsMarkup==='<job:2912><catchup:Geo Foam>'],
+    ['only cancelled cards leave Today in its no-field-work state',!empty.hasWork&&empty.cardsMarkup===''],
+    ['manager retains catch-up add control alongside field-work board',populated.addCardMarkup.includes('Add catch-up')],
+  ];
+  for(const [label,ok]of todayChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
+  if(todayChecks.some(([,ok])=>!ok))process.exitCode=1;
 }
 const resourceStart=html.indexOf('function installationResourceNameChoices');
 const resourceEnd=html.indexOf('function installationResourceRowsHtml',resourceStart);
@@ -151,7 +172,7 @@ const catchupChecks=[
   ['multiple active catch-up cards per date are allowed',/drop\s+index\s+if\s+exists\s+public\.walls_installation_one_active_day_card_idx/i.test(catchupMigration)],
   ['multiple-day-card migration preserves existing card/task rows',!/(delete\s+from|truncate\s+table)\s+public\.walls_installation_day_(cards|tasks)/i.test(catchupMigration)],
   ['catch-up editor tells managers how to separate jobs',html.includes('multiple cards for one day')&&html.includes('identify the job or crew in each title')],
-  ['Today and 5-Day views retain add-card controls with existing cards',html.includes('data-catchup-add-day=')&&html.includes('existing.map(installationDayCardHtml)')&&html.includes('rows.map(card=>')],
+  ['Today and 5-Day views retain add-card controls with existing cards',html.includes('data-catchup-add-day=')&&html.includes('function installationTodayFieldWorkContent(jobs,day,cards,canManage)')&&html.includes('activeCards.map(installationDayCardHtml)')&&html.includes('rows.map(card=>')],
 ];
 for(const [label,ok]of catchupChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
 if(catchupChecks.some(([,ok])=>!ok))process.exitCode=1;
@@ -165,3 +186,4 @@ const workspaceBindingChecks=[
 ];
 for(const [label,ok] of workspaceBindingChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
 if(workspaceBindingChecks.some(([,ok])=>!ok))process.exitCode=1;
+

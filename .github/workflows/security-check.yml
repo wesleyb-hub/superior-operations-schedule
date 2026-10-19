@@ -20,7 +20,12 @@ jobs:
         run: node scripts/validate-public-bundle.mjs
       - name: Verify database migrations
         run: node scripts/validate-migrations.mjs
+      - name: Verify privileged RPC grants
+        run: node scripts/validate-function-privilege-hardening.mjs
       - name: Verify Weekly Planner controls
         run: node scripts/validate-weekly-planner.mjs
       - name: Verify partial installation release safeguards
         run: node scripts/validate-installation-partial-workflow.mjs
+      - name: Verify main Installation activity catalog
+        run: node scripts/validate-installation-primary-activities.mjs
+
