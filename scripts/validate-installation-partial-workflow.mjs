@@ -142,3 +142,13 @@ const catchupChecks=[
 ];
 for(const [label,ok]of catchupChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
 if(catchupChecks.some(([,ok])=>!ok))process.exitCode=1;
+
+const workspaceStart=html.indexOf('function openInstallationJobWorkspace(');
+const workspaceEnd=html.indexOf('function openWallsInstallationIssueForm',workspaceStart);
+const workspaceSource=html.slice(workspaceStart,workspaceEnd);
+const workspaceBindingChecks=[
+  ['activity editor is bound when the job workspace first renders',/bindWallsInstallationEnhancedControls\(\);bindWallsInstallationEditControls\(\)\}/.test(workspaceSource)],
+  ['activity editor is rebound after switching workspace tabs',/install-job-panel'\)\.innerHTML=installationWorkspacePanel\(job,active,events\|\|\[\]\);bindWallsInstallationEnhancedControls\(\);bindWallsInstallationEditControls\(\)/.test(workspaceSource)],
+];
+for(const [label,ok] of workspaceBindingChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
+if(workspaceBindingChecks.some(([,ok])=>!ok))process.exitCode=1;
