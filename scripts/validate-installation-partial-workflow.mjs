@@ -29,6 +29,7 @@ const checks=[
   ['UI: new job workspace includes required linked records and history',/\['overview','Overview'\][\s\S]*\['production','Production & Loads'\][\s\S]*\['history','History'\]/.test(html)],
   ['UI: Today is job-first with explicit next action and actual activity-based stages',/function installationJobCompactCard/.test(html)&&/function installationJobStageStatus/.test(html)&&/Next action/.test(html)&&/fieldJobs\.map\(j=>installationJobCompactCard\(j,day\)\)/.test(html)],
   ['UI: Update Progress opens the same job workspace at Field Activities',/data-install-update-job/.test(html)&&/openInstallationJobWorkspace\(b\.dataset\.installUpdateJob,'activities'\)/.test(html)],
+  ['UI: Field Activities workspace uses bounded lightweight rows with preserved edit and crew actions',html.includes('visibleActivities=activities.slice(0,100)')&&html.includes('data-install-edit-activity=')&&html.includes('data-install-edit-resources=')&&!html.includes('activities.map(a=>installationWorkspaceActivityCard(job,a))')],
   ['UI: installation job workspace gets a full-width modal layout and nonshrinking tabs',/modalBody\.classList\.toggle\('install-job-modal-body',body\.includes\('class="install-job-tabs"'\)\)/.test(html)&&/\.modal-body\.install-job-modal-body\{display:block\}/.test(html)&&/\.install-job-tabs button\{white-space:nowrap;flex:0 0 auto;min-height:38px\}/.test(html)],
   ['UI: compact installation job cards adapt to phone-sized screens',/\.install-job-card\{[\s\S]*\.install-job-progress\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/.test(html)],
 ['UI: week view avoids preparing Today and Resources aggregates',/fieldJobs=v==='today'\?jobs\.filter/.test(html)&&/upcoming=v==='today'\?jobs\.filter/.test(html)&&/activities=v==='resources'\?jobs\.flatMap/.test(html)],
@@ -187,7 +188,7 @@ const workspaceBindingChecks=[
   ['workspace panel binds controls within its own panel',workspaceSource.includes('bindWallsInstallationEnhancedControls(panel)')],
   ['workspace control binder supports a scoped root',html.includes('function bindWallsInstallationEnhancedControls(root=document)')],
   ['activity editor remains delegated after panel changes',workspaceSource.includes('bindWallsInstallationEditControls()')],
-  ['job workspace activities use the focused workspace card renderer',html.includes('activities.map(a=>installationWorkspaceActivityCard(job,a))')],
+  ['job workspace activities use bounded lightweight rows instead of the frozen derived-card path',html.includes('visibleActivities=activities.slice(0,100)')&&!html.includes('activities.map(a=>installationWorkspaceActivityCard(job,a))')],
   ['focused workspace activity cards preserve edit and progress controls',html.includes('function installationWorkspaceActivityCard(job,a)')&&html.includes('data-install-edit-activity')],
 ];
 for(const [label,ok] of workspaceBindingChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
