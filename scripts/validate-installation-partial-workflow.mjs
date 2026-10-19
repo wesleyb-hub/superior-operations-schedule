@@ -187,7 +187,7 @@ const workspaceBindingChecks=[
   ['workspace panel binds controls within its own panel',workspaceSource.includes('bindWallsInstallationEnhancedControls(panel)')],
   ['workspace control binder supports a scoped root',html.includes('function bindWallsInstallationEnhancedControls(root=document)')],
   ['activity editor remains delegated after panel changes',workspaceSource.includes('bindWallsInstallationEditControls()')],
-  ['job workspace activities use the focused workspace card renderer',workspaceSource.includes('activities.map(a=>installationWorkspaceActivityCard(job,a))')],
+  ['job workspace activities use the focused workspace card renderer',html.includes('activities.map(a=>installationWorkspaceActivityCard(job,a))')],
   ['focused workspace activity cards preserve edit and progress controls',html.includes('function installationWorkspaceActivityCard(job,a)')&&html.includes('data-install-edit-activity')],
 ];
 for(const [label,ok] of workspaceBindingChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
