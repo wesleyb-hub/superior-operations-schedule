@@ -47,6 +47,19 @@ const checks=[
   ['Weekly Planner receives the explicit production run scope',/Runs: '\|\|string_agg\('Table '\|\|p\.table_id/.test(plannerMigration)],
 ];
 const failures=checks.filter(([,ok])=>!ok);
+
+const dayCardCancelStart=html.indexOf('function installationDayCardCanBeCancelled');
+const dayCardCancelEnd=html.indexOf('\nfunction installationDayCardHtml',dayCardCancelStart);
+if(dayCardCancelStart<0||dayCardCancelEnd<0){console.log('FAIL: day-card cancellation helper is extractable');process.exitCode=1}else{
+  const canCancel=new Function(`${html.slice(dayCardCancelStart,dayCardCancelEnd)};return installationDayCardCanBeCancelled`)();
+  const dayCardChecks=[
+    ['planned-only card can be cancelled',canCancel({tasks:[{status:'planned'}]})],
+    ['card with in-progress task cannot be cancelled',!canCancel({tasks:[{status:'in_progress'}]})],
+    ['card with completed task cannot be cancelled',!canCancel({tasks:[{status:'completed'}]})],
+  ];
+  for(const [label,ok]of dayCardChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
+  if(dayCardChecks.some(([,ok])=>!ok))process.exitCode=1
+}
 for(const [label,ok] of checks)console.log(`${ok?'PASS':'FAIL'}: ${label}`);
 
 const stageStart=html.indexOf('function installationJobStageStatus');
