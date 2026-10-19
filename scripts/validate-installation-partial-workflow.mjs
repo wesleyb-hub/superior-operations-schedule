@@ -49,7 +49,7 @@ const checks=[
 const failures=checks.filter(([,ok])=>!ok);
 
 const dayCardCancelStart=html.indexOf('function installationDayCardCanBeCancelled');
-const dayCardCancelEnd=html.indexOf('\\nfunction installationDayCardHtml',dayCardCancelStart);
+const dayCardCancelEnd=html.indexOf('\nfunction installationDayCardHtml',dayCardCancelStart);
 if(dayCardCancelStart<0||dayCardCancelEnd<0){console.log('FAIL: day-card cancellation helper is extractable');process.exitCode=1}else{
   const canCancel=new Function(`${html.slice(dayCardCancelStart,dayCardCancelEnd)};return installationDayCardCanBeCancelled`)();
   const dayCardChecks=[
