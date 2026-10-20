@@ -3296,10 +3296,14 @@ function renderDelivery(){
       <div><span class="pill on">Released</span><div class="job-sub">${l.deliveredAt?new Date(l.deliveredAt).toLocaleString():''}</div></div>
       <div class="no-print">${l.linkType?`<button class="mini" data-open-delivery-source="${l.id}">Open ${l.division==='walls'?'Job':'Project'}</button>`:''}</div>
     </div>`).join('');
-  const deliveredWallLoadRecords=[...state.loads.filter(l=>l.status==='Delivered'&&l.division==='walls'&&l.linkType==='wall'),...releasedThisWeek.filter(l=>l.division==='walls'&&l.linkType==='wall'),...state.deliveryHistory.filter(l=>l.division==='walls'&&l.linkType==='wall').map(l=>({...l,status:'Delivered'}))];
-  const deliveredWallLoadsNeedingRunLinks=[...new Map(deliveredWallLoadRecords.map(l=>[l.id,l])).values()]
-    .filter(l=>{const j=installationJob(l.linkId),shipment=(j?.delivery||[]).find(x=>x.record_id===l.id);return !j||!(shipment?.assignment_ids||[]).length})
-    .map(l=>{const j=installationJob(l.linkId),q=loadReadiness(l);return '<div class="delivery-row"><div><div class="project-name">'+htmlSafe(j?.job?.job||l.project)+'</div><div class="job-sub">'+htmlSafe(j?.job?.project||l.project)+' · Superior Walls</div></div><div>'+fmt(l.date)+'</div><div>'+htmlSafe(l.load)+'<div class="job-sub">Final QC '+q.released+'/'+q.need+' runs released</div></div><div><span class="pill on">Delivered</span></div><div class="delivery-actions no-print">'+(installationCanManage()?'<button type="button" data-wall-load-map="'+htmlSafe(l.id)+'">Assign runs for Installation</button>':'<span class="job-sub">Management access required to record run links.</span>')+'</div></div>'}).join('');
+  const deliveredWallLoadRecords=[...state.loads.filter(l=>l.status==='Delivered'&&l.division==='walls'),...releasedThisWeek.filter(l=>l.division==='walls'),...state.deliveryHistory.filter(l=>l.division==='walls').map(l=>({...l,status:'Delivered'}))];
+  const deliveredWallLoads=[...new Map(deliveredWallLoadRecords.map(l=>[l.id,l])).values()].sort((a,b)=>(b.deliveredAt||b.date||'').localeCompare(a.deliveredAt||a.date||''));
+  const deliveredWallLoadsNeedingRunLinks=deliveredWallLoads.filter(l=>{const j=installationJob(l.linkId),shipment=(j?.delivery||[]).find(x=>x.record_id===l.id);return !(shipment?.assignment_ids||[]).length});
+  const deliveredWallLoadsHTML=deliveredWallLoads.map(l=>{
+    const j=installationJob(l.linkId),shipment=(j?.delivery||[]).find(x=>x.record_id===l.id),hasLinks=Boolean((shipment?.assignment_ids||[]).length),q=loadReadiness(l);
+    const action=hasLinks?'<span class="job-sub">Run links already recorded.</span>':!installationCanManage()?'<span class="job-sub">Management access required to record run links.</span>':!j?'<span class="job-sub">Installation job is still loading; refresh and retry.</span>':'<button type="button" data-wall-load-map="'+htmlSafe(l.id)+'">Assign runs for Installation</button>';
+    return '<div class="delivery-row"><div><div class="project-name">'+htmlSafe(j?.job?.job||l.project)+'</div><div class="job-sub">'+htmlSafe(j?.job?.project||l.project)+' · Superior Walls</div></div><div>'+fmt(l.date)+'</div><div>'+htmlSafe(l.load)+'<div class="job-sub">Final QC '+q.released+'/'+q.need+' runs released</div></div><div><span class="pill on">Delivered</span></div><div class="delivery-actions no-print">'+action+'</div></div>'
+  }).join('');
 
   document.getElementById('view').innerHTML=`
     <div class="stats">
@@ -3312,8 +3316,8 @@ function renderDelivery(){
     <div class="grid days">${days}</div>
 
     <section class="section">
-      <div class="section-head"><div><h3>Installation handoff — delivered loads needing run links</h3><div class="muted" style="font-size:10px">A production run is the wall panels recorded for one production table. Link the exact runs carried by a delivered load so Installation can select what arrived. This does not change shipment status.</div></div><span class="pill ${deliveredWallLoadsNeedingRunLinks?'risk':'on'}">${deliveredWallLoadsNeedingRunLinks?deliveredWallLoadsNeedingRunLinks.split('delivery-row').length-1:0} need links</span></div>
-      <div class="section-body">${deliveredWallLoadsNeedingRunLinks||'<div class="empty">No delivered Superior Walls production runs are waiting for a link.</div>'}</div>
+      <div class="section-head"><div><h3>Installation handoff — delivered loads</h3><div class="muted" style="font-size:10px">Confirm the exact production runs carried by each delivered Superior Walls load. This records traceability only; it does not change shipment status.</div></div><span class="pill ${deliveredWallLoadsNeedingRunLinks.length?'risk':'on'}">${deliveredWallLoadsNeedingRunLinks.length} need links</span></div>
+      <div class="section-body">${deliveredWallLoadsHTML||'<div class="empty">No delivered Superior Walls loads this week.</div>'}</div>
     </section>
 
     <section class="section">
