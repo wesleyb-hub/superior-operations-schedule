@@ -194,6 +194,11 @@ const workspaceBindingChecks=[
   ['job workspace activities use bounded lightweight rows instead of the frozen derived-card path',html.includes('visibleActivities=activities.slice(0,100)')&&!html.includes('activities.map(a=>installationWorkspaceActivityCard(job,a))')],
   ['focused workspace activity cards preserve edit and progress controls',html.includes('function installationWorkspaceActivityCard(job,a)')&&html.includes('data-install-edit-activity')],
 ];
+const labelNormalizationChecks=[
+  ['Installation label observer avoids rewriting unchanged canonical labels',html.includes('const label=labels.get(key);if(label&&node.textContent!==label)node.textContent=label;')&&html.includes("const current=node.textContent,next=current.replace(/site preparation/gi,'site readiness').replace(/wall installation/gi,'wall install');if(next!==current)node.textContent=next;")],
+];
+for(const [label,ok] of labelNormalizationChecks)console.log(`${ok?'PASS':'FAIL'}: performance — ${label}`);
+if(labelNormalizationChecks.some(([,ok])=>!ok))process.exitCode=1;
 for(const [label,ok] of workspaceBindingChecks)console.log(`${ok?'PASS':'FAIL'}: behavior — ${label}`);
 if(workspaceBindingChecks.some(([,ok])=>!ok))process.exitCode=1;
 
