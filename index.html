@@ -4051,10 +4051,10 @@ bootstrap();
     });
     root.querySelectorAll('.install-card strong,.install-week-cell button strong').forEach(node=>{
       const key=node.textContent.trim().toLowerCase().replaceAll(' ','_');
-      if(labels.has(key))node.textContent=labels.get(key);
+      const label=labels.get(key);if(label&&node.textContent!==label)node.textContent=label;
     });
     root.querySelectorAll('.install-job-next span').forEach(node=>{
-      node.textContent=node.textContent.replace(/site preparation/gi,'site readiness').replace(/wall installation/gi,'wall install');
+      const current=node.textContent,next=current.replace(/site preparation/gi,'site readiness').replace(/wall installation/gi,'wall install');if(next!==current)node.textContent=next;
     });
   }
   const observer=new MutationObserver(()=>normalizeLabels(document));
