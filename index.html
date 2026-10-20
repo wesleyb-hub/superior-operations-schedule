@@ -3296,9 +3296,9 @@ function renderDelivery(){
       <div><span class="pill on">Released</span><div class="job-sub">${l.deliveredAt?new Date(l.deliveredAt).toLocaleString():''}</div></div>
       <div class="no-print">${l.linkType?`<button class="mini" data-open-delivery-source="${l.id}">Open ${l.division==='walls'?'Job':'Project'}</button>`:''}</div>
     </div>`).join('');
-  const deliveredWallLoadRecords=[...state.loads.filter(l=>l.status==='Delivered'&&l.division==='walls'&&l.linkType==='wall'),...state.deliveryHistory.filter(l=>l.division==='walls'&&l.linkType==='wall').map(l=>({...l,status:'Delivered'}))];
+  const deliveredWallLoadRecords=[...state.loads.filter(l=>l.status==='Delivered'&&l.division==='walls'&&l.linkType==='wall'),...releasedThisWeek.filter(l=>l.division==='walls'&&l.linkType==='wall'),...state.deliveryHistory.filter(l=>l.division==='walls'&&l.linkType==='wall').map(l=>({...l,status:'Delivered'}))];
   const deliveredWallLoadsNeedingRunLinks=[...new Map(deliveredWallLoadRecords.map(l=>[l.id,l])).values()]
-    .filter(l=>{const j=installationJob(l.linkId),shipment=(j?.delivery||[]).find(x=>x.record_id===l.id);return (j?.production||[]).some(a=>a.stage!=='cancelled')&&!(shipment?.assignment_ids||[]).length})
+    .filter(l=>{const j=installationJob(l.linkId),shipment=(j?.delivery||[]).find(x=>x.record_id===l.id);return !j||!(shipment?.assignment_ids||[]).length})
     .map(l=>{const j=installationJob(l.linkId),q=loadReadiness(l);return '<div class="delivery-row"><div><div class="project-name">'+htmlSafe(j?.job?.job||l.project)+'</div><div class="job-sub">'+htmlSafe(j?.job?.project||l.project)+' · Superior Walls</div></div><div>'+fmt(l.date)+'</div><div>'+htmlSafe(l.load)+'<div class="job-sub">Final QC '+q.released+'/'+q.need+' runs released</div></div><div><span class="pill on">Delivered</span></div><div class="delivery-actions no-print">'+(installationCanManage()?'<button type="button" data-wall-load-map="'+htmlSafe(l.id)+'">Assign runs for Installation</button>':'<span class="job-sub">Management access required to record run links.</span>')+'</div></div>'}).join('');
 
   document.getElementById('view').innerHTML=`
