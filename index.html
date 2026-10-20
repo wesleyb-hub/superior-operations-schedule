@@ -2296,7 +2296,7 @@ function openWallsInstallationActivityScope(activityId){
   const body=(rows?'<div class="install-scope-list">'+rows+'</div>':'<div class="production-empty">'+htmlSafe(helper)+'</div>')+'<div class="production-warning" style="margin-top:10px">'+htmlSafe(helper)+' Scope locks after field work starts; create a separate activity for later runs.</div>';
   openProductionModal('Select runs for '+(install?'wall installation':'loading / hauling'),(job.job?.job||job.record_id)+' · choose only the exact runs included in this field activity.',body,'Save run scope',canSave?async()=>{
     const scopes=[...document.querySelectorAll('[data-scope-assignment]:checked')].map(x=>({assignment_id:x.dataset.scopeAssignment,load_record_id:document.querySelector('[data-scope-load="'+x.dataset.scopeAssignment+'"]')?.value||''}));
-    if(!scopes.length){alert('Select at least one run and its linked delivery load.');return}
+    if(!scopes.length){alert('Select at least one run and its linked load.');return}
     if(scopes.some(x=>!x.load_record_id)){alert('Choose a delivery load for every selected run.');return}
     closeProductionModal();
     await wallsInstallationRpc('set_walls_installation_activity_assignments',{p_activity_id:a.activity_id,p_expected_version:a.version,p_scopes:scopes},'Production run scope saved.')
