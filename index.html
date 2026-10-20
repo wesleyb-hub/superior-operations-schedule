@@ -179,8 +179,8 @@ function openWallsInstallationLoadMap(loadRecordId){
   const activeLoad=state.loads.find(x=>x.id===loadRecordId);
   const historyLoad=state.deliveryHistory.find(x=>x.id===loadRecordId);
   const load=activeLoad||historyLoad&&{...historyLoad,status:'Delivered'};
-  if(!load||load.linkType!=='wall'||!installationCanManage())return;
-  const job=installationJob(load.linkId);
+  if(!load||!(load.division==='walls'||load.linkType==='wall')||!installationCanManage()){alert('This delivered wall load is not available for Installation run linking.');return}
+  const job=installationJob(load.linkId)||(wallsInstallation.jobs||[]).find(x=>x.job?.job===load.project);
   if(!job){alert('Installation data is still loading. Refresh the Delivery view and try again.');return}
   const link=(job.delivery||[]).find(x=>x.record_id===loadRecordId),selected=new Set(link&&link.assignment_ids||[]),delivered=load.status==='Delivered';
   if(delivered&&selected.size){alert('This delivered load already has an audited run list. It is locked to preserve shipment history.');return}
@@ -3366,7 +3366,7 @@ function renderDelivery(){
     if(l)openDeliverySource(l)
   });
 
-  document.querySelectorAll('[data-wall-load-map]').forEach(b=>b.onclick=()=>openWallsInstallationLoadMap(b.dataset.wallLoadMap));
+  if(!window.wallsInstallationLoadMapHandlerBound){window.wallsInstallationLoadMapHandlerBound=true;document.addEventListener('click',e=>{const b=e.target.closest('[data-wall-load-map]');if(!b)return;e.preventDefault();e.stopPropagation();openWallsInstallationLoadMap(b.dataset.wallLoadMap)},true)}
 
   document.querySelectorAll('[data-delete-delivery]').forEach(b=>b.onclick=e=>{
     e.stopPropagation();
