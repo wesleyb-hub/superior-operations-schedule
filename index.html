@@ -1114,12 +1114,15 @@ async function loadWallsProduction(){
   if(weeklyError)console.error('Could not load Superior Walls weekly forecast:',weeklyError);
   wallsProduction={...(data||{permissions:{},tables:[],jobs:[],assignments:[],issues:[],events:[]}),weeklyForecast:weeklyForecast||null};wallsProductionReady=true;wallsProductionError=weeklyError?.message||'';if(state.view==='walls'&&state.subview.walls==='production')render();return true
 }
-let wallsInstallationLoadPromise=null;
-function ensureWallsInstallationLoaded(){
-  if(wallsInstallationReady)return Promise.resolve(true);
-  if(wallsInstallationLoadPromise)return wallsInstallationLoadPromise;
+let wallsInstallationLoadPromise=null,wallsInstallationReloadQueued=false;
+function ensureWallsInstallationLoaded(force=false){
+  if(wallsInstallationLoadPromise){if(force)wallsInstallationReloadQueued=true;return wallsInstallationLoadPromise}
+  if(wallsInstallationReady&&!force)return Promise.resolve(true);
   if(!wallsInstallationChannel)subscribeWallsInstallation();
-  wallsInstallationLoadPromise=loadWallsInstallation().finally(()=>{wallsInstallationLoadPromise=null});
+  wallsInstallationLoadPromise=loadWallsInstallation().finally(()=>{
+    wallsInstallationLoadPromise=null;
+    if(wallsInstallationReloadQueued){wallsInstallationReloadQueued=false;if((state.view==='walls'&&state.subview.walls==='installation')||state.view==='qc'||state.view==='delivery')ensureWallsInstallationLoaded(true)}
+  });
   return wallsInstallationLoadPromise
 }
 async function loadWallsInstallation(){
@@ -1136,11 +1139,11 @@ async function loadWallsInstallation(){
 }
 function subscribeWallsInstallation(){
   if(!sb||!wallSubviewAllowed('installation'))return;if(wallsInstallationChannel)sb.removeChannel(wallsInstallationChannel);wallsInstallationChannel=sb.channel('walls-installation-live');
-  ['walls_installation_jobs','walls_installation_activities','walls_installation_activity_assignments','walls_installation_resources','walls_installation_issues','walls_installation_load_assignments','walls_installation_qc_releases','walls_installation_day_cards','walls_installation_day_tasks','walls_production_assignments','walls_production_issues','schedule_records'].forEach(table=>wallsInstallationChannel.on('postgres_changes',{event:'*',schema:'public',table},()=>{if(installationBusy)return;clearTimeout(wallsInstallationReloadTimer);wallsInstallationReloadTimer=setTimeout(()=>loadWallsInstallation(),300)}));wallsInstallationChannel.subscribe()
+  ['walls_installation_jobs','walls_installation_activities','walls_installation_activity_assignments','walls_installation_resources','walls_installation_issues','walls_installation_load_assignments','walls_installation_qc_releases','walls_installation_day_cards','walls_installation_day_tasks','walls_production_assignments','walls_production_issues','schedule_records'].forEach(table=>wallsInstallationChannel.on('postgres_changes',{event:'*',schema:'public',table},()=>{if(installationBusy||!((state.view==='walls'&&state.subview.walls==='installation')||state.view==='qc'||state.view==='delivery'))return;clearTimeout(wallsInstallationReloadTimer);wallsInstallationReloadTimer=setTimeout(()=>ensureWallsInstallationLoaded(true),500)}));wallsInstallationChannel.subscribe()
 }
 async function wallsInstallationRpc(name,args,success){
   if(installationBusy)return false;installationBusy=true;const {error}=await sb.rpc(name,args||{});installationBusy=false;
-  if(error){alert('Installation update was not saved: '+error.message);await loadWallsInstallation();return false}
+  if(error){alert('Installation update was not saved: '+error.message);await ensureWallsInstallationLoaded(true);return false}
   await loadWallsInstallation();if(success)showInventoryToast(success);return true
 }
 function subscribeWallsProduction(){
@@ -1706,8 +1709,8 @@ function maybeCompleteProject(j){
 }
 
 function activeJobs(div){return state.jobs.filter(j=>j.division===div&&!j.completedDate)}
-function setView(v){if(!viewAllowed(v))return;state.view=v;saveState();render();if(v==='qc'||v==='delivery')ensureWallsInstallationLoaded()}
-function setSubview(div,v){if(div==='walls'&&!wallSubviewAllowed(v))return;state.subview[div]=v;if(div==='walls'&&v==='installation'){state.installationView='today';saveUiPrefs()}saveState();render();if(div==='walls'&&v==='installation')ensureWallsInstallationLoaded()}
+function setView(v){if(!viewAllowed(v))return;state.view=v;saveState();render();if(v==='qc'||v==='delivery')ensureWallsInstallationLoaded(true)}
+function setSubview(div,v){if(div==='walls'&&!wallSubviewAllowed(v))return;state.subview[div]=v;if(div==='walls'&&v==='installation'){state.installationView='today';saveUiPrefs()}saveState();render();if(div==='walls'&&v==='installation')ensureWallsInstallationLoaded(true)}
 function divisionSubtabs(div){
   const v=state.subview[div]||'current',middle=div==='walls'?'Overall Schedule':'Overall Production';
   if(div==='walls'){
@@ -2204,7 +2207,7 @@ function renderInstallationJobWeek(jobs,dates,activities,cards,canManage){
   (cards||[]).forEach(card=>{if(dateSet.has(card.work_date))byDate.get(card.work_date).cards.push(card)});
   return `<div class="install-flow">${dates.map(date=>{const day=byDate.get(date),label=new Date(date+'T12:00:00').toLocaleDateString([],{weekday:'long',month:'short',day:'numeric'}),jobMarkup=day.jobs.map(({job,activity})=>`<article class="install-card"><button type="button" class="job-link" data-install-open-job="${htmlSafe(job.record_id)}"><strong>${htmlSafe(job.job?.job||job.record_id)}</strong></button><div class="job-sub">${htmlSafe(job.job?.project||job.job?.development||'—')} · ${htmlSafe(job.overall_status||'Scheduled')}</div>${activity?`<button type="button" class="mini" data-install-open-job="${htmlSafe(job.record_id)}">${htmlSafe(activity.activity_type.replaceAll('_',' '))} · ${htmlSafe(installationStatusLabel(activity.status))}${activity.production_scope?.length?` · ${activity.production_scope.length} run(s)`:''}</button>`:'<span class="pill risk">Master install date</span>'}</article>`).join(''),cardMarkup=day.cards.map(installationDayCardHtml).join('');return `<section class="install-day"><h3>${label}</h3>${jobMarkup||(!cardMarkup?'<div class="production-empty">No scheduled installs or field activities.</div>':'')}${cardMarkup}${canManage?`<button type="button" class="mini no-print" data-catchup-add-day="${date}">+ Add catch-up day card</button>`:''}</section>`}).join('')}</div>`;
 }
-function bindInstallationWeekPicker(){const picker=document.getElementById('installationWeekPicker');if(picker)picker.onchange=e=>{state.installationWeek=weekStart(normalizeDate(e.target.value)||todayISO());saveUiPrefs();loadWallsInstallation()}}
+function bindInstallationWeekPicker(){const picker=document.getElementById('installationWeekPicker');if(picker)picker.onchange=e=>{state.installationWeek=weekStart(normalizeDate(e.target.value)||todayISO());saveUiPrefs();ensureWallsInstallationLoaded(true)}}
 function bindInstallationWorkspaceMasterLink(){document.querySelectorAll('[data-install-open-master]').forEach(b=>b.onclick=()=>{closeProductionModal();openWallModal(b.dataset.installOpenMaster)})}
 function installationJobStageStatus(job,activityType){const rows=(job.activities||[]).filter(a=>a.activity_type===activityType&&a.status!=='cancelled').sort((a,b)=>String(a.activity_date||'').localeCompare(String(b.activity_date||'')));if(rows.some(a=>a.status==='on_hold'))return'hold';if(rows.some(a=>a.status==='in_progress'))return'in_progress';if(rows.length&&rows.every(a=>a.status==='completed'))return'complete';if(rows.length)return'scheduled';if(activityType==='wall_installation'&&normalizeDate(job.job?.installDate))return'scheduled';if(activityType==='field_closeout'&&job.installation?.closeout?.field_complete===true)return'complete';return'not_started'}
 function installationJobNextAction(job){const issues=(job.issues||[]).filter(i=>i.status==='open');if(issues.length)return`Resolve ${issues.length} open field issue${issues.length===1?'':'s'}`;const held=(job.activities||[]).filter(a=>a.status==='on_hold').sort((a,b)=>String(a.activity_date||'').localeCompare(String(b.activity_date||'')));if(held.length)return`Review on-hold activity before dispatch: ${held[0].activity_type.replaceAll('_',' ')}`;if(job.installation?.needs_review)return'Review field plan after master schedule change';const pending=(job.activities||[]).filter(a=>!['completed','cancelled'].includes(a.status)).sort((a,b)=>String(a.activity_date||'').localeCompare(String(b.activity_date||''))||String(a.start_time||'').localeCompare(String(b.start_time||'')));if(pending.length){const a=pending[0];return a.status==='in_progress'?`Update progress: ${a.activity_type.replaceAll('_',' ')}`:`Confirm resources, then start: ${a.activity_type.replaceAll('_',' ')}`}if((job.installation?.closeout?.field_complete)!==true)return(job.activities||[]).some(a=>a.activity_type==='wall_installation'&&a.status==='completed')?'Review remaining closeout':'Plan the next field activity';return'Installation closeout recorded'}
