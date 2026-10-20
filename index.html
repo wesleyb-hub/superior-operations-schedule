@@ -175,34 +175,6 @@ td{padding:9px 10px;border-bottom:1px solid #edf0f2;vertical-align:top}
 .qc-actions .pass{background:#eaf5f0;color:#23664d}.qc-actions .hold{background:#fde8e8;color:#9e3434}
 .history-row{display:grid;grid-template-columns:110px minmax(180px,1fr) minmax(160px,1fr) 120px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #edf0f2;font-size:10px}
 
-function openWallsInstallationLoadMap(loadRecordId){
-  const activeLoad=state.loads.find(x=>x.id===loadRecordId);
-  const historyLoad=state.deliveryHistory.find(x=>x.id===loadRecordId);
-  const load=activeLoad||historyLoad&&{...historyLoad,status:'Delivered'};
-  if(!load||!(load.division==='walls'||load.linkType==='wall')||!installationCanManage()){alert('This delivered wall load is not available for Installation run linking.');return}
-  const job=installationJob(load.linkId)||(wallsInstallation.jobs||[]).find(x=>x.job?.job===load.project);
-  if(!job){alert('Installation data is still loading. Refresh the Delivery view and try again.');return}
-  const link=(job.delivery||[]).find(x=>x.record_id===loadRecordId),selected=new Set(link&&link.assignment_ids||[]),delivered=load.status==='Delivered';
-  if(delivered&&selected.size){alert('This delivered load already has an audited run list. It is locked to preserve shipment history.');return}
-  const qc=new Map((job.qc||[]).map(q=>[q.assignment_id,q]));
-  const activeProduction=(job.production||[]).filter(a=>a.stage!=='cancelled');
-  const eligible=a=>a.stage==='stripped'&&qc.get(a.assignment_id)&&qc.get(a.assignment_id).status==='released'&&!Number(job.open_production_issues||0);
-  const rows=activeProduction.map(a=>{
-    const canSelect=!delivered||eligible(a),checked=selected.has(a.assignment_id),qcStatus=qc.get(a.assignment_id)&&qc.get(a.assignment_id).status||'not released';
-    return '<label class="field" style="display:flex;align-items:flex-start;gap:8px;opacity:'+(canSelect?'1':'.58')+'"><input type="checkbox" data-load-assignment="'+htmlSafe(a.assignment_id)+'" '+(checked?'checked ':'')+(!canSelect?'disabled ':'')+'><span><strong>Table '+htmlSafe(a.table_id)+' · '+htmlSafe(productionHeightLabel(a.wall_height))+' · '+Number(a.planned_lf||0).toLocaleString()+' LF</strong><div class="job-sub">'+htmlSafe(PRODUCTION_STAGE_LABELS[a.stage]||a.stage)+' · Final QC '+htmlSafe(qcStatus)+(delivered&&!eligible(a)?' · not eligible for delivered shipment':'')+'</div></span></label>'
-  }).join('');
-  const title=delivered?'Assign runs to delivered shipment':'Assign production runs to shipment';
-  const intro=delivered?load.project+' · '+load.load+'. Record the exact production runs physically included in this already-delivered shipment. This adds traceability only; it does not change delivery status. The run list locks after saving.':load.project+' · '+load.load+'. Assign the exact production runs carried by this load so Installation can select what arrived. Without a partial-run list, delivery QC applies to the whole job.';
-  const body=(rows||'<div class="production-empty">No active production runs are recorded for this job.</div>')+(delivered?'<div class="production-warning" style="margin-top:10px">Only stripped, finally QC-released runs with no open production hold can be added. Confirm the list matches the actual shipment.</div>':'');
-  const canSave=!delivered||activeProduction.some(eligible);
-  openProductionModal(title,intro,body,delivered?'Record delivered runs':'Save shipment runs',canSave?async()=>{
-    const ids=[...document.querySelectorAll('[data-load-assignment]:checked')].map(x=>x.dataset.loadAssignment);
-    if(delivered&&(!ids.length||!confirm('Confirm these exact runs were included in this already-delivered shipment? This adds the audited run-to-load link only; it does not change delivery status.')))return;
-    closeProductionModal();
-    await wallsInstallationRpc('link_walls_installation_load_assignments',{p_load_record_id:loadRecordId,p_assignment_ids:ids},delivered?'Delivered shipment runs recorded for Installation.':'Production runs assigned to the shipment.')
-  }:null)
-}
-
 /* DELIVERY */
 .delivery-row{display:grid;grid-template-columns:minmax(180px,1.4fr) minmax(140px,1fr) 110px 120px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #edf0f2}.delivery-row:last-child{border-bottom:0}
 .delivery-row{grid-template-columns:minmax(180px,1.4fr) minmax(125px,.9fr) minmax(165px,1.15fr) 105px minmax(210px,1.25fr)}
@@ -786,6 +758,44 @@ body.operations-nav-collapsed{--operations-side:76px}body.operations-nav-collaps
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="./config.js"></script>
 <script>
+function openWallsInstallationLoadMap(loadRecordId){
+  const activeLoad=state.loads.find(x=>x.id===loadRecordId);
+  const historyLoad=state.deliveryHistory.find(x=>x.id===loadRecordId);
+  const load=activeLoad||historyLoad&&{...historyLoad,status:'Delivered'};
+  if(!load||!(load.division==='walls'||load.linkType==='wall')||!installationCanManage()){alert('This delivered wall load is not available for Installation run linking.');return}
+  const job=installationJob(load.linkId)||(wallsInstallation.jobs||[]).find(x=>x.job?.job===load.project);
+  if(!job){alert('Installation data is still loading. Refresh the Delivery view and try again.');return}
+  const link=(job.delivery||[]).find(x=>x.record_id===loadRecordId),selected=new Set(link&&link.assignment_ids||[]),delivered=load.status==='Delivered';
+  if(delivered&&selected.size){alert('This delivered load already has an audited run list. It is locked to preserve shipment history.');return}
+  const qc=new Map((job.qc||[]).map(q=>[q.assignment_id,q]));
+  const activeProduction=(job.production||[]).filter(a=>a.stage!=='cancelled');
+  const eligible=a=>a.stage==='stripped'&&qc.get(a.assignment_id)&&qc.get(a.assignment_id).status==='released'&&!Number(job.open_production_issues||0);
+  const rows=activeProduction.map(a=>{
+    const canSelect=!delivered||eligible(a),checked=selected.has(a.assignment_id),qcStatus=qc.get(a.assignment_id)&&qc.get(a.assignment_id).status||'not released';
+    return '<label class="field" style="display:flex;align-items:flex-start;gap:8px;opacity:'+(canSelect?'1':'.58')+'"><input type="checkbox" data-load-assignment="'+htmlSafe(a.assignment_id)+'" '+(checked?'checked ':'')+(!canSelect?'disabled ':'')+'><span><strong>Table '+htmlSafe(a.table_id)+' · '+htmlSafe(productionHeightLabel(a.wall_height))+' · '+Number(a.planned_lf||0).toLocaleString()+' LF</strong><div class="job-sub">'+htmlSafe(PRODUCTION_STAGE_LABELS[a.stage]||a.stage)+' · Final QC '+htmlSafe(qcStatus)+(delivered&&!eligible(a)?' · not eligible for delivered shipment':'')+'</div></span></label>'
+  }).join('');
+  const title=delivered?'Assign runs to delivered shipment':'Assign production runs to shipment';
+  const intro=delivered?load.project+' · '+load.load+'. Record the exact production runs physically included in this already-delivered shipment. This adds traceability only; it does not change delivery status. The run list locks after saving.':load.project+' · '+load.load+'. Assign the exact production runs carried by this load so Installation can select what arrived. Without a partial-run list, delivery QC applies to the whole job.';
+  const body=(rows||'<div class="production-empty">No active production runs are recorded for this job.</div>')+(delivered?'<div class="production-warning" style="margin-top:10px">Only stripped, finally QC-released runs with no open production hold can be added. Confirm the list matches the actual shipment.</div>':'');
+  const canSave=!delivered||activeProduction.some(eligible);
+  openProductionModal(title,intro,body,delivered?'Record delivered runs':'Save shipment runs',canSave?async()=>{
+    const ids=[...document.querySelectorAll('[data-load-assignment]:checked')].map(x=>x.dataset.loadAssignment);
+    if(delivered&&(!ids.length||!confirm('Confirm these exact runs were included in this already-delivered shipment? This adds the audited run-to-load link only; it does not change delivery status.')))return;
+    closeProductionModal();
+    await wallsInstallationRpc('link_walls_installation_load_assignments',{p_load_record_id:loadRecordId,p_assignment_ids:ids},delivered?'Delivered shipment runs recorded for Installation.':'Production runs assigned to the shipment.')
+  }:null)
+}
+if(!window.wallsInstallationLoadMapHandlerBound){
+  window.wallsInstallationLoadMapHandlerBound=true;
+  document.addEventListener('click',e=>{
+    const target=e.target instanceof Element?e.target:null;
+    const button=target?.closest('[data-wall-load-map]');
+    if(!button)return;
+    e.preventDefault();
+    e.stopPropagation();
+    openWallsInstallationLoadMap(button.dataset.wallLoadMap)
+  },true)
+}
 // UNIFIED_PRECAST_SPECIALS_V31 - regular production + unscheduled specials for boxes/manholes
 // SPECIALS_SAVE_SCHEDULE_FIX_V32 - persistent job specials + always-visible project save footer
 // YEAR_OUTLOOK_GANTT_V33 - yearly production outlook + drag-to-reschedule across all production divisions
