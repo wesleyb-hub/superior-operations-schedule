@@ -203,6 +203,21 @@ function openWallsInstallationLoadMap(loadRecordId){
   }:null)
 }
 
+// Bind the Installation handoff action at application startup. Previously it
+// was only registered during Delivery rendering, so any earlier render-time
+// exception left the visible run-assignment button inert.
+if(!window.wallsInstallationLoadMapHandlerBound){
+  window.wallsInstallationLoadMapHandlerBound=true;
+  document.addEventListener('click',e=>{
+    const target=e.target instanceof Element?e.target:null;
+    const button=target?.closest('[data-wall-load-map]');
+    if(!button)return;
+    e.preventDefault();
+    e.stopPropagation();
+    openWallsInstallationLoadMap(button.dataset.wallLoadMap)
+  },true)
+}
+
 /* DELIVERY */
 .delivery-row{display:grid;grid-template-columns:minmax(180px,1.4fr) minmax(140px,1fr) 110px 120px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #edf0f2}.delivery-row:last-child{border-bottom:0}
 .delivery-row{grid-template-columns:minmax(180px,1.4fr) minmax(125px,.9fr) minmax(165px,1.15fr) 105px minmax(210px,1.25fr)}
