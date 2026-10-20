@@ -176,7 +176,9 @@ td{padding:9px 10px;border-bottom:1px solid #edf0f2;vertical-align:top}
 .history-row{display:grid;grid-template-columns:110px minmax(180px,1fr) minmax(160px,1fr) 120px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #edf0f2;font-size:10px}
 
 function openWallsInstallationLoadMap(loadRecordId){
-  const load=state.loads.find(x=>x.id===loadRecordId);
+  const activeLoad=state.loads.find(x=>x.id===loadRecordId);
+  const historyLoad=state.deliveryHistory.find(x=>x.id===loadRecordId);
+  const load=activeLoad||historyLoad&&{...historyLoad,status:'Delivered'};
   if(!load||load.linkType!=='wall'||!installationCanManage())return;
   const job=installationJob(load.linkId);
   if(!job){alert('Installation data is still loading. Refresh the Delivery view and try again.');return}
@@ -3294,7 +3296,8 @@ function renderDelivery(){
       <div><span class="pill on">Released</span><div class="job-sub">${l.deliveredAt?new Date(l.deliveredAt).toLocaleString():''}</div></div>
       <div class="no-print">${l.linkType?`<button class="mini" data-open-delivery-source="${l.id}">Open ${l.division==='walls'?'Job':'Project'}</button>`:''}</div>
     </div>`).join('');
-  const deliveredWallLoadsNeedingRunLinks=state.loads.filter(l=>l.status==='Delivered'&&l.division==='walls'&&l.linkType==='wall')
+  const deliveredWallLoadRecords=[...state.loads.filter(l=>l.status==='Delivered'&&l.division==='walls'&&l.linkType==='wall'),...state.deliveryHistory.filter(l=>l.division==='walls'&&l.linkType==='wall').map(l=>({...l,status:'Delivered'}))];
+  const deliveredWallLoadsNeedingRunLinks=[...new Map(deliveredWallLoadRecords.map(l=>[l.id,l])).values()]
     .filter(l=>{const j=installationJob(l.linkId),shipment=(j?.delivery||[]).find(x=>x.record_id===l.id);return (j?.production||[]).some(a=>a.stage!=='cancelled')&&!(shipment?.assignment_ids||[]).length})
     .map(l=>{const j=installationJob(l.linkId),q=loadReadiness(l);return '<div class="delivery-row"><div><div class="project-name">'+htmlSafe(j?.job?.job||l.project)+'</div><div class="job-sub">'+htmlSafe(j?.job?.project||l.project)+' · Superior Walls</div></div><div>'+fmt(l.date)+'</div><div>'+htmlSafe(l.load)+'<div class="job-sub">Final QC '+q.released+'/'+q.need+' runs released</div></div><div><span class="pill on">Delivered</span></div><div class="delivery-actions no-print">'+(installationCanManage()?'<button type="button" data-wall-load-map="'+htmlSafe(l.id)+'">Assign runs for Installation</button>':'<span class="job-sub">Management access required to record run links.</span>')+'</div></div>'}).join('');
 
