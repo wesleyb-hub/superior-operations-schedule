@@ -3203,12 +3203,32 @@ function openWallsInstallationLoadMap(loadRecordId){
   const intro=delivered?load.project+' · '+load.load+'. Record the exact production runs physically included in this already-delivered shipment. This adds traceability only; it does not change delivery status. The run list locks after saving.':load.project+' · '+load.load+'. Assign the exact production runs carried by this load so Installation can select what arrived. Without a partial-run list, delivery QC applies to the whole job.';
   const body=(rows||'<div class="production-empty">No active production runs are recorded for this job.</div>')+(delivered?'<div class="production-warning" style="margin-top:10px">Only stripped, finally QC-released runs with no open production hold can be added. Confirm the list matches the actual shipment.</div>':'');
   const canSave=!delivered||activeProduction.some(eligible);
-  openProductionModal(title,intro,body,delivered?'Record delivered runs':'Save shipment runs',canSave?async()=>{
-    const ids=[...document.querySelectorAll('[data-load-assignment]:checked]')].map(x=>x.dataset.loadAssignment);
-    if(delivered&&(!ids.length||!confirm('Confirm these exact runs were included in this already-delivered shipment? This adds the audited run-to-load link only; it does not change delivery status.')))return;
-    closeProductionModal();
-    await wallsInstallationRpc('link_walls_installation_load_assignments',{p_load_record_id:loadRecordId,p_assignment_ids:ids},delivered?'Delivered shipment runs recorded for Installation.':'Production runs assigned to the shipment.')
-  }:null)
+  const saveLabel=delivered?'Record delivered runs':'Save shipment runs';
+  const saveAction=canSave?async()=>{
+    const ids=[...document.querySelectorAll('[data-load-assignment]:checked')].map(x=>x.dataset.loadAssignment);
+    const feedback=document.getElementById('loadMapFeedback');
+    if(delivered&&!ids.length){
+      if(feedback){feedback.hidden=false;feedback.textContent='Select at least one exact production run included in this shipment.'}
+      return
+    }
+    if(delivered&&!confirm('Confirm these exact runs were included in this already-delivered shipment? This adds the audited run-to-load link only; it does not change delivery status.'))return;
+    const saveButton=document.getElementById('productionModalSave');
+    if(saveButton){saveButton.disabled=true;saveButton.textContent='Recording…'}
+    try{
+      const saved=await wallsInstallationRpc('link_walls_installation_load_assignments',{p_load_record_id:loadRecordId,p_assignment_ids:ids},delivered?'Delivered shipment runs recorded for Installation.':'Production runs assigned to the shipment.');
+      if(saved){
+        closeProductionModal();
+        if(state.view==='delivery')render()
+      }else if(saveButton){
+        saveButton.disabled=false;saveButton.textContent=saveLabel
+      }
+    }catch(error){
+      console.error('Could not save delivered shipment run links:',error);
+      if(feedback){feedback.hidden=false;feedback.textContent='The run list was not saved. Your selections are still here; retry after the connection is restored.'}
+      if(saveButton){saveButton.disabled=false;saveButton.textContent=saveLabel}
+    }
+  }:null;
+  openProductionModal(title,intro,body+(delivered?'<div id="loadMapFeedback" class="production-warning" role="status" aria-live="polite" hidden></div>':''),saveLabel,saveAction)
 }
 
 function renderDelivery(){
