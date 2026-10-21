@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 const root=new URL('../',import.meta.url);
 const source=readFileSync(new URL('supabase/migrations/20261016_015_weekly_crew_planner.sql',root),'utf8');
-const migration=readFileSync(resolve(process.argv[2]||'tests/integration/fixes/planner-text-table-identifiers.sql'),'utf8');
+const migration=readFileSync(resolve(process.argv[2]||'supabase/migrations/20261021215456_planner_text_table_identifiers.sql'),'utf8');
 const extract=s=>s.match(/create or replace function public\.generate_weekly_planner\([\s\S]*?\n\$\$;/)?.[0];
 const before=extract(source),after=extract(migration);
 const replacement='coalesce((select t.sort_order from public.walls_production_tables t where t.table_id=a.table_id),0)';

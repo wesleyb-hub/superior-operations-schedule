@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
-const sql=fs.readFileSync(process.argv[2]||new URL('../tests/integration/fixes/serialize-production-allocation.sql',import.meta.url),'utf8');
+const sql=fs.readFileSync(process.argv[2]||new URL('../supabase/migrations/20261021215458_serialize_production_allocation.sql',import.meta.url),'utf8');
 const functions=[...sql.matchAll(/create or replace function public\.(\w+)\(/g)].map(x=>x[1]);
 assert.deepEqual(functions,['validate_walls_production_assignment','upsert_walls_production_assignment']);
 assert.doesNotMatch(sql,/\b(?:grant|revoke|alter table|drop|truncate)\b/i);

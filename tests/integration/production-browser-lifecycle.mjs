@@ -34,7 +34,7 @@ try{
   assert.equal(saved.payload.data.walls.find(w=>w.id===jobId)?.planReview.stages[key].status,'Complete');
  }
  await page.evaluate(()=>{state.subview.walls='active';render()});
- await page.locator(`[data-wall="${jobId}"]`).first().click();await page.locator('#wProduction').fill('2026-11-09');
+ await page.locator(`[data-wall="${jobId}"]`).first().click();await page.locator('#wProduction').fill('2026-11-09');await page.locator('#wDelivery').fill('2026-11-11');
  const dated=await saveClick('#saveWall');assert.equal(dated.payload.data.walls.find(w=>w.id===jobId)?.productionDate,'2026-11-09');
  results.push('UI: seven plan-review status/date saves through ApprovedProduction, then actual master-job edit scheduled production');
  await page.screenshot({path:output+'/plan-review-released.png',fullPage:true});
@@ -115,7 +115,7 @@ try{
  assert.deepEqual(errors,[]);assert.deepEqual(dialogs.filter(d=>d.type==='alert'),[]);
  console.log(JSON.stringify({results,dialogs,calls:harness.calls},null,2));
 }catch(e){failure=e;console.error(e);if(page)await page.screenshot({path:output+'/failure.png',fullPage:true}).catch(()=>{});}finally{
- await writeFile(output+'/results.json',JSON.stringify({results,dialogs,errors,failure:failure?.stack||null,calls:harness.calls,limitations:['Unapproved master job/load/table seeded via real SQL; plan-review and scheduling edits use actual UI','Auth/Realtime are provider stubs; no hosted Supabase Auth coverage','Site/stone UI examples run sequentially here; parallel field preparation was verified by actual SQL lifecycle tests']},null,2));
+ await writeFile(output+'/results.json',JSON.stringify({results,dialogs,errors,failure:failure?.stack||null,calls:harness.calls,limitations:['Unapproved master job/load/table seeded via real SQL; plan-review and scheduling edits use actual UI','Navigation preferences are set programmatically; workflow edits use bound UI controls and real database RPCs','Auth/Realtime are provider stubs; no hosted Supabase Auth coverage','Site/stone UI examples run sequentially here; parallel field preparation was verified by actual SQL lifecycle tests']},null,2));
  await browser.close();await harness.close();
 }
 if(failure)throw failure;
