@@ -47,6 +47,108 @@ export function scheduleContext(result) {
   };
 }
 
+// Mirrored pure normalization helpers; parity-tested against index.html to prevent drift.
+const WALL_HEIGHTS=[
+  {key:'h4',label:'4′'},{key:'h5',label:'5′'},{key:'h8',label:'8′'},{key:'h9',label:'9′'},{key:'h10',label:'10′'},{key:'h12',label:'12′'}
+];
+function nonnegativeNumber(value){const n=Number(value||0);return Number.isFinite(n)?Math.max(0,n):0}
+function wallHeightBreakdown(w){const raw=w?.lfByHeight||{};return Object.fromEntries(WALL_HEIGHTS.map(h=>[h.key,nonnegativeNumber(raw[h.key])]))}
+function wallHeightTotal(w){const b=wallHeightBreakdown(w);return WALL_HEIGHTS.reduce((n,h)=>n+b[h.key],0)}
+function normalizeWallLF(w){
+  const hadBreakdown=Boolean(w.lfByHeight&&typeof w.lfByHeight==='object');
+  const breakdown=wallHeightBreakdown(w),heightTotal=WALL_HEIGHTS.reduce((n,h)=>n+breakdown[h.key],0);
+  const legacyTotal=nonnegativeNumber(w.lf),explicitUnassigned=w.lfUnassigned!==undefined&&w.lfUnassigned!==null;
+  const unassigned=explicitUnassigned?nonnegativeNumber(w.lfUnassigned):(hadBreakdown?Math.max(0,legacyTotal-heightTotal):legacyTotal);
+  w.lfByHeight=breakdown;w.lfUnassigned=unassigned;w.lf=heightTotal+unassigned;return w
+}
+function normalizeDate(value){
+  if(value===null||value===undefined)return'';
+  let s=String(value).trim();
+  if(!s)return'';
+
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m){
+    const y=Number(m[1]),mo=Number(m[2]),d=Number(m[3]);
+    const dt=new Date(Date.UTC(y,mo-1,d));
+    return Number.isNaN(dt.getTime())?'':iso(dt)
+  }
+
+  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m){
+    const mo=Number(m[1]),d=Number(m[2]),y=Number(m[3]);
+    const dt=new Date(Date.UTC(y,mo-1,d));
+    if(Number.isNaN(dt.getTime())||dt.getUTCFullYear()!==y||dt.getUTCMonth()!==mo-1||dt.getUTCDate()!==d)return'';
+    return iso(dt)
+  }
+
+  if(/^\d+(\.\d+)?$/.test(s)){
+    const serial=Number(s);
+    if(serial>20000&&serial<80000){
+      const dt=new Date(Date.UTC(1899,11,30)+Math.floor(serial)*86400000);
+      return Number.isNaN(dt.getTime())?'':iso(dt)
+    }
+  }
+
+  const guess=new Date(s);
+  if(!Number.isNaN(guess.getTime())){
+    return iso(new Date(Date.UTC(guess.getFullYear(),guess.getMonth(),guess.getDate())))
+  }
+  return''
+}
+function iso(d){
+  if(!(d instanceof Date)||Number.isNaN(d.getTime()))return'';
+  return d.toISOString().slice(0,10)
+}
+
+// Match renderWallsMonthly / wallCompletionMonth, not production pour events.
+// Compute from the complete caller-returned snapshot BEFORE detail size limits.
+export function wallCompletionContext(result, reporting) {
+  const walls = result.data?.payload?.data?.walls;
+  if (result.error || !Array.isArray(walls)) return unavailable();
+  const month = reporting.today.slice(0, 7);
+  if (walls.some((wall) => !isObject(wall))) return unavailable('invalid_completion_records');
+  const normalized = walls.map((wall) => ({ ...normalizeWallLF({ ...wall }), completedDate: normalizeDate(wall.completedDate) }));
+  const matching = normalized.filter((wall) => wall &&
+    (wall.completedDate ? String(wall.completedDate).slice(0, 7) : wall.completedMonth || '') === month);
+  const values = matching.map((wall) => Number(wall.lf || 0));
+  if (values.some((value) => !Number.isFinite(value))) return unavailable('invalid_completion_values');
+  const monthOnly = matching.filter((wall) => !wall.completedDate);
+  const future = matching.filter((wall) => wall.completedDate && wall.completedDate > reporting.today);
+  const sum = (rows) => Number(rows.reduce((total, wall) => total + Number(wall.lf || 0), 0).toFixed(2));
+  return {
+    status: 'available', read_only: true, source: 'get_schedule_snapshot.walls',
+    revision: result.data.revision, updated_at: result.data.updated_at,
+    metric: 'Superior Walls Monthly Completion: LF Completed', month,
+    as_of: reporting.today, timezone: reporting.timezone,
+    scope: 'Complete caller-returned walls collection; not an assertion of company-wide access.',
+    definition: 'Normalize wall LF and completion date exactly as the Hub; sum wall.lf where completedDate month, otherwise completedMonth, equals month. No active/status filter. Do not add production, forecast, billing or historyArchive rows.',
+    completed_jobs: matching.length, lf_completed: sum(matching),
+    month_only_jobs: monthOnly.length, month_only_lf: sum(monthOnly),
+    future_dated_jobs: future.length, future_dated_lf: sum(future),
+    dated_through_today_lf: sum(matching.filter((wall) => wall.completedDate && wall.completedDate <= reporting.today)),
+    limitation: 'Hub monthly total includes month-only completion records and any future-dated completions. Month-only records have no verified completion day. This is not actual poured LF.',
+  };
+}
+
+// Narrow, read-only shortcut for the unambiguous current-month KPI question.
+// Other periods, job filters, comparisons and action requests remain with the model.
+export function completionAnswer(message, context) {
+  const today = context?.reporting?.today;
+  if (!today) return null;
+  const monthName = new Date(`${today.slice(0, 7)}-01T12:00:00Z`).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' }).toLowerCase();
+  const month = `(?:this month|${monthName}(?: ${today.slice(0, 4)})?)`;
+  const pattern = new RegExp(`^how many (?:linear feet|lf) of (?:superior )?walls (?:were |have been )?completed (?:for |in )?${month}(?: so far| to date)?[?.!]*$`, 'i');
+  if (!pattern.test(message.trim().replace(/\s+/g, ' '))) return null;
+  const metric = context.wall_completion_month;
+  if (metric?.status !== 'available') return 'I cannot verify the current month’s LF Completed because the authorized wall completion summary is unavailable. Weekly pours and partial production records are not a substitute.';
+  const format = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  let answer = `As of ${today} (${context.reporting.timezone}), the Hub’s recorded ${metric.month} **LF Completed is ${format(metric.lf_completed)} LF**, across ${metric.completed_jobs} wall jobs in your authorized schedule. This matches the Monthly Completion calculation, not weekly poured LF.`;
+  if (metric.month_only_jobs) answer += ` ${metric.month_only_jobs} jobs (${format(metric.month_only_lf)} LF) have a completion month only, so their exact completion dates cannot be verified.`;
+  if (metric.future_dated_jobs) answer += ` The monthly total includes ${format(metric.future_dated_lf)} LF dated after today; it is not a verified through-today total.`;
+  answer += ` Source: get_schedule_snapshot.walls, revision ${metric.revision ?? 'unavailable'}.`;
+  return answer;
+}
+
 export const contextLimits = Object.freeze({ source_bytes: 32 * 1024, total_bytes: 96 * 1024 });
 const byteSize = (value) => new TextEncoder().encode(JSON.stringify(value)).length;
 const countKeys = ['sections', 'people', 'assignments', 'availability', 'resources', 'conflicts',
@@ -167,6 +269,7 @@ export async function loadAuthorizedContext(client, now = new Date()) {
       inventory: base.data.inventory ?? [],
       production: base.data.production ?? [],
       reporting,
+      wall_completion_month: wallCompletionContext(schedule, reporting),
       production_week: forecast.error || !isObject(forecast.data) ? unavailable() : {
         ...forecast.data, status: 'available', read_only: true,
       },

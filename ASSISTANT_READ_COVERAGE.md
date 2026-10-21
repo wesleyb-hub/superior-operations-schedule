@@ -96,3 +96,30 @@ by the Edge Function. No new database query API is introduced. A narrower user
 question does not automatically rehydrate an omitted source; scoped server-side
 retrieval would be a separately reviewed enhancement. Existing RPC date windows
 and source-derived resource-conflict rules remain unchanged.
+
+## Monthly wall completion accuracy
+
+`wall_completion_month` is computed from the complete caller-returned
+`get_schedule_snapshot().payload.data.walls` before model detail limits. It
+matches the Hub `renderWallsMonthly` calculation after the same `normalizeWallLF`
+and `normalizeDate` read-only normalization (parity-tested against frontend helpers): select the current Chicago
+month using `completedDate.slice(0,7)`, falling back to `completedMonth`, then sum
+`Number(lf || 0)`. No status/active filter is added. Do not add historyArchive,
+production assignments, billing, or weekly forecast rows to this metric.
+
+This small summary is independently bounded and includes source revision,
+completed job count, month-only count/LF, future-dated count/LF and dated-through-
+today LF. Month-only records are included in the Hub KPI but cannot prove an
+exact completion day. A future-dated record is included by the Hub monthly
+calculation but cannot count as verified completed through today. Totals remain
+caller-visible, not a claim of company-wide permission coverage. Missing,
+denied, malformed or size-omitted summaries cannot become zero or a partial
+production-based substitute.
+
+A narrow deterministic route answers simple current-month LF-completed questions
+without model arithmetic. It reports the Hub KPI and date limitations. Other
+months, job filters, comparisons and action requests do not match this route;
+the system prompt prohibits substituting weekly pours or partial records for a
+missing monthly aggregate. This change adds no RPC calls, database objects,
+grants, or production writes. Historical/daily actual-pour analytics remain a
+separate enhancement. Synthetic regressions run in the existing agent test job.
