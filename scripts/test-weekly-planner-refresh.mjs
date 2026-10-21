@@ -7,7 +7,7 @@ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const loader=html.slice(html.indexOf('function loadWeeklyPlanner('),html.indexOf('function subscribeWeeklyPlanner('));
 function setup(){
   const calls=[],errors=[];
-  const context={Promise,console:{error:(...args)=>errors.push(args)},state:{week:'2026-10-19',view:'weekly-planner'},currentUser:{id:'synthetic-admin'},currentUserIsAdmin:true,weeklyPlanner:{marker:'initial'},weeklyPlannerReady:false,weeklyPlannerError:'',weeklyPlannerErrorWeek:'',weeklyPlannerRealtimePromise:null,weeklyPlannerRealtimeDirty:false,weeklyPlannerLoadPromise:null,weeklyPlannerLoadToken:null,weeklyPlannerLoadWeek:'',weeklyPlannerLoadedWeek:'',renders:0};
+  const context={Promise,console:{error:(...args)=>errors.push(args)},state:{week:'2026-10-19',view:'weekly-planner'},currentUser:{id:'synthetic-admin'},currentUserIsAdmin:true,weeklyPlanner:{marker:'initial'},weeklyPlannerReady:false,weeklyPlannerError:'',weeklyPlannerDraftError:'',weeklyPlannerErrorWeek:'',weeklyPlannerRealtimePromise:null,weeklyPlannerRealtimeDirty:false,weeklyPlannerLoadPromise:null,weeklyPlannerLoadToken:null,weeklyPlannerLoadWeek:'',weeklyPlannerLoadedWeek:'',renders:0};
   context.renderWeeklyPlanner=()=>context.renders++;
   context.sb={rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))};
   context.weeklyPlannerBusy=false;context.showInventoryToast=()=>{};
@@ -155,4 +155,10 @@ test('post-write forced refresh still starts immediately while realtime worker w
   const {context:c,calls,load,notify}=setupRealtime();const initial=load();await flushRealtime();const worker=notify();await flushRealtime();const postWrite=load(true);await flushRealtime();assert.equal(calls.length,2);
   calls[1].resolve(result('post-write'));await postWrite;calls[0].resolve(result('before-write'));await initial;await worker;await flushRealtime();
   assert.equal(c.weeklyPlanner.marker,'post-write');assert.equal(calls.length,2,'superseded initial read must not restart realtime worker');
+});
+test('failed-save draft protection pauses realtime and rejects preexisting snapshot until explicit refresh',async()=>{
+ const {context:c,calls,load}=setup();const pending=load();await tick();c.weeklyPlannerDraftError='Synthetic save failed; keep edits';
+ assert.equal(await c.refreshWeeklyPlannerFromRealtime(),false);assert.equal(calls.length,1);
+ calls[0].resolve(result('would discard edits'));assert.equal(await pending,false);assert.equal(c.renders,0);
+ const explicit=load(true);await tick();assert.equal(c.weeklyPlannerDraftError,'');calls[1].resolve(result('explicit retry'));assert.equal(await explicit,true);
 });
