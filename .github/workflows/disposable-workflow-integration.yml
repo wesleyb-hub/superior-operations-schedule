@@ -43,6 +43,9 @@ jobs:
       - name: Run browser through actual SQL functions and RLS
         if: ${{ always() && steps.schema.outcome == 'success' }}
         run: node tests/integration/workflow-browser.mjs
+      - name: Exercise actual production-board browser controls
+        if: ${{ always() && steps.schema.outcome == 'success' }}
+        run: node tests/integration/production-browser-lifecycle.mjs
       - name: Record explicit known public-source regression failures (not fixes)
         if: ${{ always() && steps.schema.outcome == 'success' }}
         run: node tests/integration/run-known-probes.mjs
