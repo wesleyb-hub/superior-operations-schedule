@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 const {chromium}=createRequire(import.meta.url)('playwright');
 const root=resolve(import.meta.dirname,'..');
 const source=await readFile(resolve(root,'index.html'),'utf8');
-const html=source.replace(/<script src="[^"]+"><\/script>/g,'');
+// Test-only client injection seam; production still declares its client const.
+const html=source.replace(/<script src="[^"]+"><\/script>/g,'').replace('const sb=','let sb=');
 const output=process.argv[2];if(output)await mkdir(output,{recursive:true});
 const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{}),args:['--no-sandbox']});
 const failures=[],results=[];
@@ -100,6 +101,47 @@ try{
   const pickerOverflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2);assert.equal(pickerOverflow,false);
   if(output)await page.screenshot({path:resolve(output,`${width}-planner-employee-picker.png`),fullPage:true});
   results.push({width,view:'planner-employee-picker',passed:true});
+  // Actual browser clicks exercise failed save -> retained controls -> successful approval.
+  // All service calls below terminate in this synthetic in-memory adapter.
+  await page.evaluate(()=>{
+   currentUser={id:'synthetic-browser-admin'};currentUserIsAdmin=true;
+   subscribeWeeklyPlanner=()=>{};weeklyPlanner.permissions={edit:true,approve:true,publish:true};
+   weeklyPlanner.sections[0].crew_leader='Test Alpha';
+   window.qaPlannerDb=structuredClone(weeklyPlanner);window.qaPlannerCalls=[];window.qaPlannerFail=true;
+   const cache=plannerEmployeeHistoryCache();cache.ready=true;
+   sb={rpc:async(name,args)=>{
+    window.qaPlannerCalls.push({name,args:structuredClone(args)});
+    if(name==='get_weekly_planner_snapshot')return {data:structuredClone(window.qaPlannerDb)};
+    const section=window.qaPlannerDb.sections.find(s=>s.section_id===args.p_section_id);
+    if(name==='save_weekly_planner_section'){
+     if(window.qaPlannerFail)return {error:{message:'Synthetic save timed out',code:'57014'}};
+     if(section.schedule_version!==args.p_expected_version)throw new Error('Synthetic stale save version');
+     section.schedule_version++;section.crew_leader=args.p_crew_leader;section.status='needs_review';
+     window.qaPlannerDb.people=window.qaPlannerDb.people.filter(p=>p.section_id!==section.section_id).concat(args.p_people.map(p=>({section_id:section.section_id,employee_name:p.name,role_name:p.role,is_leader:p.is_leader})));
+     return {data:structuredClone(section)};
+    }
+    if(name==='approve_weekly_planner_section'){
+     if(section.schedule_version!==args.p_expected_version)throw new Error('Synthetic stale approval version');
+     section.status='approved';return {data:structuredClone(section)};
+    }
+    throw new Error('Unexpected synthetic RPC '+name);
+   }};plannerEmployeeHistoryCache().ready=true;renderWeeklyPlanner();
+  });
+  page.on('dialog',dialog=>dialog.accept());
+  await page.locator('#plannerCrewLeader').fill('Test Alpha');
+  await page.locator('#plannerCrewPeopleNew').fill('Retained Synthetic Employee');
+  await page.locator('[data-planner-action="approve-section"]').click();
+  await page.waitForFunction(()=>weeklyPlannerDraftError.includes('on-screen edits are retained'));
+  assert.equal(await page.locator('#plannerCrewPeopleNew').inputValue(),'Retained Synthetic Employee');
+  assert.equal(await page.evaluate(()=>window.qaPlannerCalls.length),1);
+  assert.match(await page.locator('#plannerSectionFeedback').textContent(),/Synthetic save timed out/);
+  if(output)await page.screenshot({path:resolve(output,`${width}-planner-save-retry.png`),fullPage:true});
+  await page.evaluate(()=>{window.qaPlannerFail=false});
+  await page.locator('[data-planner-action="approve-section"]').click();
+  await page.waitForFunction(()=>weeklyPlanner.sections[0].status==='approved'&&!weeklyPlannerLoadPromise);
+  assert.equal(await page.getByRole('checkbox',{name:'Retained Synthetic Employee',exact:true}).isChecked(),true);
+  assert.deepEqual(await page.evaluate(()=>window.qaPlannerCalls.map(c=>c.name)),['save_weekly_planner_section','save_weekly_planner_section','approve_weekly_planner_section','get_weekly_planner_snapshot']);
+  results.push({width,view:'planner-approval-retry',passed:true});
   failures.push(...errors.map(e=>`${width}: ${e}`));await page.close();
  }
  if(output)await writeFile(resolve(output,'results.json'),JSON.stringify({results,failures},null,2));
