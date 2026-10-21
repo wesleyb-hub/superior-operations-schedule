@@ -1146,16 +1146,30 @@ let weeklyPlanner={permissions:{},week:null,sections:[],people:[],assignments:[]
 let weeklyPlannerEmployeeHistory=null;
 let weeklyPlannerInstallEmployees=[],weeklyPlannerInstallEmployeesReady=false,weeklyPlannerInstallEmployeesPromise=null,weeklyPlannerInstallEmployeesError='';
 
+let wallsProductionLoadToken=0;
 async function loadWallsProduction(){
   if(!sb||!currentUser||!wallSubviewAllowed('production'))return false;
+  const token=++wallsProductionLoadToken,user=currentUser,client=sb;
   const day=normalizeDate(state.productionDay)||todayISO(),from=addDays(weekStart(day),-7),to=addDays(weekStart(day),52);
-  const [{data,error},{data:weeklyForecast,error:weeklyError}]=await Promise.all([
-    sb.rpc('get_walls_production_snapshot',{p_from:from,p_to:to}),
-    sb.rpc('get_walls_production_weekly_forecast',{p_week_start:weekStart(day)})
-  ]);
-  if(error){wallsProductionReady=false;wallsProductionError=error.message||'Production system is unavailable.';console.error('Could not load Superior Walls production:',error);if(state.view==='walls'&&state.subview.walls==='production')render();return false}
-  if(weeklyError)console.error('Could not load Superior Walls weekly forecast:',weeklyError);
-  wallsProduction={...(data||{permissions:{},tables:[],jobs:[],assignments:[],issues:[],events:[]}),weeklyForecast:weeklyForecast||null};wallsProductionReady=true;wallsProductionError=weeklyError?.message||'';if(state.view==='walls'&&state.subview.walls==='production')render();return true
+  const isCurrent=()=>token===wallsProductionLoadToken&&currentUser===user&&sb===client&&(normalizeDate(state.productionDay)||todayISO())===day&&wallSubviewAllowed('production');
+  try{
+    const [{data,error},{data:weeklyForecast,error:weeklyError}]=await Promise.all([
+      client.rpc('get_walls_production_snapshot',{p_from:from,p_to:to}),
+      client.rpc('get_walls_production_weekly_forecast',{p_week_start:weekStart(day)})
+    ]);
+    if(!isCurrent())return false;
+    if(error)throw error;
+    if(weeklyError)console.error('Could not load Superior Walls weekly forecast:',weeklyError);
+    wallsProduction={...(data||{permissions:{},tables:[],jobs:[],assignments:[],issues:[],events:[]}),weeklyForecast:weeklyForecast||null};wallsProductionReady=true;wallsProductionError=weeklyError?.message||'';
+    if(state.view==='walls'&&state.subview.walls==='production')render();
+    return true
+  }catch(error){
+    if(!isCurrent())return false;
+    wallsProductionReady=false;wallsProductionError=error?.message||'Production system is unavailable.';
+    console.error('Could not load Superior Walls production:',error);
+    if(state.view==='walls'&&state.subview.walls==='production')render();
+    return false
+  }
 }
 let wallsInstallationLoadPromise=null,wallsInstallationReloadQueued=false;
 function ensureWallsInstallationLoaded(force=false){
@@ -1208,9 +1222,18 @@ function subscribeWallsProduction(){
   productionChannel.subscribe()
 }
 async function wallsProductionRpc(name,args,success){
-  if(productionBusy)return false;productionBusy=true;const {error}=await sb.rpc(name,args||{});productionBusy=false;
-  if(error){alert('Production update was not saved: '+error.message);await loadWallsProduction();return false}
-  await loadWallsProduction();if(success)showInventoryToast(success);return true
+  if(!sb||!currentUser||productionBusy)return false;
+  productionBusy=true;let result,unconfirmed=false;const user=currentUser;
+  try{result=await sb.rpc(name,args||{})}catch(error){result={error};unconfirmed=true}
+  finally{productionBusy=false}
+  if(currentUser!==user)return false;
+  if(result?.error){
+    alert((unconfirmed?'Could not confirm the production update. Refresh before retrying: ':'Production update was not saved: ')+(result.error.message||'The request did not complete.'));
+    await loadWallsProduction();return false
+  }
+  const refreshed=await loadWallsProduction();
+  if(currentUser===user&&success)showInventoryToast(refreshed?success:'Saved. Refresh this Production view to confirm the latest status.');
+  return true
 }
 function closeProductionModal(){document.getElementById('productionModal')?.classList.remove('open');productionModalSaveAction=null}
 function openProductionModal(title,sub,body,saveLabel,onSave){

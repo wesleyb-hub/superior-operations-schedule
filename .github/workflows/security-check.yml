@@ -32,6 +32,8 @@ jobs:
         run: node --test scripts/test-weekly-planner-refresh.mjs scripts/test-weekly-planner-approval.mjs
       - name: Test employee picker and persistence contract
         run: node --test scripts/test-planner-employee-picker.mjs
+      - name: Test production request ordering and recovery
+        run: node --test scripts/test-production-load-safety.mjs
       - name: Verify partial installation release safeguards
         run: node scripts/validate-installation-partial-workflow.mjs
       - name: Verify main Installation activity catalog
