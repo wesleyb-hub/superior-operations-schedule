@@ -1,0 +1,11 @@
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
+const root=new URL('../',import.meta.url);
+const source=readFileSync(new URL('supabase/migrations/20261016_015_weekly_crew_planner.sql',root),'utf8');
+const migration=readFileSync(resolve(process.argv[2]||'supabase/migrations/20261021215456_planner_text_table_identifiers.sql'),'utf8');
+const extract=s=>s.match(/create or replace function public\.generate_weekly_planner\([\s\S]*?\n\$\$;/)?.[0];
+const before=extract(source),after=extract(migration);
+const replacement='coalesce((select t.sort_order from public.walls_production_tables t where t.table_id=a.table_id),0)';
+if(!before||!after||(before.match(/a\.table_id::integer/g)||[]).length!==4||after!==before.replaceAll('a.table_id::integer',replacement))throw new Error('Expected exactly four table-ID casts replaced with authoritative sort_order; no other change permitted.');
+if(migration.replace(after,'').replace(/--[^\n]*/g,'').trim())throw new Error('Unexpected statements outside reviewed function.');
+console.log('PASS: four text-ID casts replaced; all planner permissions/gates/trigger integrations unchanged.');
