@@ -17,7 +17,8 @@ planner writes, or changes to the three existing confirmation-gated proposals.
 | Billing | `get_schedule_snapshot` → `billing` | Existing billing records/status only where caller can read them; no financial action. |
 | Deliveries | `get_schedule_snapshot` → `loads`, `deliveryHistory` | Existing loads/status/history; no status transition, shipment commitment, or load-sheet generation. |
 | QC and history | `get_schedule_snapshot` → `qcHistory`, `audit`, `historyArchive` | Caller-visible recorded history; no approval/release authority. Backup payload and system settings deliberately excluded. |
-| Weekly Planner | `get_weekly_planner_agent_context` | Existing current/next-two-week summaries, crew counts, readiness, approval/stale state and conflicts. Not full assignment/employee detail; no generation, staffing, approval or publish call. |
+| Weekly Planner summaries | `get_weekly_planner_agent_context` | Existing current/next-two-week summaries, crew counts, readiness, approval/stale state and conflicts. |
+| Weekly Planner current-week detail | `get_weekly_planner_snapshot` | Named people, sections, assignments, availability, resources, conflicts and week/source-stale metadata for the server-derived current Chicago Monday. Existing whole-week view authorization (not section-filtered). Packs, cross-week recent packs and audit excluded. No generation, staffing, approval or publish call. |
 | Walls Installation summary | `get_walls_installation_agent_context` | Existing active-job/activity/resource/QC summaries. |
 | Installation Today/workspace | `get_walls_installation_snapshot` | Existing job-linked activities, catch-up cards/tasks, resources, issues, closeout, QC, delivery links and source-reported conflict warnings. Explicit date window: reporting day −7 through +45. Not all historical installation activity. |
 | Administration/integrations | Not added | No employee-account management, secrets, grants, backup/settings contents, mail delivery status or external systems. |
@@ -56,16 +57,42 @@ node scripts/validate-operations-agent.mjs
 # Run the existing validate-*.mjs scripts as the aggregate repository guards.
 ```
 
-Synthetic mocks cover all six read RPCs, master collections, catch-up cards,
+Synthetic mocks cover all seven read RPCs, master collections, catch-up cards,
 recorded versus planned LF, restricted empty collections, base denial, optional
 permission denial, missing/malformed data, transport failures, Chicago midnight
-and DST, and the unchanged three proposal types/caller-JWT boundary.
+and DST, and the unchanged three proposal types/caller-JWT boundary. Additional tests cover named employees and assignments, denied detail access, Chicago Monday boundaries, whole-source omission/counts, total payload limits, and UTF-8 byte accounting.
 
 These are local adapter/contract tests, not proof of live database policy or
 model answer quality. Deno is not installed in this workspace; Edge typechecking
 and authenticated deployed smoke tests have not run. No live rows were read or
 changed and no deployment was performed. Before deployment, validate
 with separate admin and restricted test accounts and actual representative data
-volumes. Full caller-visible schedule history is passed without silent truncation;
-large snapshots may need a separately tested bounded retrieval design. Existing
-RPC date windows and source-derived resource-conflict rules remain unchanged.
+volumes. Before serialization to the model, each top-level source is limited to 32 KiB
+of UTF-8 JSON and the complete context to 96 KiB, with one deliberate exception:
+master-schedule collections are each bounded independently at 32 KiB rather than
+applying that threshold to the whole master schedule. These conservative ceilings
+prevent history or pack-like operational payloads from consuming an unbounded
+model request; they are byte budgets, not an exact tokenizer estimate. At the
+per-source ceiling, omit the entire source. For the master schedule, omit only
+the oversized collection: retain the other complete collections, set the master
+status to `partial`, list `omitted_collections`, and record each omitted
+collection's returned/omitted count, original bytes and reason in `coverage`.
+This prevents large audit/archive history from hiding normal jobs, Walls or
+billing. At the aggregate ceiling, omit whole
+largest remaining sources until the payload fits. Never retain a biased prefix
+of rows or silently shorten text. Other sources remain intact.
+
+Each omitted source has `status: omitted`, a per-source/total-limit reason,
+original byte size, and counts of its withheld caller-returned arrays.
+`context_coverage` lists omitted sources and master collections and marks partial
+coverage. If the aggregate budget requires omitting the entire master source, its
+omitted counts include collections already omitted by the per-collection limit. Counts are
+not company-wide workload totals. The prompt explicitly prohibits complete
+coverage claims or totals across unavailable/omitted data. It preserves the
+source failure statuses separately from size omissions.
+
+These bounds protect the model request, not the size of the RPC response fetched
+by the Edge Function. No new database query API is introduced. A narrower user
+question does not automatically rehydrate an omitted source; scoped server-side
+retrieval would be a separately reviewed enhancement. Existing RPC date windows
+and source-derived resource-conflict rules remain unchanged.
