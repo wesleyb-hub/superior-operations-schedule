@@ -7,6 +7,6 @@ select test_workflow.patch('walls','TEST-NAMED-TABLE','{"job":"TEST-NAMED-TABLE"
 select public.upsert_walls_production_table('TEST-NAMED-TABLE-A','TEST named table',100,true);
 select public.upsert_walls_production_assignment(null,'TEST-NAMED-TABLE','TEST-NAMED-TABLE-A',8,20,'2026-11-16 07:00','2026-11-16 15:00','2026-11-17 07:00','TEST named table');
 select public.generate_weekly_planner('2026-11-16');
-select test_workflow.assert((select count(*)=8 from public.weekly_planner_sections where week_start='2026-11-16'),'text production table identifiers can generate all eight planner sections');
+select test_workflow.assert(jsonb_array_length(public.get_weekly_planner_snapshot('2026-11-16')->'sections')=8,'text production table identifiers can generate all eight planner sections');
 rollback;
 reset role;
