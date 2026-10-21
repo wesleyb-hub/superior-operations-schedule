@@ -1,0 +1,61 @@
+name: Disposable real database workflow integration
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  database-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: disposable-test-only
+          POSTGRES_DB: superior_workflow_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGDATABASE: superior_workflow_test
+      PGUSER: postgres
+      PGPASSWORD: disposable-test-only
+      EXPECT_PLANNER_DRAFT_PRESERVED: '1'
+      EXPECT_MODAL_SAVE_RESET: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply actual repository migrations to empty disposable PostgreSQL17
+        id: schema
+        run: bash tests/integration/apply-schema.sh
+      - name: Install pinned disposable test dependencies
+        run: npm install --no-save --package-lock=false pg@8.16.3 playwright@1.56.1
+      - name: Install matching Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run actual synthetic SQL lifecycle
+        run: |
+          mkdir -p artifacts/disposable-workflow
+          set -o pipefail
+          psql -X --set ON_ERROR_STOP=1 -f tests/integration/walls-workflow-cases.sql 2>&1 | tee artifacts/disposable-workflow/sql-lifecycle.log
+      - name: Run browser through actual SQL functions and RLS
+        if: ${{ always() && steps.schema.outcome == 'success' }}
+        run: node tests/integration/workflow-browser.mjs
+      - name: Exercise actual production-board browser controls
+        if: ${{ always() && steps.schema.outcome == 'success' }}
+        run: node tests/integration/production-browser-lifecycle.mjs
+      - name: Record explicit known public-source regression failures (not fixes)
+        if: ${{ always() && steps.schema.outcome == 'success' }}
+        run: node tests/integration/run-known-probes.mjs
+      - name: Retain synthetic-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disposable-workflow-evidence
+          path: artifacts/disposable-workflow
+          if-no-files-found: warn
+          retention-days: 7
