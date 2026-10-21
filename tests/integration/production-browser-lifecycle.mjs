@@ -12,17 +12,32 @@ const rpc=async(name,args)=>{const r=await harness.rpc(identities.admin,name,arg
 try{
  const snap=await rpc('get_schedule_snapshot',{}),data=snap.payload.data;
  assert.ok(!data.walls.some(w=>w.id===jobId),'fixture must not already exist');
- const stages=Object.fromEntries(['permitPackage','preliminarySubmittal','finalSubmittal','structuralReview','productionDrawings','installDrawings','approvedProduction'].map(k=>[k,{status:'Complete',date:'2026-10-21'}]));
- data.walls.push({id:jobId,job:'TEST-BROWSER-001',customer:'SYNTHETIC TEST ONLY',project:'TEST browser lifecycle',lf:80,lfByHeight:{h8:80},productionDate:'2026-11-09',installDate:'2026-11-11',planReview:{stages}});
+ const stages=Object.fromEntries(['permitPackage','preliminarySubmittal','finalSubmittal','structuralReview','productionDrawings','installDrawings','approvedProduction'].map(k=>[k,{status:'Not Started',date:''}]));
+ data.walls.push({id:jobId,job:'TEST-BROWSER-001',customer:'SYNTHETIC TEST ONLY',project:'TEST browser lifecycle',lf:80,lfByHeight:{h8:80},productionDate:'',installDate:'2026-11-11',planReview:{stages}});
  data.loads.push({id:loadId,division:'walls',linkType:'wall',linkId:jobId,status:'Scheduled',date:'2026-11-11',project:'TEST-BROWSER-001',load:'TEST browser load',qty:80});
  await rpc('save_schedule_snapshot',{p_expected_revision:snap.revision,p_snapshot:data,p_reason:'SYNTHETIC browser fixture only'});
  await rpc('upsert_walls_production_table',{p_table_id:'9002',p_label:'TEST Browser Board',p_capacity_lf:100,p_enabled:true,p_notes:'Disposable test board'});
- results.push('SETUP via actual SQL: isolated 80LF approved master job, scheduled load, configured board; no frontend state/data injection');
+ results.push('SETUP via actual SQL: isolated 80LF unapproved master job, scheduled load, configured board; no frontend state/data injection');
  page=await browser.newPage({viewport:{width:1440,height:1000}});page.on('pageerror',e=>errors.push(e.message));
  page.on('dialog',async d=>{dialogs.push({type:d.type(),message:d.message()});await d.accept(d.type()==='prompt'?(d.message().includes('percent complete')?'50':'TEST browser verified'):undefined)});
  await page.route('**/*',r=>r.request().url().startsWith(harness.url+'/')?r.continue():r.abort());
  await page.goto(harness.url+'/');await page.locator('#authEmail').fill(identities.admin.email);await page.locator('#authPassword').fill('disposable-only');await page.locator('#authForm button[type="submit"]').click();
  await page.waitForFunction(()=>currentUserIsAdmin&&remoteReady);
+ const saveClick=async selector=>{const response=page.waitForResponse(r=>r.url()===harness.url+'/rpc'&&r.request().postDataJSON()?.name==='save_schedule_snapshot');await page.locator(selector).click();const saved=await(await response).json();assert.equal(saved.error,null,JSON.stringify(saved.error));await page.waitForFunction(()=>!saveBusy&&!saveQueued);return saved.data};
+ await page.evaluate(()=>{state.view='walls';state.subview.walls='plans';state.planReviewView='my';render()});
+ for(const key of Object.keys(stages)){
+  await page.locator(`[data-plan-review="${jobId}"]`).first().click();
+  await page.locator(`[data-plan-status="${key}"]`).selectOption('Complete');
+  await page.locator(`[data-plan-date="${key}"]`).fill('2026-10-21');
+  await page.locator('#planReviewNotes').fill('TEST actual plan review milestone '+key);
+  const saved=await saveClick('#savePlanReview');
+  assert.equal(saved.payload.data.walls.find(w=>w.id===jobId)?.planReview.stages[key].status,'Complete');
+ }
+ await page.evaluate(()=>{state.subview.walls='active';render()});
+ await page.locator(`[data-wall="${jobId}"]`).first().click();await page.locator('#wProduction').fill('2026-11-09');
+ const dated=await saveClick('#saveWall');assert.equal(dated.payload.data.walls.find(w=>w.id===jobId)?.productionDate,'2026-11-09');
+ results.push('UI: seven plan-review status/date saves through ApprovedProduction, then actual master-job edit scheduled production');
+ await page.screenshot({path:output+'/plan-review-released.png',fullPage:true});
  // Navigation preferences only; all mutations below use actual bound UI controls.
  await page.evaluate(async()=>{state.view='walls';state.subview.walls='production';state.productionDay='2026-11-09';state.productionView='today';await loadWallsProduction();render()});
  await page.locator(`[data-prod-new="${jobId}"]`).click();
@@ -90,10 +105,17 @@ try{
  await page.waitForFunction(jobId=>wallsInstallation.jobs.find(j=>j.record_id===jobId)?.installation?.closeout?.field_complete===true,jobId);
  await page.screenshot({path:output+'/installation-field-closeout.png',fullPage:true});
  results.push('UI: separate site/stone activity forms and Start/Complete; crew assignment; installation disabled before scope; delivered run selection; Start/Complete; verified field closeout');
- assert.deepEqual(errors,[]);assert.deepEqual(dialogs.filter(d=>d.type()==='alert'),[]);
+ await page.evaluate(()=>{state.view='walls';state.subview.walls='active';render()});
+ await page.locator(`[data-wall="${jobId}"]`).first().click();await page.locator('#wCompleted').fill('2026-11-11');
+ const completed=await saveClick('#saveWall');assert.equal(completed.payload.data.walls.find(w=>w.id===jobId)?.completedDate,'2026-11-11');
+ await page.reload();await page.waitForFunction(()=>currentUserIsAdmin&&remoteReady);
+ assert.equal(await page.evaluate(jobId=>state.walls.find(w=>w.id===jobId)?.completedDate,jobId),'2026-11-11');
+ results.push('UI: explicit exact-date master completion persisted and survived reload after verified installation closeout');
+
+ assert.deepEqual(errors,[]);assert.deepEqual(dialogs.filter(d=>d.type==='alert'),[]);
  console.log(JSON.stringify({results,dialogs,calls:harness.calls},null,2));
 }catch(e){failure=e;console.error(e);if(page)await page.screenshot({path:output+'/failure.png',fullPage:true}).catch(()=>{});}finally{
- await writeFile(output+'/results.json',JSON.stringify({results,dialogs,errors,failure:failure?.stack||null,calls:harness.calls,limitations:['Approved master job/load/table seeded via real SQL, not master-entry UI','Auth/Realtime are provider stubs; no hosted Supabase Auth coverage','Site/stone UI examples run sequentially here; parallel field preparation was verified by actual SQL lifecycle tests']},null,2));
+ await writeFile(output+'/results.json',JSON.stringify({results,dialogs,errors,failure:failure?.stack||null,calls:harness.calls,limitations:['Unapproved master job/load/table seeded via real SQL; plan-review and scheduling edits use actual UI','Auth/Realtime are provider stubs; no hosted Supabase Auth coverage','Site/stone UI examples run sequentially here; parallel field preparation was verified by actual SQL lifecycle tests']},null,2));
  await browser.close();await harness.close();
 }
 if(failure)throw failure;
