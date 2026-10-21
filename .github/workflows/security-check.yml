@@ -18,6 +18,8 @@ jobs:
           node-version: 22
       - name: Verify public bundle safety
         run: node scripts/validate-public-bundle.mjs
+      - name: Verify workflow reference and inline syntax
+        run: node scripts/validate-workflow-guidance.mjs
       - name: Verify database migrations
         run: node scripts/validate-migrations.mjs
       - name: Verify privileged RPC grants
@@ -29,3 +31,28 @@ jobs:
       - name: Verify main Installation activity catalog
         run: node scripts/validate-installation-primary-activities.mjs
 
+
+  validate-offline-workflow-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install ephemeral pinned browser test dependency
+        run: npm install --no-save --package-lock=false playwright@1.56.1
+      - name: Install matching Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Verify offline synthetic desktop and mobile views
+        run: node scripts/validate-workflow-ui.mjs artifacts/workflow-ui
+      - name: Retain synthetic screenshots and results for visual review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: offline-workflow-ui
+          path: artifacts/workflow-ui
+          if-no-files-found: warn
+          retention-days: 7

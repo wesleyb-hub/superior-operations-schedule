@@ -539,6 +539,32 @@ body.operations-nav-collapsed{--operations-side:76px}body.operations-nav-collaps
 #view .installation-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(max-width:760px){#view .production-heading,#view .planner-heading,#view .inventory-heading,#view .overview-heading{min-height:0;align-items:flex-start;flex-direction:column;gap:10px}#view .production-kpis,#view .planner-kpis,#view .inventory-stats,#view .stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#view .installation-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#view .production-kpi,#view .planner-kpi,#view .inventory-stat,#view .stat{min-height:66px;padding:9px 10px}#view .stat-value,#view .production-kpi strong,#view .planner-kpi strong,#view .inventory-stat-value{font-size:20px}}
 </style>
+<style id="hub-interaction-standard">
+/* Shared interaction and workflow-reference presentation; no status or gate changes. */
+:where(button,a,input,select,textarea,summary):focus-visible{outline:3px solid #315f93;outline-offset:3px}
+.operations-sidebar :focus-visible,.topbar :focus-visible{outline-color:#ffcf7c}
+button:disabled{cursor:not-allowed}
+#view{min-width:0}
+.workflow-reference{margin:0 0 16px;border:1px solid var(--line);border-radius:var(--hub-card-radius);background:var(--card);color:var(--ink);font-size:13px;line-height:1.5}
+.workflow-reference summary{padding:12px 14px;cursor:pointer;font-weight:800;color:var(--navy);min-height:44px}
+.workflow-reference[open] summary{border-bottom:1px solid var(--line)}
+.workflow-reference-body{padding:12px 16px}
+.workflow-reference-body p{margin:0 0 12px}
+.workflow-reference-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 24px;margin:0;padding-left:20px}
+.workflow-reference-grid li{padding-left:3px}
+.workflow-reference-grid strong{display:block;color:var(--navy)}
+.workflow-reference .workflow-reference-note{margin:14px 0 0;color:#526170;font-size:12px}
+@media(max-width:760px){
+  .workflow-reference-grid{grid-template-columns:1fr}
+  .notice{align-items:flex-start;flex-wrap:wrap}
+  .section-head,.toolbar,.report-controls{min-width:0}
+  .report-controls input,.report-controls select{max-width:100%}
+  #view .project-grid{grid-template-columns:minmax(0,1fr)}
+  .modal input:not([type=checkbox]):not([type=radio]),.modal select,.modal textarea{font-size:16px}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+@media print{.workflow-reference{display:none!important}}
+</style>
 </head>
 <body>
 <div class="auth-gate" id="authGate">
@@ -627,6 +653,21 @@ body.operations-nav-collapsed{--operations-side:76px}body.operations-nav-collaps
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="yearSelect" class="toolbar-input" title="Select year"><option value="2026">2026</option><option value="2027">2027</option><option value="2028">2028</option></select><select id="weekSelect" class="toolbar-input week-select" title="Select week"></select><input id="globalSearch" class="toolbar-input search-input" placeholder="Search job, customer, address, piece..." /><button type="button" class="mini" id="searchBtn">Search</button><button type="button" class="mini" id="prevWeek">← Prior Week</button><button type="button" class="mini" id="nextWeek">Next Week →</button></div>
   </div>
   <div class="notice" style="margin-bottom:12px"><span><span class="live-dot"></span><strong>LIVE TEAM HUB:</strong> changes save to the shared Superior Operations database.</span><span class="small-note" id="accessStatus">Checking access...</span><span class="small-note" id="saveStatus">Connecting...</span></div>
+  <details class="workflow-reference no-print" id="wallsWorkflowReference" hidden>
+    <summary>Superior Walls workflow reference</summary>
+    <div class="workflow-reference-body">
+      <p>Physical handoffs from the team workflow dated October 20, 2026. These are connected workstreams, not a single serial schedule. This reference does not change Hub statuses or approval requirements.</p>
+      <ol class="workflow-reference-grid">
+        <li><strong>Release and advance CNC work</strong>Approved drawings and Approved for Production precede physical setup. Plan CNC foam cutting and insulated stud assembly ahead of wall production; stage the finished studs for setup rather than waiting for a table to enter setup.</li>
+        <li><strong>Setup, inspect, then pour</strong>Complete physical table setup, then inspect every production run. Setup Complete is not the same as Ready for Pour: correct any failed pre-pour checks before pouring.</li>
+        <li><strong>Walls before pads and columns</strong>Pad and column forms and reinforcement can be prepared alongside wall work. Pour wall beds first, then pads and columns, then full-crew cleanup. Strip pads and columns the next morning and store until needed.</li>
+        <li><strong>Morning inspection is final plant QC</strong>After dropping lids, inspect and patch as needed before panel handling. Final QC Release records that morning inspection result; it does not call for a second physical inspection after loading. Resolve holds and record the appropriate release before dispatch.</li>
+        <li><strong>Site and stone work run in parallel</strong>For our installation scope, shoot grade, place and screed stone footing, and establish wall lines before the delivery truck arrives. Stone footing is field work, distinct from manufactured footing pads.</li>
+        <li><strong>Install and close out the contracted scope</strong>Set and brace panels, check squareness, caulk, add slab-on-grade foam only where applicable, complete top bolting, and clean up. Supply-only jobs follow the customer's contract: do not assume Superior Walls owns freight, crane, or field installation.</li>
+      </ol>
+      <p class="workflow-reference-note">Use approved drawings and existing load documentation. This reference adds no bed-layout or load-sheet generation, material quantities, official height names, BOMs, labor standards, or accounting codes. The team must confirm those separately.</p>
+    </div>
+  </details>
   <div id="view"></div>
 </main>
 </div>
@@ -1869,6 +1910,7 @@ function bindWeeklyPlanner(){const root=document.getElementById('view');if(!root
 
 function render(){
   applyAccessNavigation();
+  document.getElementById('wallsWorkflowReference').hidden=!['walls','qc','delivery'].includes(state.view);
   const mobileNavStatus=document.getElementById('mobileNavStatus');
   if(mobileNavStatus)mobileNavStatus.style.display=window.matchMedia('(max-width:760px)').matches?'block':'none';
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===state.view));
