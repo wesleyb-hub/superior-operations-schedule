@@ -87,6 +87,16 @@ try{
   assert.equal(await page.getByRole('checkbox',{name:'Custom Synthetic',exact:true}).isChecked(),true);
   await page.getByRole('checkbox',{name:'Test Beta',exact:true}).uncheck();assert.equal(await page.locator('#plannerCrewPeopleWarnings').isVisible(),false);
   await search.fill('alpha');await search.fill('');assert.equal(await page.getByRole('checkbox',{name:'Test Beta',exact:true}).isChecked(),false);
+  await page.locator('#plannerCrewLeader').fill('Unsaved Synthetic Leader');
+  await page.locator('#plannerCrewPeopleNew').fill('Unsaved Synthetic Employee');
+  await search.fill('previous');
+  await page.evaluate(()=>{const cache=plannerEmployeeHistoryCache();cache.names=['Previously Used Synthetic'];cache.ready=true;refreshPlannerEmployeeHistoryChoices()});
+  assert.equal(await page.locator('#plannerCrewLeader').inputValue(),'Unsaved Synthetic Leader');
+  assert.equal(await page.locator('#plannerCrewPeopleNew').inputValue(),'Unsaved Synthetic Employee');
+  assert.equal(await page.getByRole('checkbox',{name:'Previously Used Synthetic',exact:true}).isChecked(),false);
+  assert.equal((await page.evaluate(()=>plannerSelectedEmployeeNames())).includes('Test Alpha'),true);
+  assert.match(await page.locator('#plannerEmployeeHistoryHint').textContent(),/not a verified current staff roster/);
+  await search.fill('');
   const pickerOverflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2);assert.equal(pickerOverflow,false);
   if(output)await page.screenshot({path:resolve(output,`${width}-planner-employee-picker.png`),fullPage:true});
   results.push({width,view:'planner-employee-picker',passed:true});
