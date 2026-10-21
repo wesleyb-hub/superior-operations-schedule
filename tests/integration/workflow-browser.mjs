@@ -65,7 +65,7 @@ try{
   await page.waitForFunction(id=>!weeklyPlannerBusy&&!weeklyPlannerLoadPromise&&weeklyPlanner.sections.find(s=>s.section_id===id)?.status==='approved',section.id);
  }
  results.push('Eight actual SQL saves, staff reloads, stale-version rejections and actual Approve button transitions');
- await page.screenshot({path:output+'/desktop-approved-crew.png',fullPage:true});
+ await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:output+'/desktop-approved-crew.png',fullPage:true});
  await page.locator('[data-planner-action="tab"][data-value="approved"]').click();
  assert.equal(await page.locator('[data-planner-action="publish"]').isEnabled(),true);
  await page.locator('[data-planner-action="publish"]').click();
@@ -74,7 +74,7 @@ try{
  assert.equal(packet.snapshot.sections.length,8);
  assert.equal(packet.snapshot.sections.every(s=>s.people.length===2),true);
  results.push('Real Publish button froze eight approved crews into persisted SQL packet');
- await page.screenshot({path:output+'/desktop-published-packet.png',fullPage:true});
+ await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:output+'/desktop-published-packet.png',fullPage:true});
  // A genuine held-work approval failure must retain inputs and permit correction/retry.
  await page.locator('[data-planner-action="tab"][data-value="review"]').click();
  await page.locator(`[data-planner-action="select-section"][data-value="${sections[0].key}"]`).click();
@@ -87,7 +87,7 @@ try{
  await page.waitForFunction(()=>!weeklyPlannerBusy&&weeklyPlannerDraftError.length>0);
  assert.match(await page.locator('#plannerSectionFeedback').textContent(),/conflict|blocking|resolve/i);
  assert.equal(await manual.locator('[data-field="assignment_text"]').inputValue(),'TEST correction and retry');
- await page.screenshot({path:output+'/desktop-real-blocker-retained.png',fullPage:true});
+ await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:output+'/desktop-real-blocker-retained.png',fullPage:true});
  await manual.locator('[data-field="readiness_status"]').selectOption('unconfirmed');
  await page.locator('[data-planner-action="approve-section"]').click();
  await page.waitForFunction(id=>!weeklyPlannerBusy&&!weeklyPlannerLoadPromise&&weeklyPlanner.sections.find(s=>s.section_id===id)?.status==='approved'&&!weeklyPlannerDraftError,sections[0].id);
@@ -104,22 +104,22 @@ try{
  // Actual persisted lifecycle appears in the production and installation screens.
  await page.evaluate(async()=>{state.view='walls';state.subview.walls='production';state.productionDay='2026-10-26';state.productionView='tables';await loadWallsProduction();render()});
  assert.equal(await page.evaluate(()=>wallsProduction.assignments.find(a=>a.wall_record_id==='TEST-E2E-WALL-001')?.stage),'stripped');
- await page.screenshot({path:output+'/desktop-production-board.png',fullPage:true});
+ await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:output+'/desktop-production-board.png',fullPage:true});
  await page.evaluate(async()=>{state.view='walls';state.subview.walls='installation';state.installationDay='2026-10-28';await ensureWallsInstallationLoaded(true);render()});
  assert.equal(await page.evaluate(()=>wallsInstallation.jobs.some(j=>j.record_id==='TEST-E2E-WALL-001')),false); // Completed job correctly leaves active installation queue.
- await page.screenshot({path:output+'/desktop-installation-closeout.png',fullPage:true});
+ await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:output+'/desktop-installation-closeout.png',fullPage:true});
  await page.evaluate(()=>{state.view='walls';state.subview.walls='monthly';state.reportMonth='2026-10';render()});
  const uiLF=await page.evaluate(()=>state.walls.filter(w=>wallCompletionMonth(w)==='2026-10').reduce((n,w)=>n+Number(w.lf||0),0));
  const {context,error}=await loadAuthorizedContext({rpc:(name,args)=>harness.rpc(identities.admin,name,args)},new Date('2026-10-21T21:00:00Z'));
  assert.equal(error,null);assert.equal(context.wall_completion_month.lf_completed,120);assert.equal(context.wall_completion_month.lf_completed,uiLF);
  assert.match(completionAnswer('how many linear feet of walls were completed for october so far',context),/120\.00 LF/);
  assert.match(completionAnswer('how many linear feet of walls were completed for october so far',context),/not a verified through-today total/);
- await page.screenshot({path:output+'/desktop-monthly-completion.png',fullPage:true});
+ await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:output+'/desktop-monthly-completion.png',fullPage:true});
  results.push('Production screen reads stripped lifecycle; completed job leaves active installation queue; actual authorized agent SQL context matches Hub 120LF and explicitly flags future completion date');
  await page.evaluate(()=>{state.view='weekly-planner';state.weeklyPlannerView='review';render()});
  await page.setViewportSize({width:390,height:1000});
  await page.locator('[data-planner-action="tab"][data-value="review"]').click();
- await page.screenshot({path:output+'/mobile-approved-crew.png',fullPage:true});
+ await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:output+'/mobile-approved-crew.png',fullPage:true});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2));
  await page.locator('.header-more > summary').click();
  await page.locator('#signOutBtn').click();

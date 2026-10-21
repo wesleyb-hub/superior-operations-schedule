@@ -58,6 +58,9 @@ jobs:
           node tests/integration/run-known-probes.mjs --strict
           psql -X --set ON_ERROR_STOP=1 -f tests/integration/probes/named-table-extended.sql
           psql -X --set ON_ERROR_STOP=1 -f tests/integration/probes/walls-release-full-schema.sql
+      - name: Record public migration-derived function fingerprints for deployment review
+        run: |
+          psql -X --csv -c "select p.proname,pg_get_function_identity_arguments(p.oid) as arguments,md5(pg_get_functiondef(p.oid)) as definition_md5 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('advance_walls_production_stage','save_schedule_snapshot','generate_weekly_planner','validate_walls_production_assignment','upsert_walls_production_assignment') order by p.proname" > artifacts/disposable-workflow/repair-function-fingerprints.csv
       - name: Retain synthetic-only evidence
         if: always()
         uses: actions/upload-artifact@v4
