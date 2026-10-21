@@ -1964,7 +1964,7 @@ function loadWeeklyPlanner(force=false){
     weeklyPlanner={permissions:{},week:null,sections:[],people:[],assignments:[],availability:[],resources:[],conflicts:[],packs:[],recent_packs:[],audit:[],...(data||{})};
     weeklyPlannerReady=true;weeklyPlannerError='';weeklyPlannerErrorWeek='';weeklyPlannerLoadedWeek=requestedWeek;
     if(state.view==='weekly-planner')renderWeeklyPlanner();return true;
-  }catch(error){if(isCurrent()){weeklyPlannerReady=false;weeklyPlannerErrorWeek=requestedWeek;weeklyPlannerError=error?.message||'Weekly Planner is unavailable. Retry the refresh before editing.';console.error('Weekly Planner load failed:',error);if(state.view==='weekly-planner')renderWeeklyPlanner()}return false}
+  }catch(error){if(isCurrent()&&!weeklyPlannerDraftError){weeklyPlannerReady=false;weeklyPlannerErrorWeek=requestedWeek;weeklyPlannerError=error?.message||'Weekly Planner is unavailable. Retry the refresh before editing.';console.error('Weekly Planner load failed:',error);if(state.view==='weekly-planner')renderWeeklyPlanner()}return false}
   finally{if(weeklyPlannerLoadToken===token){weeklyPlannerLoadPromise=null;weeklyPlannerLoadToken=null}}});
   weeklyPlannerLoadPromise=request;return request;
 }
@@ -2006,7 +2006,7 @@ async function plannerSaveSection(approve=false){
     draftSaved=true;const version=Number(result.data?.schedule_version);
     if(!Number.isFinite(version))throw new Error('The draft saved, but its new version was not returned. Refresh before trying approval again.');
     // Keep the confirmed version even if approval fails; never reuse the pre-save version.
-    section.schedule_version=version;
+    section.schedule_version=version;section.status=result.data?.status||'needs_review';
     if(approve){const approval=await sb.rpc('approve_weekly_planner_section',{p_section_id:section.section_id,p_expected_version:version});if(approval.error)throw new Error('Draft saved, but approval failed: '+approval.error.message);approved=true}
   }catch(error){message=error?.message||'Section save or approval failed.'}finally{weeklyPlannerBusy=false}
   if(message){plannerSectionFeedback(message+(draftSaved?' Your saved draft is retained; correct the issue or refresh before retrying.':' Your on-screen edits are retained. Try Save section again; refreshing will discard unsaved edits.'));return false}

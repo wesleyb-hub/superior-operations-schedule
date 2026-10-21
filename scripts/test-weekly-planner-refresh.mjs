@@ -162,3 +162,7 @@ test('failed-save draft protection pauses realtime and rejects preexisting snaps
  calls[0].resolve(result('would discard edits'));assert.equal(await pending,false);assert.equal(c.renders,0);
  const explicit=load(true);await tick();assert.equal(c.weeklyPlannerDraftError,'');calls[1].resolve(result('explicit retry'));assert.equal(await explicit,true);
 });
+
+test('preexisting snapshot rejection cannot replace a failed-save draft with an error screen',async()=>{
+ const {context:c,calls,load}=setup();const pending=load();await tick();c.weeklyPlannerDraftError='Retain draft';calls[0].reject(new Error('Synthetic snapshot timeout'));assert.equal(await pending,false);assert.equal(c.renders,0);assert.equal(c.weeklyPlannerDraftError,'Retain draft');
+});

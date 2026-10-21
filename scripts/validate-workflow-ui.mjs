@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 const {chromium}=createRequire(import.meta.url)('playwright');
 const root=resolve(import.meta.dirname,'..');
 const source=await readFile(resolve(root,'index.html'),'utf8');
-const html=source.replace(/<script src="[^"]+"><\/script>/g,'');
+// Test-only client injection seam; production still declares its client const.
+const html=source.replace(/<script src="[^"]+"><\/script>/g,'').replace('const sb=','let sb=');
 const output=process.argv[2];if(output)await mkdir(output,{recursive:true});
 const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{}),args:['--no-sandbox']});
 const failures=[],results=[];
