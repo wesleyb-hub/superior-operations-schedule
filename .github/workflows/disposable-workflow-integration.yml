@@ -29,14 +29,19 @@ jobs:
         with:
           node-version: 22
       - name: Apply actual repository migrations to empty disposable PostgreSQL17
+        id: schema
         run: bash tests/integration/apply-schema.sh
       - name: Install pinned disposable test dependencies
         run: npm install --no-save --package-lock=false pg@8.16.3 playwright@1.56.1
       - name: Install matching Chromium
         run: npx playwright install --with-deps chromium
       - name: Run actual synthetic SQL lifecycle
-        run: psql -X --set ON_ERROR_STOP=1 -f tests/integration/walls-workflow-cases.sql
+        run: |
+          mkdir -p artifacts/disposable-workflow
+          set -o pipefail
+          psql -X --set ON_ERROR_STOP=1 -f tests/integration/walls-workflow-cases.sql 2>&1 | tee artifacts/disposable-workflow/sql-lifecycle.log
       - name: Run browser through actual SQL functions and RLS
+        if: ${{ always() && steps.schema.outcome == 'success' }}
         run: node tests/integration/workflow-browser.mjs
       - name: Retain synthetic-only evidence
         if: always()

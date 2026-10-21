@@ -26,14 +26,14 @@ grant execute on all functions in schema test_workflow to authenticated;
 set role authenticated;
 select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000001","email":"test-admin@superiorwallsnd.com","role":"authenticated"}',false);
 do $$
-declare a uuid; site uuid; stone uuid; haul uuid; install uuid; closeout uuid; row jsonb; ver bigint; issue bigint; snapshot jsonb; stage text;
+declare a uuid; site uuid; stone uuid; haul uuid; install uuid; closeout uuid; row jsonb; ver bigint; issue bigint; snapshot jsonb; v_stage text;
 begin
  perform test_workflow.assert(public.is_operations_admin(),'synthetic admin identity has actual admin permissions');
  perform test_workflow.patch('walls','TEST-E2E-WALL-001','{"job":"TEST-E2E-001","customer":"SYNTHETIC TEST ONLY","name":"TEST full lifecycle","lf":120,"lfByHeight":{"h8":120},"status":"Active","planReview":{"stages":{"approvedProduction":{"status":"Not Started"}}}}');
  perform test_workflow.rejects($q$select test_workflow.patch('walls','TEST-E2E-WALL-001','{"productionDate":"2026-10-26"}')$q$,'Production Date requires','production scheduling rejects missing approval');
- foreach stage in array array['permitPackage','preliminarySubmittal','finalSubmittal','structuralReview','productionDrawings','installDrawings','approvedProduction'] loop
+ foreach v_stage in array array['permitPackage','preliminarySubmittal','finalSubmittal','structuralReview','productionDrawings','installDrawings','approvedProduction'] loop
   select data->'planReview' into row from public.schedule_records where collection='walls' and record_id='TEST-E2E-WALL-001';
-  row:=jsonb_set(row,array['stages',stage],jsonb_build_object('status','Complete','date','2026-10-21','note','SYNTHETIC TEST milestone verified'));
+  row:=jsonb_set(row,array['stages',v_stage],jsonb_build_object('status','Complete','date','2026-10-21','note','SYNTHETIC TEST milestone verified'));
   perform test_workflow.patch('walls','TEST-E2E-WALL-001',jsonb_build_object('planReview',row));
  end loop;
  perform test_workflow.patch('walls','TEST-E2E-WALL-001','{"productionDate":"2026-10-26","installDate":"2026-10-28"}');
@@ -43,6 +43,8 @@ begin
  perform public.upsert_walls_production_table('TEST-TABLE-A','TEST production board A',150,true,'Synthetic test fixture');
  row:=public.upsert_walls_production_assignment(null,'TEST-E2E-WALL-001','TEST-TABLE-A',8,120,'2026-10-26 07:00','2026-10-26 15:00','2026-10-27 07:00','TEST only'); a:=(row->>'assignment_id')::uuid;
  perform test_workflow.assert(row->>'stage'='planned','120 LF assigned to real production board');
+ perform test_workflow.rejects($q$select public.upsert_walls_production_assignment(null,'TEST-E2E-WALL-001','TEST-TABLE-A',8,151,'2026-11-02 07:00','2026-11-02 15:00','2026-11-03 07:00')$q$,'table capacity','configured production board capacity enforced');
+ perform test_workflow.rejects($q$select public.upsert_walls_production_assignment(null,'TEST-E2E-WALL-001','TEST-TABLE-A',8,1,'2026-11-02 07:00','2026-11-02 15:00','2026-11-03 07:00')$q$,'authoritative job linear footage','sequential allocations cannot exceed job total');
  perform test_workflow.rejects(format('select public.upsert_walls_production_assignment(%L::uuid,%L,%L,8,120,%L::timestamp,%L::timestamp,%L::timestamp,%L,999)',a,'TEST-E2E-WALL-001','TEST-TABLE-A','2026-10-26 07:00','2026-10-26 15:00','2026-10-27 07:00','TEST'),'version conflict','assignment stale version rejected');
  perform test_workflow.rejects(format('select public.advance_walls_production_stage(%L::uuid,%L)',a,'poured'),'advance in order','production cannot skip setup');
  perform test_workflow.rejects(format('select public.set_walls_installation_qc(%L::uuid,%L)',a,'released'),'must be stripped','final QC cannot precede stripping');
