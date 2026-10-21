@@ -101,7 +101,8 @@ and source-derived resource-conflict rules remain unchanged.
 
 `wall_completion_month` is computed from the complete caller-returned
 `get_schedule_snapshot().payload.data.walls` before model detail limits. It
-matches the Hub `renderWallsMonthly` calculation: select the current Chicago
+matches the Hub `renderWallsMonthly` calculation after the same `normalizeWallLF`
+and `normalizeDate` read-only normalization (parity-tested against frontend helpers): select the current Chicago
 month using `completedDate.slice(0,7)`, falling back to `completedMonth`, then sum
 `Number(lf || 0)`. No status/active filter is added. Do not add historyArchive,
 production assignments, billing, or weekly forecast rows to this metric.

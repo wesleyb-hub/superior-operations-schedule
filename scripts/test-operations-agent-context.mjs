@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 import { wallCompletionContext, completionAnswer, boundContext, contextLimits, loadAuthorizedContext, reportingClock, scheduleCollections, scheduleContext } from '../supabase/functions/operations-agent/context.mjs';
 
@@ -254,7 +255,7 @@ test('completion summary survives omitted wall details and does not use weekly o
   assert.match(answer, /completion month only/);
 });
 test('denied, missing, malformed and omitted summaries cannot produce a partial monthly total', () => {
-  for (const result of [{ error: { message: 'denied' }, data: completionSnapshot([]).data }, {}, completionSnapshot([{ lf: 'bad', completedMonth: '2026-10' }])]) {
+  for (const result of [{ error: { message: 'denied' }, data: completionSnapshot([]).data }, {}, completionSnapshot([null])]) {
     const metric = wallCompletionContext(result, octoberClock);
     assert.notEqual(metric.status, 'available');
     assert.equal(metric.lf_completed, undefined);
@@ -271,4 +272,29 @@ test('shortcut never intercepts other periods, filtered questions, comparisons o
 test('future-dated completions are explicitly not a verified through-today total', () => {
   const metric = wallCompletionContext(completionSnapshot([{ lf: 55, completedDate: '2026-10-31' }]), octoberClock);
   assert.match(completionAnswer('how many LF of walls were completed this month?', { reporting: octoberClock, wall_completion_month: metric }), /55\.00 LF dated after today; it is not a verified through-today total/);
+});
+
+
+test('normalized aggregate matches actual frontend helpers for legacy LF and dates without mutating snapshot', async () => {
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  const helperSource = html.slice(html.indexOf('const WALL_HEIGHTS='), html.indexOf('function wallLfSummary'))
+    + html.slice(html.indexOf('function normalizeDate(value)'), html.indexOf('function parseDate(s)'))
+    + html.slice(html.indexOf('function iso(d)'), html.indexOf('function addDays(s,n)'));
+  const runtime = vm.createContext({});
+  vm.runInContext(helperSource, runtime);
+  const walls = [
+    { lf: 10, lfByHeight: { h4: 25, h8: 15 }, lfUnassigned: 2, completedDate: '10/15/2026' },
+    { lf: 80, lfByHeight: { h9: 50 }, completedDate: '2026-10-21T23:30:00Z' },
+    { lf: -4, lfByHeight: { h5: 12 }, completedDate: '2026-10-1' },
+    { lf: 'invalid', completedMonth: '2026-10' },
+    { lf: 7, completedDate: '46306' },
+    { lf: 100, completedDate: 'not a date', completedMonth: '2026-09' },
+  ];
+  const original = structuredClone(walls);
+  runtime.walls = structuredClone(walls);
+  const expected = vm.runInContext(`walls.map(w => ({...normalizeWallLF(w), completedDate: normalizeDate(w.completedDate)})).filter(w => (w.completedDate ? w.completedDate.slice(0,7) : w.completedMonth) === '2026-10').reduce((n,w) => n + Number(w.lf || 0), 0)`, runtime);
+  const actual = wallCompletionContext(completionSnapshot(walls), octoberClock);
+  assert.equal(actual.lf_completed, expected);
+  assert.equal(actual.future_dated_jobs, 0);
+  assert.deepEqual(walls, original);
 });
