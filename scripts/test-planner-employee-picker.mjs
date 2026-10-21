@@ -9,7 +9,7 @@ function setup(){
  const elements={plannerCrewPeopleNew:{value:''},plannerCrewLeader:{value:'Test Alpha'}};const checked=[{value:'Test Alpha'},{value:'Legacy Name'}];
  const context={weeklyPlannerEmployeeHistory:null,currentUser:null,sb:null,weeklyPlanner:planner,weeklyPlannerInstallEmployees:['Install Test'],weeklyPlannerSelected:'production',htmlSafe:x=>String(x).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),document:{getElementById:id=>elements[id],querySelectorAll:selector=>selector.includes(':checked')?checked:[]}};
  vm.createContext(context);
- vm.runInContext(html.slice(html.indexOf('function plannerSection('),html.indexOf('function plannerDateLabel('))+html.slice(html.indexOf('function plannerEmployeeHistoryCache('),html.indexOf('function plannerReview('))+html.slice(html.indexOf('function plannerCaptureSection('),html.indexOf('async function plannerSaveSection(')),context);
+ vm.runInContext(html.slice(html.indexOf('function plannerSection('),html.indexOf('function plannerDateLabel('))+html.slice(html.indexOf('function plannerInstallationEmployeeHint('),html.indexOf('function plannerReview('))+html.slice(html.indexOf('function plannerCaptureSection('),html.indexOf('async function plannerSaveSection(')),context);
  return {c:context,planner,elements,checked};
 }
 const plain=value=>JSON.parse(JSON.stringify(value));
@@ -24,3 +24,27 @@ test('history reads only bounded names through current client and coalesces acro
 test('history error pauses automatic retries; explicit retry works',async()=>{const {c,calls}=historySetup();let a=c.loadPlannerEmployeeHistory();await tick();calls[0].resolve({error:{message:'private failure'}});calls[1].resolve({data:[]});assert.equal(await a,false);assert.equal(await c.loadPlannerEmployeeHistory(),false);assert.equal(calls.length,2);assert.doesNotMatch(c.plannerEmployeeHistoryHint(),/private failure/);a=c.loadPlannerEmployeeHistory(true);await tick();calls[2].resolve({data:[]});calls[3].resolve({data:[]});assert.equal(await a,true)});
 test('history never loads without signed-in administrator and stale session results cannot leak',async()=>{for(const key of ['currentUser','currentUserIsAdmin','sb']){const {c,calls}=historySetup();c[key]=null;assert.equal(await c.loadPlannerEmployeeHistory(),false);assert.equal(calls.length,0)}const {c,calls}=historySetup();const a=c.loadPlannerEmployeeHistory();await tick();c.currentUser={id:'synthetic-b'};calls.forEach(call=>call.resolve({data:[{employee_name:'Old Session Name'}]}));assert.equal(await a,false);assert.deepEqual(plain(c.plannerEmployeeHistoryCache().names),[])});
 test('RLS-empty history remains empty and never grants staff or copies availability',async()=>{const {c,calls,planner}=historySetup();const before=JSON.stringify(planner);const a=c.loadPlannerEmployeeHistory();await tick();calls.forEach(call=>call.resolve({data:[]}));assert.equal(await a,true);assert.deepEqual(plain(c.plannerEmployeeHistoryCache().names),[]);assert.equal(JSON.stringify(planner),before)});
+// Installation suggestions use the same choice-only refresh, not a full draft render.
+function installationSetup(){
+ const {c,elements,...rest}=setup();let resolveRead,calls=0,refreshes=0;
+ c.state={view:'weekly-planner',weeklyPlannerView:'review'};c.currentUser={id:'synthetic-install'};
+ c.weeklyPlannerSelected='installation_stone';c.weeklyPlanner.sections[0].section_key='installation_stone';
+ c.weeklyPlannerInstallEmployeesReady=false;c.weeklyPlannerInstallEmployeesPromise=null;c.weeklyPlannerInstallEmployeesError='';
+ c.console={error:()=>{}};
+ c.sb={from:()=>{calls++;const chain={select:()=>chain,eq:()=>chain,not:()=>chain,limit:()=>new Promise(resolve=>resolveRead=resolve)};return chain}};
+ vm.runInContext(html.slice(html.indexOf('async function loadWeeklyPlannerInstallEmployees('),html.indexOf('// Names stay in the authorized planner snapshot')),c);
+ c.refreshPlannerEmployeeHistoryChoices=()=>{refreshes++};c.renderWeeklyPlanner=()=>{throw new Error('Must not rerender live draft')};
+ elements.plannerInstallationEmployeeHint={textContent:''};
+ return {c,elements,...rest,resolve:data=>resolveRead(data),counts:()=>({calls,refreshes})};
+}
+test('Installation deferred success refreshes choices only and returns success without replacing drafts',async()=>{
+ const {c,elements,resolve,counts}=installationSetup();elements.plannerCrewLeader.value='Unsaved leader';elements.plannerCrewPeopleNew.value='Unsaved employee';
+ const pending=c.loadWeeklyPlannerInstallEmployees();resolve({data:[{resource_name:'New Synthetic'}]});assert.equal(await pending,true);
+ assert.equal(elements.plannerCrewLeader.value,'Unsaved leader');assert.equal(elements.plannerCrewPeopleNew.value,'Unsaved employee');assert.deepEqual(counts(),{calls:1,refreshes:1});
+ assert.equal(await c.loadWeeklyPlannerInstallEmployees(),true);assert.match(elements.plannerInstallationEmployeeHint.textContent,/names are loaded/);
+});
+test('Installation failure stays false on cached read and explicit retry recovers',async()=>{
+ const {c,resolve,counts}=installationSetup();let pending=c.loadWeeklyPlannerInstallEmployees();resolve({error:{message:'Synthetic unavailable'}});assert.equal(await pending,false);assert.equal(await c.loadWeeklyPlannerInstallEmployees(),false);assert.equal(counts().calls,1);
+ pending=c.loadWeeklyPlannerInstallEmployees(true);resolve({data:[]});assert.equal(await pending,true);assert.equal(counts().calls,2);
+});
+test('changed suggestions retain checked draft-only names and escape them',()=>{const {c}=setup();assert.match(c.plannerEmployeeOptions('a','installation_stone',['<Draft Synthetic>']),/&lt;Draft Synthetic>/)});
