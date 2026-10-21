@@ -4,10 +4,11 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const root=resolve(import.meta.dirname,'..');
-const [html,sql,reapprovalMigration,agent]=await Promise.all([
+const [html,sql,reapprovalMigration,stabilityMigration,agent]=await Promise.all([
   readFile(resolve(root,'index.html'),'utf8'),
   readFile(resolve(root,'supabase','migrations','20261016_015_weekly_crew_planner.sql'),'utf8'),
   readFile(resolve(root,'supabase','migrations','20261016_016_weekly_planner_reapproval_guard.sql'),'utf8'),
+  readFile(resolve(root,'supabase','migrations','20261021120000_weekly_planner_stability_and_advisory_gates.sql'),'utf8'),
   readFile(resolve(root,'supabase','functions','operations-agent','index.ts'),'utf8'),
 ]);
 
@@ -31,7 +32,17 @@ const checks=[
   [!(/delete\s+from\s+public\.weekly_planner_(section_revisions|packs)/i.test(reapprovalMigration)),'Planner reapproval migration must preserve frozen section and packet history.'],
   [agent.includes('Weekly Planner information is read-only context'),'The existing assistant is not explicitly read-only for Weekly Planner.'],
   [!html.includes('Weekly Planner Assistant'),'A duplicate scheduling assistant was introduced.'],
+  [!html.includes('await Promise.all([loadInventory(),loadWallsProduction(),loadWeeklyPlanner()])'),'Weekly Planner snapshot blocks the general sign-in data load.'],
+  [html.includes("state.view==='weekly-planner'")&&html.includes('weeklyPlannerLoadPromise')&&html.includes('get_weekly_planner_snapshot'),'Planner snapshots are not lazy-loaded and deduplicated.'],
+  [html.includes('week_start=eq.')&&html.includes('weeklyPlannerRefreshTimer=setTimeout'),'Planner Realtime is not week-filtered and debounced.'],
+  [html.includes("state.view==='weekly-planner'?await loadWeeklyPlanner(true):true")&&html.includes('finally{weeklyPlannerBusy=false}'),'Planner write controls can remain locked or trigger off-screen snapshots.'],
+  [html.includes("approve_weekly_planner_section")&&html.includes("p_expected_version:version")&&html.includes('Saving and approving section…'),'Section approval does not save and approve without an intermediate full snapshot.'],
+  [html.includes('plannerCrewPeopleSelect')&&html.includes('weeklyPlanner.people')&&html.includes('weeklyPlanner.availability')&&html.includes('plannerCrewPeopleNew'),'Crew review lacks saved-name suggestions and manual name entry.'],
+  [html.includes('Advisory only · no acknowledgment required')&&!html.includes('data-planner-action="ack"'),'Advisory warnings still require repetitive acknowledgment.'],
+  [stabilityMigration.includes("case when r.readiness_status in ('unavailable','hold') then 'block' else 'warning' end")&&stabilityMigration.includes("case when a.readiness_status='hold' then 'block' else 'warning' end"),'Explicit equipment/work holds are not distinguished from advisory unconfirmed status.'],
+  [stabilityMigration.includes("c.status='open' and c.severity='block'")&&stabilityMigration.includes("status='open' and severity='block'"),'Section approvals or publication still gate on advisory warnings.'],
+  [(stabilityMigration.match(/CREATE OR REPLACE FUNCTION/g)||[]).length===3&&(stabilityMigration.match(/\$function\$;/g)||[]).length===3,'Weekly Planner stability migration is missing a function terminator.'],
 ];
 const failures=checks.filter(([ok])=>!ok);
-if(failures.length){for(const [,message] of failures)console.error('FAIL: '+message);process.exitCode=1}else console.log('PASS: Weekly Planner navigation, eight schedules, approvals, history, PDF, permissions, and assistant boundary are present.');
+if(failures.length){for(const [,message] of failures)console.error('FAIL: '+message);process.exitCode=1}else console.log('PASS: Weekly Planner load, refresh, crew entry, approval gates, navigation, history, PDF, permissions, and assistant boundary are present.');
 
