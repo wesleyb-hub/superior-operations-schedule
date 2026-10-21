@@ -7,7 +7,7 @@ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const loader=html.slice(html.indexOf('function loadWeeklyPlanner('),html.indexOf('function subscribeWeeklyPlanner('));
 function setup(){
   const calls=[],errors=[];
-  const context={Promise,console:{error:(...args)=>errors.push(args)},state:{week:'2026-10-19',view:'weekly-planner'},currentUser:{id:'synthetic-admin'},currentUserIsAdmin:true,weeklyPlanner:{marker:'initial'},weeklyPlannerReady:false,weeklyPlannerError:'',weeklyPlannerLoadPromise:null,weeklyPlannerLoadToken:null,weeklyPlannerLoadWeek:'',weeklyPlannerLoadedWeek:'',renders:0};
+  const context={Promise,console:{error:(...args)=>errors.push(args)},state:{week:'2026-10-19',view:'weekly-planner'},currentUser:{id:'synthetic-admin'},currentUserIsAdmin:true,weeklyPlanner:{marker:'initial'},weeklyPlannerReady:false,weeklyPlannerError:'',weeklyPlannerErrorWeek:'',weeklyPlannerRealtimePromise:null,weeklyPlannerRealtimeDirty:false,weeklyPlannerLoadPromise:null,weeklyPlannerLoadToken:null,weeklyPlannerLoadWeek:'',weeklyPlannerLoadedWeek:'',renders:0};
   context.renderWeeklyPlanner=()=>context.renders++;
   context.sb={rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))};
   context.weeklyPlannerBusy=false;context.showInventoryToast=()=>{};
@@ -70,4 +70,89 @@ test('Generate RPC completion waits for a new snapshot instead of pre-generation
   assert.equal(calls.length,3);assert.equal(calls[2].name,'get_weekly_planner_snapshot');
   calls[2].resolve(result('generated'));assert.equal(await generation,true);
   calls[0].resolve(result('before-generation'));assert.equal(await old,false);assert.equal(c.weeklyPlanner.marker,'generated');
+});
+
+// Exercise the real renderer as well: a stubbed renderer hides error/reset loops.
+function enableRealRender(c){
+  const view={innerHTML:''};
+  c.document={body:{classList:{remove(){}}},getElementById:()=>view};
+  c.plannerTabs=()=>'';c.plannerHeader=()=>'';c.plannerDashboard=()=>'<p>Ready</p>';
+  c.bindWeeklyPlanner=()=>{};c.subscribeWeeklyPlanner=()=>{};c.htmlSafe=String;
+  vm.runInContext(html.slice(html.indexOf('function renderWeeklyPlanner('),html.indexOf('function loadWeeklyPlanner(')),c);
+  return view;
+}
+test('initial failure stays visible with explicit retry; rendering cannot retry a failed request',async()=>{
+  const {context:c,calls}=setup();const view=enableRealRender(c);
+  c.renderWeeklyPlanner();await tick();const pending=c.weeklyPlannerLoadPromise;
+  calls[0].resolve({error:{message:'Synthetic database timeout'}});await pending;
+  assert.equal(calls.length,1,'no immediate request loop on failure');
+  assert.match(view.innerHTML,/Synthetic database timeout/);
+  assert.match(view.innerHTML,/Try again/);
+  for(let i=0;i<50;i++){c.renderWeeklyPlanner();await tick();}
+  assert.equal(calls.length,1,'unrelated renders must not silently retry');
+  const retry=c.loadWeeklyPlanner(true);await tick();assert.equal(calls.length,2);
+  calls[1].resolve(result('recovered'));assert.equal(await retry,true);
+});
+test('changing week after a failed initial read can load the newly selected week',async()=>{
+  const {context:c,calls}=setup();enableRealRender(c);
+  c.renderWeeklyPlanner();await tick();const failed=c.weeklyPlannerLoadPromise;
+  calls[0].resolve({error:{message:'Synthetic failure for first week'}});await failed;
+  c.state.week='2026-10-26';c.renderWeeklyPlanner();await tick();
+  assert.equal(calls.length,2);assert.equal(calls[1].args.p_week_start,'2026-10-26');
+  const next=c.weeklyPlannerLoadPromise;calls[1].resolve(result('next-week'));await next;
+  assert.equal(c.weeklyPlanner.marker,'next-week');assert.equal(c.weeklyPlannerError,'');
+});
+
+// Realtime callbacks below are spaced across event-loop turns, not one debounce burst.
+const flushRealtime=()=>new Promise(resolve=>setImmediate(resolve));
+function setupRealtime(){
+  const fixture=setup();
+  const c=fixture.context,handlers=[],timers=new Map();let timerId=0;
+  c.weeklyPlannerChannel=null;c.weeklyPlannerChannelWeek='';c.weeklyPlannerRefreshTimer=null;
+  c.setTimeout=fn=>{timers.set(++timerId,fn);return timerId};c.clearTimeout=id=>timers.delete(id);
+  c.sb.channel=()=>({on(_event,_filter,fn){handlers.push(fn);return this},subscribe(){}});c.sb.removeChannel=()=>{};
+  vm.runInContext(html.slice(html.indexOf('function subscribeWeeklyPlanner('),html.indexOf('async function weeklyPlannerRpc(')),c);
+  c.subscribeWeeklyPlanner();
+  fixture.notify=()=>{handlers[0]();for(const [id,fn] of timers){timers.delete(id);fn()}return c.weeklyPlannerRealtimePromise||Promise.resolve(false)};
+  return fixture;
+}
+test('40 realtime notifications coalesce behind initial load, then one trailing refresh',async()=>{
+  const {context:c,calls,load,notify}=setupRealtime();
+  const initial=load();await flushRealtime();
+  const workers=[];
+  for(let i=0;i<40;i++){workers.push(notify());await flushRealtime()}
+  assert.equal(calls.length,1,'blocked initial read must not fan out RPCs');
+  calls[0].resolve(result('initial'));await initial;await flushRealtime();
+  assert.equal(calls.length,2,'coalesced notifications require one fresh snapshot');
+  for(let i=0;i<40;i++){workers.push(notify());await flushRealtime()}
+  assert.equal(calls.length,2,'notifications during fresh read must not run parallel reads');
+  calls[1].resolve(result('fresh'));await flushRealtime();
+  assert.equal(calls.length,3,'one trailing snapshot captures events during fresh read');
+  calls[2].resolve(result('trailing'));await Promise.all(workers);await flushRealtime();
+  assert.equal(calls.length,3,'no self-sustaining refresh loop after notifications stop');
+  assert.equal(c.weeklyPlanner.marker,'trailing');
+});
+test('realtime snapshot failure pauses retries until explicit refresh succeeds',async()=>{
+  const {context:c,calls,load,notify}=setupRealtime();
+  const worker=notify();await flushRealtime();
+  assert.equal(calls.length,1);calls[0].resolve({data:null,error:{message:'Synthetic timeout'}});await worker;await flushRealtime();
+  for(let i=0;i<40;i++){await notify();await flushRealtime()}
+  assert.equal(calls.length,1,'realtime must not hammer a failed backend');
+  const retry=load(true);await flushRealtime();assert.equal(calls.length,2);calls[1].resolve(result('manual recovery'));await retry;
+  const resumed=notify();await flushRealtime();assert.equal(calls.length,3,'successful explicit retry resumes realtime');
+  calls[2].resolve(result('resumed'));await resumed;
+});
+test('failed preexisting snapshot does not trigger queued realtime read',async()=>{
+  const {context:c,calls,load,notify}=setupRealtime();const initial=load();await flushRealtime();const worker=notify();await flushRealtime();
+  calls[0].resolve({error:{message:'Synthetic initial failure'}});await initial;await worker;await flushRealtime();assert.equal(calls.length,1);
+});
+test('week or user change aborts queued realtime work after pending read settles',async()=>{
+  for(const change of [c=>c.state.week='2026-10-26',c=>c.currentUser=null,c=>c.currentUser={id:'different-user'},c=>c.currentUserIsAdmin=false,c=>c.state.view='installation']){
+    const {context:c,calls,load,notify}=setupRealtime();const initial=load();await flushRealtime();const worker=notify();await flushRealtime();change(c);calls[0].resolve(result('old-context'));await initial;await worker;await flushRealtime();assert.equal(calls.length,1,'must not issue queued reads for obsolete navigation/session');
+  }
+});
+test('post-write forced refresh still starts immediately while realtime worker waits',async()=>{
+  const {context:c,calls,load,notify}=setupRealtime();const initial=load();await flushRealtime();const worker=notify();await flushRealtime();const postWrite=load(true);await flushRealtime();assert.equal(calls.length,2);
+  calls[1].resolve(result('post-write'));await postWrite;calls[0].resolve(result('before-write'));await initial;await worker;await flushRealtime();
+  assert.equal(c.weeklyPlanner.marker,'post-write');assert.equal(calls.length,2,'superseded initial read must not restart realtime worker');
 });
