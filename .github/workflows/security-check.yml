@@ -18,6 +18,8 @@ jobs:
           node-version: 22
       - name: Verify public bundle safety
         run: node scripts/validate-public-bundle.mjs
+      - name: Test Operations Assistant read context
+        run: node --test scripts/test-operations-agent-context.mjs
       - name: Verify database migrations
         run: node scripts/validate-migrations.mjs
       - name: Verify privileged RPC grants
