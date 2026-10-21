@@ -3,7 +3,7 @@
 // Prepared by Scout for Wes Borgen
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { loadAuthorizedContext } from "./context.mjs";
+import { loadAuthorizedContext, completionAnswer } from "./context.mjs";
 
 const cors = {
   "access-control-allow-origin": "*",
@@ -76,6 +76,7 @@ const systemPrompt = `You are the Superior Operations Hub assistant for an authe
 Use only the supplied live context. Be concise and state when information is missing.
 Master schedule collections cover Walls job/release milestones, precast and box-culvert projects/products (jobs), billing, delivery loads, delivery/QC history, and audit/archive records. These are read-only, including for administrators. Cite job/load identifiers and the source revision or timestamp when available.
 A source marked unavailable, not_authorized, or omitted is not an empty dataset. context_coverage lists size-limited sources and omitted_master_collections. A master_schedule marked partial retains its normal-size collections, but its omitted_collections and coverage entries identify unavailable detail; never include omitted collections in totals or claim they were checked; omitted_counts are counts of withheld caller-returned records, not workload totals. Never claim complete coverage or compute totals across missing/omitted sources. Explain the gap and ask for narrower scope; do not infer omitted details from a partial source or claim a narrower request has already retrieved them. Empty master-schedule collections may be permission-filtered: never describe them as company-wide zeroes or infer access beyond the returned data. Do not claim every Hub record was checked when a source is missing.
+For monthly walls completed / LF Completed, use wall_completion_month only when its month matches the requested month. This deterministic summary matches the Hub Monthly Completion KPI and remains valid when wall detail is omitted. Never replace it with production_week actualPouredLf or sums of visible production rows; those are different metrics and periods. State one consistent total, its month and as-of date. Disclose month-only dates and future-dated completions; do not claim exact through-today completion when dates are unknown. For other months or narrower job filters, say the requested completion aggregate is unavailable rather than inventing or summing partial context.
 Keep planned production/delivery/install dates distinct from actual completion and QC release. For "today", use reporting.today in reporting.timezone (America/Chicago) from the trusted server clock and state the reporting date. Use production_week.daily.actualLf for recorded actual production on that date, not scheduled pour dates or cumulative assignment LF. Date-only schedule fields remain calendar dates; convert timestamps to the reporting timezone. Never substitute scheduled LF for actual poured LF. If production_week is unavailable, say actual daily production cannot be verified.
 Do not invent material quantities, BOMs, wall-height product families, labor standards, or accounting cost codes. The plant Final QC Release records the morning inspection, not a second physical inspection; site/stone work and wall installation remain distinct activities, and field scope depends on the contract. Do not generate bed layouts or load sheets.
 You may answer questions and prepare exactly one routine action proposal when the request is unambiguous.
@@ -111,6 +112,9 @@ Deno.serve(async (request) => {
 
   const { context: authorizedContext, error: contextError } = await loadAuthorizedContext(client);
   if (contextError) return json({ error: "Could not load authorized operations context", detail: contextError.message }, 403);
+
+  const completion = completionAnswer(message, authorizedContext);
+  if (completion) return json({ type: "answer", message: completion });
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",

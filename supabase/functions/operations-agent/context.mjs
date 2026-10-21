@@ -47,6 +47,53 @@ export function scheduleContext(result) {
   };
 }
 
+// Match renderWallsMonthly / wallCompletionMonth, not production pour events.
+// Compute from the complete caller-returned snapshot BEFORE detail size limits.
+export function wallCompletionContext(result, reporting) {
+  const walls = result.data?.payload?.data?.walls;
+  if (result.error || !Array.isArray(walls)) return unavailable();
+  const month = reporting.today.slice(0, 7);
+  const matching = walls.filter((wall) => wall &&
+    (wall.completedDate ? String(wall.completedDate).slice(0, 7) : wall.completedMonth || '') === month);
+  const values = matching.map((wall) => Number(wall.lf || 0));
+  if (values.some((value) => !Number.isFinite(value))) return unavailable('invalid_completion_values');
+  const monthOnly = matching.filter((wall) => !wall.completedDate);
+  const future = matching.filter((wall) => wall.completedDate && wall.completedDate > reporting.today);
+  const sum = (rows) => Number(rows.reduce((total, wall) => total + Number(wall.lf || 0), 0).toFixed(2));
+  return {
+    status: 'available', read_only: true, source: 'get_schedule_snapshot.walls',
+    revision: result.data.revision, updated_at: result.data.updated_at,
+    metric: 'Superior Walls Monthly Completion: LF Completed', month,
+    as_of: reporting.today, timezone: reporting.timezone,
+    scope: 'Complete caller-returned walls collection; not an assertion of company-wide access.',
+    definition: 'Sum wall.lf where completedDate month, otherwise completedMonth, equals month. No active/status filter. Do not add production, forecast, billing or historyArchive rows.',
+    completed_jobs: matching.length, lf_completed: sum(matching),
+    month_only_jobs: monthOnly.length, month_only_lf: sum(monthOnly),
+    future_dated_jobs: future.length, future_dated_lf: sum(future),
+    dated_through_today_lf: sum(matching.filter((wall) => wall.completedDate && wall.completedDate <= reporting.today)),
+    limitation: 'Hub monthly total includes month-only completion records and any future-dated completions. Month-only records have no verified completion day. This is not actual poured LF.',
+  };
+}
+
+// Narrow, read-only shortcut for the unambiguous current-month KPI question.
+// Other periods, job filters, comparisons and action requests remain with the model.
+export function completionAnswer(message, context) {
+  const today = context?.reporting?.today;
+  if (!today) return null;
+  const monthName = new Date(`${today.slice(0, 7)}-01T12:00:00Z`).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' }).toLowerCase();
+  const month = `(?:this month|${monthName}(?: ${today.slice(0, 4)})?)`;
+  const pattern = new RegExp(`^how many (?:linear feet|lf) of (?:superior )?walls (?:were |have been )?completed (?:for |in )?${month}(?: so far| to date)?[?.!]*$`, 'i');
+  if (!pattern.test(message.trim().replace(/\s+/g, ' '))) return null;
+  const metric = context.wall_completion_month;
+  if (metric?.status !== 'available') return 'I cannot verify the current month’s LF Completed because the authorized wall completion summary is unavailable. Weekly pours and partial production records are not a substitute.';
+  const format = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  let answer = `As of ${today} (${context.reporting.timezone}), the Hub’s recorded ${metric.month} **LF Completed is ${format(metric.lf_completed)} LF**, across ${metric.completed_jobs} wall jobs in your authorized schedule. This matches the Monthly Completion calculation, not weekly poured LF.`;
+  if (metric.month_only_jobs) answer += ` ${metric.month_only_jobs} jobs (${format(metric.month_only_lf)} LF) have a completion month only, so their exact completion dates cannot be verified.`;
+  if (metric.future_dated_jobs) answer += ` The monthly total includes ${format(metric.future_dated_lf)} LF dated after today; it is not a verified through-today total.`;
+  answer += ` Source: get_schedule_snapshot.walls, revision ${metric.revision ?? 'unavailable'}.`;
+  return answer;
+}
+
 export const contextLimits = Object.freeze({ source_bytes: 32 * 1024, total_bytes: 96 * 1024 });
 const byteSize = (value) => new TextEncoder().encode(JSON.stringify(value)).length;
 const countKeys = ['sections', 'people', 'assignments', 'availability', 'resources', 'conflicts',
@@ -167,6 +214,7 @@ export async function loadAuthorizedContext(client, now = new Date()) {
       inventory: base.data.inventory ?? [],
       production: base.data.production ?? [],
       reporting,
+      wall_completion_month: wallCompletionContext(schedule, reporting),
       production_week: forecast.error || !isObject(forecast.data) ? unavailable() : {
         ...forecast.data, status: 'available', read_only: true,
       },
