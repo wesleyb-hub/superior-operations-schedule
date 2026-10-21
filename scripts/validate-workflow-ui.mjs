@@ -42,7 +42,7 @@ try{
   for(const view of views){
    await page.evaluate(view=>{state.view=view;render()},view);
    await page.waitForTimeout(30);
-   const measure=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,content:document.querySelector('#view').textContent.trim().length}));
+   const measure=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,content:document.querySelector('#view').textContent.trim().length,overflow:document.documentElement.scrollWidth>innerWidth+2?[...document.querySelectorAll('#view *')].filter(e=>e.getBoundingClientRect().right>innerWidth+2).slice(0,15).map(e=>({tag:e.tagName,id:e.id,className:e.className,right:Math.round(e.getBoundingClientRect().right)})):[]}));
    results.push({width,view,...measure});
    if(!measure.content)failures.push(`${width} ${view}: empty render`);
    if(measure.scroll>width+2)failures.push(`${width} ${view}: horizontal page overflow ${measure.scroll}`);

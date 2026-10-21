@@ -11,4 +11,5 @@ for(const phrase of ['ahead of wall production','Setup Complete is not the same 
 assert.ok(html.includes("document.getElementById('wallsWorkflowReference').hidden=!['walls','qc','delivery'].includes(state.view)"),'Reference must be scoped to relevant operational views');
 assert.ok(html.includes(':focus-visible')&&html.includes('@media(prefers-reduced-motion:reduce)'),'Shared keyboard/motion safeguards missing');
 assert.ok(guidance.includes('hidden>'),'Reference should not display before authorized rendering');
+assert.ok(html.includes('@media(max-width:900px){.import-shell{grid-template-columns:minmax(0,1fr)}}'),'Import upload and preview panels must stack on narrow screens');
 console.log('PASS: inline JavaScript syntax, scoped workflow guidance, keyboard focus, and reduced-motion contracts. This does not validate live workflow enforcement.');
