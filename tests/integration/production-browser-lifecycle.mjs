@@ -54,10 +54,46 @@ try{
  await page.waitForFunction(id=>wallsInstallation.jobs.some(j=>(j.qc||[]).some(q=>q.assignment_id===id&&q.status==='released')),assignment);
  await page.screenshot({path:output+'/final-qc-released.png',fullPage:true});
  results.push('UI: final-QC hold and release buttons persisted separate post-strip inspection');
+ await page.evaluate(async()=>{state.view='delivery';state.week='2026-11-09';await ensureWallsInstallationLoaded(true);render()});
+ await page.locator(`[data-wall-load-map="${loadId}"]`).first().click();
+ await page.locator(`[data-load-assignment="${assignment}"]`).check();await page.locator('#productionModalSave').click();
+ await page.waitForFunction(({jobId,loadId,assignment})=>wallsInstallation.jobs.find(j=>j.record_id===jobId)?.delivery.some(l=>l.record_id===loadId&&(l.assignment_ids||[]).includes(assignment)),{jobId,loadId,assignment});
+ const changeLoad=async status=>{
+  const response=page.waitForResponse(r=>r.url()===harness.url+'/rpc'&&r.request().postDataJSON()?.name==='save_schedule_snapshot');
+  await page.locator(`[data-load="${loadId}"]`).first().click();
+  const saved=await(await response).json();assert.equal(saved.error,null,JSON.stringify(saved.error));
+  await page.waitForFunction(()=>!saveBusy&&!saveQueued);
+  const persisted=await rpc('get_schedule_snapshot',{});assert.equal(persisted.payload.data.loads.find(l=>l.id===loadId)?.status,status);
+ };
+ await changeLoad('Loaded');await changeLoad('Delivered');
+ await page.screenshot({path:output+'/delivered-load.png',fullPage:true});
+ results.push('UI: exact shipment run mapping and Scheduled→Loaded→Delivered buttons persisted through master snapshot RPC');
+ await page.evaluate(async()=>{state.view='walls';state.subview.walls='installation';state.installationView='today';state.installationDay='2026-11-11';state.installationWeek='2026-11-09';await ensureWallsInstallationLoaded(true);render()});
+ const activity=async(type,start,end)=>{
+  await page.locator('[data-install-action="add"]').first().click();await page.locator('#installJob').selectOption(jobId);await page.locator('#installType').selectOption(type);await page.locator('#installDate').fill('2026-11-11');await page.locator('#installStart').fill(start);await page.locator('#installEnd').fill(end);await page.locator('#installNotes').fill('TEST browser '+type);
+  const crew=page.locator('.install-resource-entry').first();await crew.locator('[data-resource-choice]').selectOption('__custom');await crew.locator('[data-resource-custom]').fill('TEST Browser Crew');await crew.locator('[data-resource-role]').fill('TEST crew lead');await crew.locator('[data-resource-availability]').selectOption('confirmed');
+  await page.locator('#productionModalSave').click();
+  await page.waitForFunction(({jobId,type})=>wallsInstallation.jobs.find(j=>j.record_id===jobId)?.activities.some(a=>a.activity_type===type),{jobId,type});
+  return page.evaluate(({jobId,type})=>wallsInstallation.jobs.find(j=>j.record_id===jobId).activities.find(a=>a.activity_type===type).activity_id,{jobId,type});
+ };
+ const activityStatus=async(id,status)=>{await page.locator(`[data-install-status="${id}|${status}"]`).first().click();await page.waitForFunction(({jobId,id,status})=>wallsInstallation.jobs.find(j=>j.record_id===jobId)?.activities.some(a=>a.activity_id===id&&a.status===status),{jobId,id,status})};
+ for(const [type,start,end] of [['site_preparation','06:00','07:00'],['stone_footing','07:00','08:00']]){const id=await activity(type,start,end);await activityStatus(id,'in_progress');await activityStatus(id,'completed')}
+ const install=await activity('wall_installation','09:00','15:00');
+ assert.equal(await page.locator(`[data-install-status="${install}|in_progress"]`).first().isDisabled(),true,'installation Start is disabled until explicit run scope');
+ await page.locator(`[data-install-scope="${install}"]`).first().click();await page.locator(`[data-scope-assignment="${assignment}"]`).check();await page.locator(`[data-scope-load="${assignment}"]`).selectOption(loadId);await page.locator('#productionModalSave').click();
+ await page.waitForFunction(({jobId,install,assignment})=>wallsInstallation.jobs.find(j=>j.record_id===jobId)?.activities.find(a=>a.activity_id===install)?.production_scope?.some(s=>s.assignment_id===assignment),{jobId,install,assignment});
+ await activityStatus(install,'in_progress');await activityStatus(install,'completed');
+ await page.locator(`[data-install-readiness="${jobId}"]`).first().click();
+ for(const k of ['site_access','excavation','layout_elevation','stone_footing','equipment_access','site_preparation_complete'])await page.locator(`[data-readiness="${k}"]`).selectOption('ready');
+ for(const k of ['bolting','caulking'])await page.locator(`[data-closeout="${k}"]`).selectOption('complete');
+ await page.locator('#installFieldComplete').selectOption('true');await page.locator('#productionModalSave').click();
+ await page.waitForFunction(jobId=>wallsInstallation.jobs.find(j=>j.record_id===jobId)?.installation?.closeout?.field_complete===true,jobId);
+ await page.screenshot({path:output+'/installation-field-closeout.png',fullPage:true});
+ results.push('UI: separate site/stone activity forms and Start/Complete; crew assignment; installation disabled before scope; delivered run selection; Start/Complete; verified field closeout');
  assert.deepEqual(errors,[]);assert.deepEqual(dialogs.filter(d=>d.type()==='alert'),[]);
  console.log(JSON.stringify({results,dialogs,calls:harness.calls},null,2));
 }catch(e){failure=e;console.error(e);if(page)await page.screenshot({path:output+'/failure.png',fullPage:true}).catch(()=>{});}finally{
- await writeFile(output+'/results.json',JSON.stringify({results,dialogs,errors,failure:failure?.stack||null,calls:harness.calls,limitations:['Approved master job/load/table seeded via real SQL, not master-entry UI','Auth/Realtime are provider stubs; no hosted Supabase Auth coverage','Delivery/install full lifecycle remains covered by separate actual SQL tests until UI extensions pass']},null,2));
+ await writeFile(output+'/results.json',JSON.stringify({results,dialogs,errors,failure:failure?.stack||null,calls:harness.calls,limitations:['Approved master job/load/table seeded via real SQL, not master-entry UI','Auth/Realtime are provider stubs; no hosted Supabase Auth coverage','Site/stone UI examples run sequentially here; parallel field preparation was verified by actual SQL lifecycle tests']},null,2));
  await browser.close();await harness.close();
 }
 if(failure)throw failure;
