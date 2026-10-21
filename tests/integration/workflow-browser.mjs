@@ -7,12 +7,12 @@ import {loadAuthorizedContext,completionAnswer} from '../../supabase/functions/o
 const output='artifacts/disposable-workflow';await mkdir(output,{recursive:true});
 const harness=await startHarness(),results=[];
 const browser=await chromium.launch({headless:true});
-let failure;
+let failure,page;
 try{
  const anon=await harness.rpc(null,'generate_weekly_planner',{p_week_start:'2026-10-26'});assert.ok(anon.error);results.push('Anonymous planner generation rejected by real SQL/grants');
  const viewer=await harness.rpc(identities.viewer,'generate_weekly_planner',{p_week_start:'2026-10-26'});assert.ok(viewer.error);results.push('Viewer planner mutation rejected by actual permission function');
  const outsider=await harness.rpc(identities.outsider,'get_weekly_planner_snapshot',{p_week_start:'2026-10-26'});assert.ok(outsider.error);results.push('Unassigned identity cannot read planner snapshot');
- const page=await browser.newPage({viewport:{width:1440,height:1000}});
+ page=await browser.newPage({viewport:{width:1440,height:1000}});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  page.on('dialog',d=>d.accept());
  // Browser is physically restricted to the test adapter origin; CDN/API/business traffic cannot escape.
@@ -109,7 +109,7 @@ try{
  results.push('Sign-out cleared provider session; subsequent mutation denied under anonymous real DB role');
  assert.deepEqual(errors,[]);
  console.log(JSON.stringify({results,calls:harness.calls},null,2));
-}catch(error){failure=error;console.error(error)}finally{
+}catch(error){failure=error;console.error(error);if(page){await page.screenshot({path:output+'/failure.png',fullPage:true}).catch(()=>{});await writeFile(output+'/failure-state.json',JSON.stringify(await page.evaluate(()=>({selected:weeklyPlannerSelected,section:plannerSection(weeklyPlannerSelected),leader:document.getElementById('plannerCrewLeader')?.value,newPeople:document.getElementById('plannerCrewPeopleNew')?.value,selectedPeople:plannerSelectedEmployeeNames(),feedback:weeklyPlannerDraftError,busy:weeklyPlannerBusy,load:!!weeklyPlannerLoadPromise,installationNamesReady:weeklyPlannerInstallEmployeesReady})).catch(e=>({error:e.message})),null,2))}}finally{
  await writeFile(output+'/results.json',JSON.stringify({results,failure:failure?.stack||null,calls:harness.calls,coverageLimitations:['Supabase Auth JWT verification/password flows are not exercised','Realtime delivery is a provider stub; scheduling/refetch unit tests cover coalescing separately','No live operational records or external services are used']},null,2));
  await browser.close();await harness.close();
 }
