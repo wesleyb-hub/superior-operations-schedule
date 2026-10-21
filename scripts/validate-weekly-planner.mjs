@@ -1,3 +1,5 @@
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
 // Focused controls for the companywide Weekly Crew Planner.
 // Prepared by Scout for Wes Borgen
 import { readFile } from 'node:fs/promises';
@@ -46,3 +48,33 @@ const checks=[
 const failures=checks.filter(([ok])=>!ok);
 if(failures.length){for(const [,message] of failures)console.error('FAIL: '+message);process.exitCode=1}else console.log('PASS: Weekly Planner load, refresh, crew entry, approval gates, navigation, history, PDF, permissions, and assistant boundary are present.');
 
+
+// Execute the browser's real publication predicate and renderer with synthetic snapshots.
+// This catches UI/SQL drift that source-string checks alone cannot detect.
+const publicationContext={weeklyPlanner:null,plannerDateLabel:x=>x,htmlSafe:x=>String(x)};
+for(const name of ['plannerPublicationState','plannerPacks']){
+  const source=html.split(/\r?\n/).find(line=>line.startsWith('function '+name+'('));
+  assert.ok(source,`Missing ${name}`);
+  vm.runInNewContext(source,publicationContext);
+}
+const approvedPlanner=()=>({permissions:{publish:true},week:{source_stale:false},sections:Array.from({length:8},()=>({status:'approved'})),conflicts:[],recent_packs:[]});
+const cases=[
+  ['all approved and current',p=>{},true],
+  ['advisory warnings do not block',p=>p.conflicts.push({status:'open',severity:'warning'}),true],
+  ['open hard conflict blocks',p=>p.conflicts.push({status:'open',severity:'block'}),false],
+  ['resolved hard conflict does not block',p=>p.conflicts.push({status:'resolved',severity:'block'}),true],
+  ['source change blocks',p=>p.week.source_stale=true,false],
+  ['unapproved section blocks',p=>p.sections[0].status='needs_review',false],
+  ['missing section blocks',p=>p.sections.pop(),false],
+  ['missing week blocks',p=>p.week=null,false],
+  ['missing publication permission blocks',p=>p.permissions.publish=false,false],
+];
+for(const [label,mutate,expected] of cases){
+  const planner=approvedPlanner();mutate(planner);publicationContext.weeklyPlanner=planner;
+  assert.equal(publicationContext.plannerPublicationState(planner).canPublish,expected,label);
+  const rendered=publicationContext.plannerPacks();
+  if(planner.permissions.publish)assert.equal(/data-planner-action="publish" disabled/.test(rendered),!expected,label+' rendered button');
+  else assert.ok(!rendered.includes('data-planner-action="publish"'),label+' hidden button');
+  if(planner.conflicts.some(x=>x.status==='open'&&x.severity==='warning'))assert.ok(rendered.includes('they do not block publication'),label+' visible warning');
+  console.log('PASS: publication behavior - '+label);
+}
