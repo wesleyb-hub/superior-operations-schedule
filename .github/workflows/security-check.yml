@@ -22,10 +22,10 @@ jobs:
         run: node scripts/validate-migrations.mjs
       - name: Verify privileged RPC grants
         run: node scripts/validate-function-privilege-hardening.mjs
-      - name: Test Weekly Planner refresh ordering
-        run: node --test scripts/test-weekly-planner-refresh.mjs
       - name: Verify Weekly Planner controls
         run: node scripts/validate-weekly-planner.mjs
+      - name: Test Weekly Planner refresh ordering
+        run: node --test scripts/test-weekly-planner-refresh.mjs
       - name: Verify partial installation release safeguards
         run: node scripts/validate-installation-partial-workflow.mjs
       - name: Verify main Installation activity catalog
