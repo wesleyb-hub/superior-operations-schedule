@@ -64,6 +64,42 @@ try{
   await page.evaluate(()=>{state.view='walls';render()});assert.equal(await help.isVisible(),true);
   await page.emulateMedia({reducedMotion:'reduce'});
   assert.equal(await page.locator('.operations-sidebar').evaluate(e=>getComputedStyle(e).transitionDuration),'0s');
+  // Employee picker: local synthetic snapshot, no database or authorization requests.
+  await page.evaluate(()=>{
+   state.view='weekly-planner';state.weeklyPlannerView='review';weeklyPlannerSelected='production';
+   weeklyPlanner={permissions:{edit:true},week:null,sections:[{section_id:'qa-a',section_key:'production',section_name:'Synthetic production',status:'draft',schedule_version:1},{section_id:'qa-b',section_key:'field',section_name:'Synthetic field',status:'draft',schedule_version:1}],people:[{section_id:'qa-a',employee_name:'Test Alpha',role_name:'Synthetic role'},{section_id:'qa-b',employee_name:'Test Beta'}],availability:[{employee_name:'Test Alpha'},{employee_name:'TEST ALPHA'},{employee_name:'Test Gamma'}],assignments:[],conflicts:[],resources:[]};renderWeeklyPlanner();
+  });
+  const search=page.locator('#plannerCrewPeopleSearch'),names=page.locator('#plannerCrewPeopleSelect [data-planner-person]');
+  assert.equal(await names.count(),3);
+  await search.fill('beta');assert.equal(await page.locator('.planner-person-choice:visible').count(),1);
+  const beta=page.getByRole('checkbox',{name:'Test Beta',exact:true});await beta.focus();await page.keyboard.press('Space');assert.equal(await beta.isChecked(),true);
+  assert.match(await page.locator('#plannerCrewPeopleWarnings').textContent(),/Synthetic field/);
+  await search.fill('not-present');assert.equal(await page.locator('#plannerCrewPeopleEmpty').isVisible(),true);
+  assert.equal(await page.locator('#plannerCrewPeopleCount').textContent(),'2 selected · 0 matching saved names');
+  await search.press('Escape');assert.equal(await search.inputValue(),'');assert.equal(await page.locator('.planner-person-choice:visible').count(),3);
+  await page.locator('#plannerCrewPeopleNew').fill('Custom Synthetic, TEST ALPHA');
+  await search.fill('gamma'); // Selected Alpha/Beta stay captured while hidden by search.
+  const payload=await page.evaluate(()=>plannerCaptureSection(plannerSection('production')));
+  assert.deepEqual(payload.p_people.map(x=>x.name),['Test Alpha','Test Beta','Custom Synthetic']);
+  assert.equal(payload.p_people[0].role,'Synthetic role');
+  // A synthetic server round trip validates render/capture without invoking the real RPC.
+  await page.evaluate(payload=>{weeklyPlanner.people=weeklyPlanner.people.filter(x=>x.section_id!==payload.p_section_id).concat(payload.p_people.map(x=>({section_id:payload.p_section_id,employee_name:x.name,role_name:x.role,is_leader:x.is_leader})));renderWeeklyPlanner()},payload);
+  assert.equal(await page.getByRole('checkbox',{name:'Custom Synthetic',exact:true}).isChecked(),true);
+  await page.getByRole('checkbox',{name:'Test Beta',exact:true}).uncheck();assert.equal(await page.locator('#plannerCrewPeopleWarnings').isVisible(),false);
+  await search.fill('alpha');await search.fill('');assert.equal(await page.getByRole('checkbox',{name:'Test Beta',exact:true}).isChecked(),false);
+  await page.locator('#plannerCrewLeader').fill('Unsaved Synthetic Leader');
+  await page.locator('#plannerCrewPeopleNew').fill('Unsaved Synthetic Employee');
+  await search.fill('previous');
+  await page.evaluate(()=>{const cache=plannerEmployeeHistoryCache();cache.names=['Previously Used Synthetic'];cache.ready=true;refreshPlannerEmployeeHistoryChoices()});
+  assert.equal(await page.locator('#plannerCrewLeader').inputValue(),'Unsaved Synthetic Leader');
+  assert.equal(await page.locator('#plannerCrewPeopleNew').inputValue(),'Unsaved Synthetic Employee');
+  assert.equal(await page.getByRole('checkbox',{name:'Previously Used Synthetic',exact:true}).isChecked(),false);
+  assert.equal((await page.evaluate(()=>plannerSelectedEmployeeNames())).includes('Test Alpha'),true);
+  assert.match(await page.locator('#plannerEmployeeHistoryHint').textContent(),/not a verified current staff roster/);
+  await search.fill('');
+  const pickerOverflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2);assert.equal(pickerOverflow,false);
+  if(output)await page.screenshot({path:resolve(output,`${width}-planner-employee-picker.png`),fullPage:true});
+  results.push({width,view:'planner-employee-picker',passed:true});
   failures.push(...errors.map(e=>`${width}: ${e}`));await page.close();
  }
  if(output)await writeFile(resolve(output,'results.json'),JSON.stringify({results,failures},null,2));
