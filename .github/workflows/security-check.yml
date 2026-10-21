@@ -31,3 +31,15 @@ jobs:
       - name: Verify main Installation activity catalog
         run: node scripts/validate-installation-primary-activities.mjs
 
+  typecheck-operations-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Deno for static checking
+        uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: v2.5.2
+      - name: Typecheck Operations Assistant Edge Function
+        # Static analysis only: never starts the server or calls application services.
+        run: deno check supabase/functions/operations-agent/index.ts
