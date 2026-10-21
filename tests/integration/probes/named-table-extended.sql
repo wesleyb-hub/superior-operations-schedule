@@ -16,9 +16,9 @@ begin
  end loop;
  perform public.generate_weekly_planner('2026-11-02');
  v_snapshot:=public.get_weekly_planner_snapshot('2026-11-02');
- select count(distinct w->>'section_id') into v_count from jsonb_array_elements(v_snapshot->'assignments') w where v_orders ? (w->>'source_id');
+ select count(distinct w->>'section_id') into v_count from jsonb_array_elements(v_snapshot->'assignments') w where w->>'source_type'='walls_production_assignment' and v_orders ? (w->>'source_id');
  perform test_workflow.assert(v_count=4,'named and oversized numeric table IDs generate all four production-linked planner sections');
- perform test_workflow.assert(not exists(select 1 from jsonb_array_elements(v_snapshot->'assignments') w where v_orders ? (w->>'source_id') and (w->>'sort_order')::integer is distinct from (v_orders->>(w->>'source_id'))::integer),'generated assignments use authoritative table sort_order');
+ perform test_workflow.assert(not exists(select 1 from jsonb_array_elements(v_snapshot->'assignments') w where w->>'source_type'='walls_production_assignment' and v_orders ? (w->>'source_id') and (w->>'sort_order')::integer is distinct from (v_orders->>(w->>'source_id'))::integer),'generated assignments use authoritative table sort_order');
  perform test_workflow.assert(jsonb_array_length(v_snapshot->'sections')=8,'all weekly sections retained with installation integration');
 end $$;
 rollback;

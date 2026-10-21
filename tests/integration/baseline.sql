@@ -17,6 +17,10 @@ CREATE ROLE service_role NOLOGIN BYPASSRLS;
 CREATE SCHEMA auth;
 CREATE SCHEMA extensions;
 GRANT USAGE ON SCHEMA public, auth, extensions TO anon, authenticated, service_role;
+-- Public Supabase bootstrap compatibility: function EXECUTE defaults only.
+-- Source: https://github.com/supabase/postgres/blob/develop/migrations/db/init-scripts/00000000000000-initial-schema.sql
+-- Required for authenticated RLS policy helper calls. No hosted ACL export or table defaults.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;
 SET search_path=public,extensions;
 -- Supabase's Auth provider is the only stub: callers set verified test identities
 -- in a transaction. These functions do not verify JWTs or exercise GoTrue.

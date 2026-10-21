@@ -12,6 +12,11 @@ try{
  const anon=await harness.rpc(null,'generate_weekly_planner',{p_week_start:'2026-10-26'});assert.ok(anon.error);results.push('Anonymous planner generation rejected by real SQL/grants');
  const viewer=await harness.rpc(identities.viewer,'generate_weekly_planner',{p_week_start:'2026-10-26'});assert.ok(viewer.error);results.push('Viewer planner mutation rejected by actual permission function');
  const outsider=await harness.rpc(identities.outsider,'get_weekly_planner_snapshot',{p_week_start:'2026-10-26'});assert.ok(outsider.error);results.push('Unassigned identity cannot read planner snapshot');
+ // Prior-week staff must be discovered through real RLS table reads, not injected into the UI.
+ assert.equal((await harness.rpc(identities.admin,'generate_weekly_planner',{p_week_start:'2026-10-19'})).error,null);
+ const prior=(await harness.rpc(identities.admin,'get_weekly_planner_snapshot',{p_week_start:'2026-10-19'})).data;
+ const priorSection=prior.sections[0];
+ assert.equal((await harness.rpc(identities.admin,'save_weekly_planner_section',{p_section_id:priorSection.section_id,p_expected_version:priorSection.schedule_version,p_crew_leader:'TEST Prior Leader',p_people:[{name:'TEST Prior Leader',is_leader:true},{name:'TEST Prior Employee',is_leader:false}],p_assignments:prior.assignments.filter(a=>a.section_id===priorSection.section_id)})).error,null);
  page=await browser.newPage({viewport:{width:1440,height:1000}});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  page.on('dialog',d=>d.accept());
@@ -29,6 +34,10 @@ try{
  assert.equal(await page.evaluate(()=>weeklyPlanner.week.week_start),'2026-10-26');
  results.push('Real Generate button created eight Oct26 sections through PostgreSQL');
  await page.locator('[data-planner-action="tab"][data-value="review"]').click();
+ await page.waitForFunction(()=>plannerEmployeeHistoryCache().ready&&!plannerEmployeeHistoryCache().promise);
+ assert.equal(await page.evaluate(()=>plannerEmployeeHistoryCache().error),'');
+ assert.equal(await page.getByRole('checkbox',{name:'TEST Prior Employee',exact:true}).isChecked(),false);
+ results.push('Prior-week employee names loaded through actual authenticated RLS reads and remained unselected until confirmed');
  // Deterministically expose employee-provider completion racing an unsaved crew draft.
  let releaseNames;const namesBarrier=new Promise(resolve=>{releaseNames=resolve});
  await page.route('**/query',async route=>{if(route.request().postDataJSON()?.table==='walls_installation_resources')await namesBarrier;await route.continue()});
