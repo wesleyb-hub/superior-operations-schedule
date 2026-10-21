@@ -8,7 +8,7 @@ const [html,sql,reapprovalMigration,stabilityMigration,agent]=await Promise.all(
   readFile(resolve(root,'index.html'),'utf8'),
   readFile(resolve(root,'supabase','migrations','20261016_015_weekly_crew_planner.sql'),'utf8'),
   readFile(resolve(root,'supabase','migrations','20261016_016_weekly_planner_reapproval_guard.sql'),'utf8'),
-  readFile(resolve(root,'supabase','migrations','20261021120000_weekly_planner_stability_and_advisory_gates.sql'),'utf8'),
+  readFile(resolve(root,'supabase','migrations','20261021111232_weekly_planner_stability_and_advisory_gates.sql'),'utf8'),
   readFile(resolve(root,'supabase','functions','operations-agent','index.ts'),'utf8'),
 ]);
 
