@@ -18,8 +18,6 @@ jobs:
           node-version: 22
       - name: Verify public bundle safety
         run: node scripts/validate-public-bundle.mjs
-      - name: Verify workflow reference and inline syntax
-        run: node scripts/validate-workflow-guidance.mjs
       - name: Verify database migrations
         run: node scripts/validate-migrations.mjs
       - name: Verify privileged RPC grants
@@ -30,6 +28,8 @@ jobs:
         run: node scripts/validate-installation-partial-workflow.mjs
       - name: Verify main Installation activity catalog
         run: node scripts/validate-installation-primary-activities.mjs
+      - name: Verify workflow reference and inline syntax
+        run: node scripts/validate-workflow-guidance.mjs
 
 
   validate-offline-workflow-ui:
