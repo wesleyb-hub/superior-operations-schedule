@@ -40,12 +40,12 @@ begin
  perform test_workflow.assert((select count(*)=7 from public.schedule_milestones where parent_id='TEST-E2E-WALL-001' and status='Complete'),'plan review milestones persist through actual snapshot save');
  snapshot:=public.get_schedule_snapshot();
  perform test_workflow.rejects(format('select public.save_schedule_snapshot(%s,%L::jsonb)',(snapshot->>'revision')::bigint-1,snapshot#>'{payload,data}'),'Revision conflict','stale master schedule save rejected');
- perform public.upsert_walls_production_table('TEST-TABLE-A','TEST production board A',150,true,'Synthetic test fixture');
- row:=public.upsert_walls_production_assignment(null,'TEST-E2E-WALL-001','TEST-TABLE-A',8,120,'2026-10-26 07:00','2026-10-26 15:00','2026-10-27 07:00','TEST only'); a:=(row->>'assignment_id')::uuid;
+ perform public.upsert_walls_production_table('9001','TEST production board A',150,true,'Synthetic test fixture');
+ row:=public.upsert_walls_production_assignment(null,'TEST-E2E-WALL-001','9001',8,120,'2026-10-26 07:00','2026-10-26 15:00','2026-10-27 07:00','TEST only'); a:=(row->>'assignment_id')::uuid;
  perform test_workflow.assert(row->>'stage'='planned','120 LF assigned to real production board');
- perform test_workflow.rejects($q$select public.upsert_walls_production_assignment(null,'TEST-E2E-WALL-001','TEST-TABLE-A',8,151,'2026-11-02 07:00','2026-11-02 15:00','2026-11-03 07:00')$q$,'table capacity','configured production board capacity enforced');
- perform test_workflow.rejects($q$select public.upsert_walls_production_assignment(null,'TEST-E2E-WALL-001','TEST-TABLE-A',8,1,'2026-11-02 07:00','2026-11-02 15:00','2026-11-03 07:00')$q$,'authoritative job linear footage','sequential allocations cannot exceed job total');
- perform test_workflow.rejects(format('select public.upsert_walls_production_assignment(%L::uuid,%L,%L,8,120,%L::timestamp,%L::timestamp,%L::timestamp,%L,999)',a,'TEST-E2E-WALL-001','TEST-TABLE-A','2026-10-26 07:00','2026-10-26 15:00','2026-10-27 07:00','TEST'),'version conflict','assignment stale version rejected');
+ perform test_workflow.rejects($q$select public.upsert_walls_production_assignment(null,'TEST-E2E-WALL-001','9001',8,151,'2026-11-02 07:00','2026-11-02 15:00','2026-11-03 07:00')$q$,'table capacity','configured production board capacity enforced');
+ perform test_workflow.rejects($q$select public.upsert_walls_production_assignment(null,'TEST-E2E-WALL-001','9001',8,1,'2026-11-02 07:00','2026-11-02 15:00','2026-11-03 07:00')$q$,'authoritative job linear footage','sequential allocations cannot exceed job total');
+ perform test_workflow.rejects(format('select public.upsert_walls_production_assignment(%L::uuid,%L,%L,8,120,%L::timestamp,%L::timestamp,%L::timestamp,%L,999)',a,'TEST-E2E-WALL-001','9001','2026-10-26 07:00','2026-10-26 15:00','2026-10-27 07:00','TEST'),'version conflict','assignment stale version rejected');
  perform test_workflow.rejects(format('select public.advance_walls_production_stage(%L::uuid,%L)',a,'poured'),'advance in order','production cannot skip setup');
  perform test_workflow.rejects(format('select public.set_walls_installation_qc(%L::uuid,%L)',a,'released'),'must be stripped','final QC cannot precede stripping');
  -- Field crews prepare the site while production remains planned; this is intentionally parallel.
