@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const sql=fs.readFileSync(process.argv[2]||new URL('../tests/integration/fixes/serialize-production-allocation.sql',import.meta.url),'utf8');
+const functions=[...sql.matchAll(/create or replace function public\.(\w+)\(/g)].map(x=>x[1]);
+assert.deepEqual(functions,['validate_walls_production_assignment','upsert_walls_production_assignment']);
+assert.doesNotMatch(sql,/\b(?:grant|revoke|alter table|drop|truncate)\b/i);
+const trigger=sql.slice(sql.indexOf('create or replace function public.validate_'),sql.indexOf('create or replace function public.upsert_'));
+assert.ok(trigger.indexOf("tg_op='UPDATE'")<trigger.indexOf('pg_advisory_xact_lock'),'stage fast path must remain ahead of allocation lock');
+assert.ok(trigger.indexOf('pg_advisory_xact_lock')<trigger.indexOf('v_total:=public.walls_job_total_lf'),'allocation lock must precede LF aggregate');
+assert.doesNotMatch(trigger,/for update/i,'do not add parent-row lock cycles against snapshot saves');
+const rpc=sql.slice(sql.indexOf('create or replace function public.upsert_'));
+assert.ok(rpc.indexOf("walls_production_permission('assign')")<rpc.indexOf('pg_advisory_xact_lock'),'authorization before locks');
+assert.ok(rpc.indexOf('pg_advisory_xact_lock')<rpc.indexOf('where assignment_id=p_assignment_id for update'),'allocation mutex before existing assignment lock');
+assert.equal((sql.match(/hashtextextended\('superior_walls_production_allocation:'/g)||[]).length,2,'same stable namespace in both allocation paths');
+console.log('PASS: narrow allocation advisory-lock scope and lock order');
