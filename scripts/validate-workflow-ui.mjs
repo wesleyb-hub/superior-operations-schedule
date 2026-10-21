@@ -142,6 +142,18 @@ try{
   assert.equal(await page.getByRole('checkbox',{name:'Retained Synthetic Employee',exact:true}).isChecked(),true);
   assert.deepEqual(await page.evaluate(()=>window.qaPlannerCalls.map(c=>c.name)),['save_weekly_planner_section','save_weekly_planner_section','approve_weekly_planner_section','get_weekly_planner_snapshot']);
   results.push({width,view:'planner-approval-retry',passed:true});
+  await page.evaluate(()=>{
+   for(const id of ['wallModal','planReviewModal','projectModal','pieceModal','productionModal','inventoryModal'])document.getElementById(id).classList.add('open');
+   for(const id of ['wCustomer','planReviewNotes','assistantInput'])document.getElementById(id).value='SYNTHETIC PRIVATE DRAFT';
+   for(const id of ['planReviewSummary','productionModalBody','inventoryModalTitle'])document.getElementById(id).textContent='SYNTHETIC PRIVATE DRAFT';
+   resetLocalSession();
+  });
+  assert.equal(await page.locator('.modal-backdrop.open,.inventory-modal-backdrop.open,.assistant-panel.open').count(),0);
+  for(const id of ['wCustomer','planReviewNotes','assistantInput'])assert.equal(await page.locator('#'+id).inputValue(),'');
+  for(const id of ['planReviewSummary','productionModalBody','inventoryModalTitle'])assert.equal(await page.locator('#'+id).textContent(),'');
+  assert.equal(await page.locator('#authGate').isVisible(),true);
+  assert.equal(await page.locator('#wallModal input').count()>0,true); // static form/event target retained
+  results.push({width,view:'signed-out-modal-cleanup',passed:true});
   failures.push(...errors.map(e=>`${width}: ${e}`));await page.close();
  }
  if(output)await writeFile(resolve(output,'results.json'),JSON.stringify({results,failures},null,2));
