@@ -50,3 +50,5 @@ so authenticated RLS helper calls and historical employee reads run normally.
 This is not a hosted privilege export or a certification of hosted ACL parity.
 Actual hosted Auth/JWT verification, Realtime delivery, email delivery and the
 external model provider remain outside this disposable test.
+
+The combined candidate incorporates the reviewed shared-modal and employee-lookup fixes. CI requires both `EXPECT_PLANNER_DRAFT_PRESERVED=1` and `EXPECT_MODAL_SAVE_RESET=1`: unsaved drafts must survive async names and delivery-to-installation Save must work without a reload workaround. The historical diagnostic workaround is forbidden by those flags.

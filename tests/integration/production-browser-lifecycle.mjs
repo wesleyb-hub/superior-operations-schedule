@@ -101,14 +101,15 @@ try{
   await page.waitForFunction(({jobId,type})=>wallsInstallation.jobs.find(j=>j.record_id===jobId)?.activities.some(a=>a.activity_type===type),{jobId,type});
   return page.evaluate(({jobId,type})=>wallsInstallation.jobs.find(j=>j.record_id===jobId).activities.find(a=>a.activity_type===type).activity_id,{jobId,type});
  };
- const activityStatus=async(id,status)=>{await page.locator(`[data-install-status="${id}|${status}"]`).first().click();await page.waitForFunction(({jobId,id,status})=>wallsInstallation.jobs.find(j=>j.record_id===jobId)?.activities.some(a=>a.activity_id===id&&a.status===status),{jobId,id,status})};
+ const reveal=async locator=>{const details=locator.locator('xpath=ancestor::details[1]');if(await details.count()&&await details.getAttribute('open')===null)await details.locator(':scope > summary').click()};
+ const activityStatus=async(id,status)=>{const button=page.locator(`[data-install-status="${id}|${status}"]`).first();await reveal(button);await button.click();await page.waitForFunction(({jobId,id,status})=>wallsInstallation.jobs.find(j=>j.record_id===jobId)?.activities.some(a=>a.activity_id===id&&a.status===status),{jobId,id,status})};
  for(const [type,start,end] of [['site_preparation','06:00','07:00'],['stone_footing','07:00','08:00']]){const id=await activity(type,start,end);await activityStatus(id,'in_progress');await activityStatus(id,'completed')}
  const install=await activity('wall_installation','09:00','15:00');
  assert.equal(await page.locator(`[data-install-status="${install}|in_progress"]`).first().isDisabled(),true,'installation Start is disabled until explicit run scope');
- await page.locator(`[data-install-scope="${install}"]`).first().click();await page.locator(`[data-scope-assignment="${assignment}"]`).check();await page.locator(`[data-scope-load="${assignment}"]`).selectOption(loadId);await page.locator('#productionModalSave').click();
+ await reveal(page.locator(`[data-install-scope="${install}"]`).first());await page.locator(`[data-install-scope="${install}"]`).first().click();await page.locator(`[data-scope-assignment="${assignment}"]`).check();await page.locator(`[data-scope-load="${assignment}"]`).selectOption(loadId);await page.locator('#productionModalSave').click();
  await page.waitForFunction(({jobId,install,assignment})=>wallsInstallation.jobs.find(j=>j.record_id===jobId)?.activities.find(a=>a.activity_id===install)?.production_scope?.some(s=>s.assignment_id===assignment),{jobId,install,assignment});
  await activityStatus(install,'in_progress');await activityStatus(install,'completed');
- await page.locator(`[data-install-readiness="${jobId}"]`).first().click();
+ await reveal(page.locator(`[data-install-readiness="${jobId}"]`).first());await page.locator(`[data-install-readiness="${jobId}"]`).first().click();
  for(const k of ['site_access','excavation','layout_elevation','stone_footing','equipment_access','site_preparation_complete'])await page.locator(`[data-readiness="${k}"]`).selectOption('ready');
  for(const k of ['bolting','caulking'])await page.locator(`[data-closeout="${k}"]`).selectOption('complete');
  await page.locator('#installFieldComplete').selectOption('true');await page.locator('#productionModalSave').click();

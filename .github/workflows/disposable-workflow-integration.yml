@@ -23,6 +23,8 @@ jobs:
       PGDATABASE: superior_workflow_test
       PGUSER: postgres
       PGPASSWORD: disposable-test-only
+      EXPECT_PLANNER_DRAFT_PRESERVED: '1'
+      EXPECT_MODAL_SAVE_RESET: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

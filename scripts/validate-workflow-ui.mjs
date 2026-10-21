@@ -142,6 +142,51 @@ try{
   assert.equal(await page.getByRole('checkbox',{name:'Retained Synthetic Employee',exact:true}).isChecked(),true);
   assert.deepEqual(await page.evaluate(()=>window.qaPlannerCalls.map(c=>c.name)),['save_weekly_planner_section','save_weekly_planner_section','approve_weekly_planner_section','get_weekly_planner_snapshot']);
   results.push({width,view:'planner-approval-retry',passed:true});
+  // A delayed Installation name read must not replace the live draft DOM.
+  await page.evaluate(()=>{
+   weeklyPlanner.sections[0].section_key='installation_stone';weeklyPlannerSelected='installation_stone';
+   weeklyPlannerInstallEmployeesReady=false;weeklyPlannerInstallEmployeesPromise=null;
+   sb.from=()=>{const chain={select:()=>chain,eq:()=>chain,not:()=>chain,limit:()=>new Promise(resolve=>window.qaResolveInstallNames=resolve)};return chain};
+   renderWeeklyPlanner();
+  });
+  await page.locator('#plannerCrewLeader').fill('Unsaved Installation Leader');
+  await page.locator('#plannerCrewPeopleNew').fill('Unsaved Installation Employee');
+  await page.locator('#plannerCrewPeopleSearch').fill('late');
+  await page.evaluate(()=>{window.qaDraftLeaderNode=document.getElementById('plannerCrewLeader');window.qaResolveInstallNames({data:[{resource_name:'Late Synthetic Name'}]})});
+  await page.waitForFunction(()=>weeklyPlannerInstallEmployeesReady);
+  assert.equal(await page.locator('#plannerCrewLeader').inputValue(),'Unsaved Installation Leader');
+  assert.equal(await page.locator('#plannerCrewPeopleNew').inputValue(),'Unsaved Installation Employee');
+  assert.equal(await page.locator('#plannerCrewPeopleSearch').inputValue(),'late');
+  assert.equal(await page.evaluate(()=>window.qaDraftLeaderNode===document.getElementById('plannerCrewLeader')),true);
+  assert.equal(await page.getByRole('checkbox',{name:'Late Synthetic Name',exact:true}).isChecked(),false);
+  assert.match(await page.locator('#plannerInstallationEmployeeHint').textContent(),/names are loaded/);
+  const draft=await page.evaluate(()=>plannerCaptureSection(plannerSection('installation_stone')));
+  assert.equal(draft.p_crew_leader,'Unsaved Installation Leader');
+  assert.ok(draft.p_people.some(p=>p.name==='Unsaved Installation Employee'));
+  // Shared modal sequence: a completed disabled Save must not disable the next form.
+  await page.evaluate(()=>{
+   window.qaModalSaves=[];
+   openProductionModal('Synthetic shipment mapping','','','Map',async()=>{document.getElementById('productionModalSave').disabled=true;window.qaModalSaves.push('mapping');closeProductionModal()});
+  });
+  await page.locator('#productionModalSave').click();
+  await page.evaluate(()=>openProductionModal('Synthetic Installation activity','','','Save activity',async()=>{window.qaModalSaves.push('installation');closeProductionModal()}));
+  assert.equal(await page.locator('#productionModalSave').isEnabled(),true);
+  await page.locator('#productionModalSave').click();
+  assert.deepEqual(await page.evaluate(()=>window.qaModalSaves),['mapping','installation']);
+  await page.evaluate(()=>openProductionModal('Read only','','','',null));
+  assert.equal(await page.locator('#productionModalSave').isVisible(),false);
+  await page.evaluate(()=>{closeProductionModal();openProductionModal('Editable again','','','Save',()=>{});});
+  assert.equal(await page.locator('#productionModalSave').isEnabled(),true);
+  assert.equal(await page.locator('#productionModalSave').isVisible(),true);
+  await page.evaluate(()=>openProductionModal('Synthetic activity layout','','<h3>Schedule activity</h3><div class="production-modal-grid"><div class="field"><label>Activity</label><input value="Synthetic installation"></div><div class="field"><label>Date</label><input type="date" value="2026-10-26"></div></div><div class="production-warning">Synthetic readiness warning below the entire form</div>','Save',()=>{}));
+  const layout=await page.locator('#productionModalBody').evaluate(body=>{const grid=body.querySelector('.production-modal-grid'),warning=body.querySelector('.production-warning'),style=getComputedStyle(body),available=body.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);return {available,gridWidth:grid.getBoundingClientRect().width,warningWidth:warning.getBoundingClientRect().width,warningTop:warning.getBoundingClientRect().top,gridBottom:grid.getBoundingClientRect().bottom,columns:getComputedStyle(grid).gridTemplateColumns.split(' ').length}});
+  assert.ok(Math.abs(layout.gridWidth-layout.available)<2);
+  assert.ok(Math.abs(layout.warningWidth-layout.available)<2);
+  assert.ok(layout.warningTop>=layout.gridBottom);
+  assert.equal(layout.columns,width>760?2:1);
+  if(output)await page.screenshot({path:resolve(output,`${width}-installation-activity-modal.png`),fullPage:true});
+  await page.evaluate(()=>closeProductionModal());
+  results.push({width,view:'installation-draft-and-sequential-modal',passed:true});
   failures.push(...errors.map(e=>`${width}: ${e}`));await page.close();
  }
  if(output)await writeFile(resolve(output,'results.json'),JSON.stringify({results,failures},null,2));
