@@ -18,6 +18,8 @@ jobs:
           node-version: 22
       - name: Verify public bundle safety
         run: node scripts/validate-public-bundle.mjs
+      - name: Test Operations Assistant read context
+        run: node --test scripts/test-operations-agent-context.mjs
       - name: Verify database migrations
         run: node scripts/validate-migrations.mjs
       - name: Verify privileged RPC grants
@@ -60,3 +62,16 @@ jobs:
           path: artifacts/workflow-ui
           if-no-files-found: warn
           retention-days: 7
+
+  typecheck-operations-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Deno for static checking
+        uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: v2.5.2
+      - name: Typecheck Operations Assistant Edge Function
+        # Static analysis only: never starts the server or calls application services.
+        run: deno check supabase/functions/operations-agent/index.ts
