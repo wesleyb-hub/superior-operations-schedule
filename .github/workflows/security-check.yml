@@ -19,9 +19,9 @@ jobs:
       - name: Verify public bundle safety
         run: node scripts/validate-public-bundle.mjs
       - name: Test Operations Assistant read context
-        run: node --test scripts/test-operations-agent-context.mjs
+        run: node --test scripts/test-operations-agent-context.mjs scripts/test-operations-agent-provider.mjs
       - name: Test session isolation and save recovery
-        run: node --test scripts/test-session-save-safety.mjs
+        run: node --test scripts/test-session-save-safety.mjs scripts/test-operational-modal-save.mjs scripts/test-installation-load-safety.mjs
       - name: Verify database migrations
         run: node scripts/validate-migrations.mjs
       - name: Verify privileged RPC grants
@@ -37,7 +37,7 @@ jobs:
       - name: Test production request ordering and recovery
         run: node --test scripts/test-production-load-safety.mjs scripts/test-operational-realtime.mjs
       - name: Test billing preservation and rendering boundaries
-        run: node --test scripts/test-billing-render-safety.mjs scripts/test-rendered-records.mjs
+        run: node --test scripts/test-billing-render-safety.mjs scripts/test-rendered-records.mjs scripts/test-record-id-attributes.mjs
       - name: Verify partial installation release safeguards
         run: node scripts/validate-installation-partial-workflow.mjs
       - name: Verify main Installation activity catalog
@@ -64,6 +64,8 @@ jobs:
         run: node scripts/validate-workflow-ui.mjs artifacts/workflow-ui
       - name: Verify synthetic rendering safety on desktop and mobile
         run: node scripts/validate-render-safety-ui.mjs artifacts/workflow-ui/render-safety
+      - name: Verify operational modal failure and session recovery
+        run: node scripts/validate-operational-modal-ui.mjs artifacts/workflow-ui/modal-recovery
       - name: Retain synthetic screenshots and results for visual review
         if: always()
         uses: actions/upload-artifact@v4

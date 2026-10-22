@@ -3,6 +3,7 @@ import {readFile,mkdir,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {createRequire} from 'node:module';
 import assert from 'node:assert/strict';
+import {recordIdDomChecks} from './record-id-dom-checks.mjs';
 const {chromium}=createRequire(import.meta.url)('playwright');
 const root=resolve(import.meta.dirname,'..');
 const source=await readFile(resolve(root,'index.html'),'utf8');
@@ -91,6 +92,7 @@ try{
   await page.waitForFunction(()=>document.getElementById('wallModal').style.display==='flex');
   assert.equal(await page.locator('#wJob').inputValue(),literal);
   await page.evaluate(()=>closeModal('wallModal'));
+  const identityChecks=await recordIdDomChecks(page);
   const persistence=await page.evaluate(async()=>{
    currentUser={id:'synthetic-user',email:'synthetic@example.test'};currentUserCanWrite=true;remoteReady=true;structuredBackendReady=true;lastRemoteData=null;lastSharedJson='';
    state.walls=[];state.jobs=[];state.loads=[];state.deliveryHistory=[];state.audit=[];state.qcHistory=[];
@@ -108,7 +110,7 @@ try{
   assert.equal(await page.locator('#view a').count(),1);
   assert.equal(await page.locator('#view a').getAttribute('href'),'https://example.test/doc?q=1&x=2');
   assert.equal(await page.evaluate(()=>window.syntheticExecutions),0);assert.deepEqual(errors,[]);
-  results.push({width,checks:['import text and attribute roundtrip','billing history and source warning','search text and identity','monthly completion text','document URL allowlist','15 populated wall/precast/downstream views','search Open identity roundtrip','actual save/reload invoice snapshot'],passed:true});
+  results.push({width,identityChecks,checks:['import text and attribute roundtrip','billing history and source warning','search text and identity','monthly completion text','document URL allowlist','15 populated wall/precast/downstream views','search Open identity roundtrip','actual save/reload invoice snapshot'],passed:true});
   await page.close();
  }
  await writeFile(resolve(output,'results.json'),JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));
