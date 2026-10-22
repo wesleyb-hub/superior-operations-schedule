@@ -31,7 +31,7 @@ jobs:
       - name: Verify Weekly Planner controls
         run: node scripts/validate-weekly-planner.mjs
       - name: Test Weekly Planner refresh ordering
-        run: node --test scripts/test-weekly-planner-refresh.mjs scripts/test-weekly-planner-approval.mjs scripts/test-weekly-planner-manual-refresh.mjs scripts/test-weekly-planner-request-budget.mjs
+        run: node --test scripts/test-weekly-planner-refresh.mjs scripts/test-weekly-planner-approval.mjs scripts/test-weekly-planner-manual-refresh.mjs scripts/test-weekly-planner-request-budget.mjs scripts/test-weekly-planner-snapshot-queue.mjs
       - name: Test employee picker and persistence contract
         run: node --test scripts/test-planner-employee-picker.mjs
       - name: Test production request ordering and recovery

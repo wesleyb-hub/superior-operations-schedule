@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import {productionReleaseDomChecks} from './production-release-dom-checks.mjs';
+import {plannerSnapshotDomChecks} from './planner-snapshot-dom-checks.mjs';
 const {chromium}=createRequire(import.meta.url)('playwright');
 const root=resolve(import.meta.dirname,'..');
 const source=await readFile(resolve(root,'index.html'),'utf8');
@@ -16,6 +17,7 @@ const failures=[],results=[];
 try{
  for(const width of [1440,390]){
   results.push(await productionReleaseDomChecks(browser,html,width,output));
+  results.push(await plannerSnapshotDomChecks(browser,html,width,output));
   const page=await browser.newPage({viewport:{width,height:1000}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',route=>route.request().url()==='http://offline.test/'?route.fulfill({contentType:'text/html',body:html}):route.abort());
@@ -26,7 +28,7 @@ try{
    currentUserIsAdmin=true;currentUserAuthorized=true;currentUserCanWrite=false;
    wallsProductionReady=true;wallsInstallationReady=true;
    inventoryReady=true;inventoryCanView=true;
-   weeklyPlannerReady=true;weeklyPlannerLoadedWeek=state.week;
+   weeklyPlannerReady=true;weeklyPlannerLoadedWeek=state.week;loadWeeklyPlanner.loadedContext={user:currentUser,client:sb,epoch:hubSessionEpoch};
    const day=todayISO();
    state.walls=[{id:'qa-wall',job:'QA ONLY — Foundation with a long job label',customer:'Synthetic customer',model:'Test foundation',address:'Synthetic site address for wrapping checks',totalLf:120,productionDate:day,installDate:day,digDate:day,status:'Scheduled',links:[]}];
    state.jobs=['boxes','manholes','fence','block'].map(division=>({id:'qa-'+division,division,name:'QA ONLY — '+division+' project',customer:'Synthetic customer',total:2,dailyRate:1,startDate:day,status:'On Track',baseProduced:0,links:[],products:[
@@ -160,7 +162,7 @@ try{
      section.status='approved';return {data:structuredClone(section)};
     }
     throw new Error('Unexpected synthetic RPC '+name);
-   }};plannerEmployeeHistoryCache().ready=true;renderWeeklyPlanner();
+   }};plannerEmployeeHistoryCache().ready=true;weeklyPlannerReady=true;weeklyPlannerLoadedWeek=state.week;loadWeeklyPlanner.loadedContext={user:currentUser,client:sb,epoch:hubSessionEpoch};renderWeeklyPlanner();
   });
   page.on('dialog',dialog=>dialog.accept());
   await page.evaluate(()=>{window.qaPendingPlannerRead=loadWeeklyPlanner(true)});

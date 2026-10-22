@@ -94,6 +94,7 @@ test('pending inventory read cannot unlock unknown-outcome save',async()=>{
 });
 function plannerFixture(){
  const f=fixture();Object.assign(f.c,{weeklyPlannerSelected:'synthetic',weeklyPlannerProgress:null,weeklyPlannerManualRefreshRequest:null,weeklyPlannerBusy:false,weeklyPlannerDraftError:'',plannerSection:()=>f.section,plannerCaptureSection:()=>({p_crew_leader:'Synthetic',p_people:[{name:'Synthetic'}]}),plannerSectionFeedback:m=>f.messages.push(m),loadWeeklyPlanner:async()=>{f.refreshes++;return true}});f.refreshes=0;f.section={section_id:'synthetic',schedule_version:1};
+ vm.runInContext(part('function plannerRpcRequest(', 'function plannerQueueSnapshot('),f.c);
  vm.runInContext(part('function plannerUpdatePendingUI(', 'function plannerAddAssignment('),f.c);
  vm.runInContext(part('async function weeklyPlannerRpc(', 'function plannerCaptureInputs('),f.c);return f;
 }

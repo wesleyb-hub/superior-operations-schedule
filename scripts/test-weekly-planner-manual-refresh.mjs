@@ -25,12 +25,13 @@ test('rejected manual snapshot settles and only a new deliberate refresh retries
 });
 test('manual refresh cannot reuse or clear a newer session or week owner',async()=>{
  for(const change of [c=>{c.currentUser={id:'new'};c.hubSessionEpoch++},c=>{c.state.week='2026-11-02'}]){
-  const {c,calls}=setup(),old=c.refreshWeeklyPlannerManually();await tick();change(c);const fresh=c.refreshWeeklyPlannerManually();await tick();assert.notEqual(fresh,old);assert.equal(calls.length,2);const owner=c.weeklyPlannerManualRefreshRequest;
-  calls[0].resolve({data:{marker:'old'}});assert.equal(await old,false);assert.equal(c.weeklyPlannerManualRefreshRequest,owner);assert.equal(c.names,0);calls[1].resolve({data:{marker:'fresh'}});assert.equal(await fresh,true);assert.equal(c.weeklyPlanner.marker,'fresh');
+  const {c,calls}=setup(),old=c.refreshWeeklyPlannerManually();await tick();change(c);const fresh=c.refreshWeeklyPlannerManually();await tick();assert.notEqual(fresh,old);assert.equal(calls.length,1);const owner=c.weeklyPlannerManualRefreshRequest;
+  calls[0].resolve({data:{marker:'old'}});assert.equal(await old,false);assert.equal(c.weeklyPlannerManualRefreshRequest,owner);assert.equal(c.names,0);await tick();assert.equal(calls.length,2);calls[1].resolve({data:{marker:'fresh'}});assert.equal(await fresh,true);assert.equal(c.weeklyPlanner.marker,'fresh');
  }
 });
-test('post-write forced load stays independent from a manual read begun before the write',async()=>{
- const {c,calls}=setup(),manual=c.refreshWeeklyPlannerManually();await tick();const postWrite=c.loadWeeklyPlanner(true);await tick();assert.equal(calls.length,2);calls[1].resolve({data:{marker:'saved'}});assert.equal(await postWrite,true);calls[0].resolve({data:{marker:'old'}});assert.equal(await manual,false);assert.equal(c.weeklyPlanner.marker,'saved');
+test('post-write forced load queues behind manual transport but never reuses its pre-write response',async()=>{
+ const {c,calls}=setup(),manual=c.refreshWeeklyPlannerManually();await tick();const postWrite=c.loadWeeklyPlanner(true);await tick();assert.equal(calls.length,1);
+ calls[0].resolve({data:{marker:'old'}});assert.equal(await manual,false);await tick();assert.equal(calls.length,2);calls[1].resolve({data:{marker:'saved'}});assert.equal(await postWrite,true);assert.equal(c.weeklyPlanner.marker,'saved');
 });
 test('manual refresh does not start while approval is still pending',async()=>{
  const {c,calls}=setup();c.weeklyPlannerProgress={action:'approve-section'};assert.equal(await c.refreshWeeklyPlannerManually(),false);assert.equal(calls.length,0);
