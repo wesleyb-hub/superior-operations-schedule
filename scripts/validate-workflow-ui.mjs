@@ -187,6 +187,39 @@ try{
   if(output)await page.screenshot({path:resolve(output,`${width}-installation-activity-modal.png`),fullPage:true});
   await page.evaluate(()=>closeProductionModal());
   results.push({width,view:'installation-draft-and-sequential-modal',passed:true});
+  // The actual assistant submit handler must not unlock the next session's question.
+  await page.evaluate(()=>{
+   window.qaOriginalAsk=askOperationsAgent;window.qaAssistantRequests=[];
+   askOperationsAgent=()=>new Promise((resolve,reject)=>window.qaAssistantRequests.push({resolve,reject}));
+   openAssistant();
+  });
+  await page.locator('#assistantInput').fill('Synthetic old-session question');
+  await page.locator('#assistantForm button').click();
+  assert.equal(await page.locator('#assistantInput').isDisabled(),true);
+  await page.evaluate(()=>{resetLocalSession();currentUser={id:'qa-new-session'};showAuthGate(false);openAssistant()});
+  await page.locator('#assistantInput').fill('Synthetic new-session question');
+  await page.locator('#assistantForm button').click();
+  await page.evaluate(async()=>{window.qaAssistantRequests[0].resolve();await Promise.resolve();await Promise.resolve()});
+  assert.equal(await page.locator('#assistantInput').isDisabled(),true);
+  assert.equal(await page.locator('#assistantForm button').isDisabled(),true);
+  assert.equal(await page.locator('#assistantForm button').textContent(),'Working...');
+  await page.evaluate(()=>window.qaAssistantRequests[1].reject(new Error('Synthetic transport failure')));
+  await page.waitForFunction(()=>!document.querySelector('#assistantForm button').disabled);
+  assert.match(await page.locator('#assistantLog').textContent(),/No automatic retry/);
+  await page.evaluate(()=>{askOperationsAgent=window.qaOriginalAsk;showInventoryToast('SYNTHETIC PRIVATE TOAST')});
+  results.push({width,view:'assistant-cross-session-completion',passed:true});
+  await page.evaluate(()=>{
+   for(const id of ['wallModal','planReviewModal','projectModal','pieceModal','productionModal','inventoryModal'])document.getElementById(id).classList.add('open');
+   for(const id of ['wCustomer','planReviewNotes','assistantInput'])document.getElementById(id).value='SYNTHETIC PRIVATE DRAFT';
+   for(const id of ['planReviewSummary','productionModalBody','inventoryModalTitle'])document.getElementById(id).textContent='SYNTHETIC PRIVATE DRAFT';
+   resetLocalSession();
+  });
+  assert.equal(await page.locator('.modal-backdrop.open,.inventory-modal-backdrop.open,.assistant-panel.open').count(),0);
+  for(const id of ['wCustomer','planReviewNotes','assistantInput'])assert.equal(await page.locator('#'+id).inputValue(),'');
+  for(const id of ['planReviewSummary','productionModalBody','inventoryModalTitle'])assert.equal(await page.locator('#'+id).textContent(),'');
+  assert.equal(await page.locator('#authGate').isVisible(),true);
+  assert.equal(await page.locator('#wallModal input').count()>0,true); // static form/event target retained
+  results.push({width,view:'signed-out-modal-cleanup',passed:true});
   failures.push(...errors.map(e=>`${width}: ${e}`));await page.close();
  }
  if(output)await writeFile(resolve(output,'results.json'),JSON.stringify({results,failures},null,2));

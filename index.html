@@ -596,6 +596,7 @@ button:disabled{cursor:not-allowed}
       <button type="button" id="forgotPasswordBtn">Forgot your password?</button>
       <button type="button" id="backToLoginBtn" hidden>Back to sign in</button>
     </div>
+    <button type="button" id="retrySignOutBtn" hidden>Retry Sign Out</button>
     <div class="auth-message" id="authMessage" role="status" aria-live="polite" tabindex="-1"></div>
   </div>
 </div>
@@ -997,11 +998,40 @@ async function handleAuthSubmit(event){
     }
     const password=document.getElementById('authPassword').value||'';
     if(!password){setAuthMessage('Enter your password.',true);return}
+    hubSessionLocked=false;document.getElementById('retrySignOutBtn').hidden=true;
     setAuthMessage('Signing in...');
     const {error}=await sb.auth.signInWithPassword({email,password});if(error)setAuthMessage(error.message,true)
   }finally{btn.disabled=false}
 }
-async function signOut(){if(sb){if(inventoryChannel)await sb.removeChannel(inventoryChannel);if(productionChannel)await sb.removeChannel(productionChannel);if(weeklyPlannerChannel)await sb.removeChannel(weeklyPlannerChannel);if(wallsInstallationChannel)await sb.removeChannel(wallsInstallationChannel);await sb.auth.signOut()}currentUser=null;weeklyPlannerEmployeeHistory=null;remoteReady=false;inventoryReady=false;wallsProductionReady=false;wallsInstallationReady=false;weeklyPlannerReady=false;weeklyPlannerDraftError='';setAuthMode('login','Signed out.');showAuthGate(true)}
+// Invalidate local work before awaiting network logout; never delete operational storage.
+let hubSessionEpoch=0,remoteLoadToken=0,inventoryLoadToken=0,hubSessionLocked=false;
+function resetLocalSession(){
+  hubSessionLocked=true;hubSessionEpoch++;remoteLoadToken++;inventoryLoadToken++;
+  currentUser=null;currentUserRole='none';currentUserCanWrite=false;currentUserAuthorized=false;currentUserIsAdmin=false;currentAllowedViews=[];currentAllowedWallSubviews=[];
+  remoteReady=false;structuredBackendReady=false;lastRemoteData=null;lastSharedJson='';lastRevision=0;lastRemoteUpdatedAt='';saveBusy=false;saveQueued=false;queuedReason='Saved';
+  inventoryReady=false;inventoryBusy=false;inventoryItems=[];inventoryEvents=[];inventoryAvailableScopes=[];inventoryCanView=false;inventoryCanAdjust=false;inventoryCanManage=false;inventoryLoadError='';inventoryModalSaveAction=null;
+  wallsProductionReady=false;wallsProductionError='';productionBusy=false;productionModalSaveAction=null;wallsProduction={permissions:{},tables:[],jobs:[],assignments:[],issues:[],events:[],weeklyForecast:null};
+  wallsInstallationReady=false;wallsInstallationError='';installationBusy=false;wallsInstallation={permissions:{},jobs:[],day_cards:[],resource_conflicts:[]};
+  weeklyPlannerReady=false;weeklyPlannerBusy=false;weeklyPlannerDraftError='';weeklyPlannerLoadToken=null;weeklyPlannerLoadPromise=null;weeklyPlannerLoadedWeek='';weeklyPlannerEmployeeHistory=null;weeklyPlannerRealtimeDirty=false;
+  weeklyPlanner={permissions:{},week:null,sections:[],people:[],assignments:[],availability:[],resources:[],conflicts:[],packs:[],recent_packs:[],audit:[]};
+  weeklyPlannerInstallEmployees=[];weeklyPlannerInstallEmployeesReady=false;weeklyPlannerInstallEmployeesPromise=null;weeklyPlannerInstallEmployeesError='';
+  weeklyPlannerError='';weeklyPlannerErrorWeek='';weeklyPlannerRealtimePromise=null;weeklyPlannerChannelWeek='';wallsInstallationReloadQueued=false;wallsInstallationLoadPromise=null;
+  clearTimeout(weeklyPlannerRefreshTimer);clearTimeout(wallsInstallationReloadTimer);
+  state={...clone(seed),...loadUiPrefs()};importData=null;importHeaders=[];
+  for(const id of ['saveStatus','accessStatus','signOutBtn']){const el=document.getElementById(id);if(el)el.textContent=id==='signOutBtn'?'Sign Out':''}
+  for(const id of ['productionModalBody','inventoryModalBody','productionModalTitle','productionModalSub','inventoryModalTitle','inventoryModalSub','planReviewSummary','planStageList','planReviewSubtitle','planTrackerSource'])document.getElementById(id)?.replaceChildren();
+  document.getElementById('view')?.replaceChildren();document.getElementById('assistantLog')?.replaceChildren();
+  clearTimeout(inventoryToastTimer);const toast=document.getElementById('inventoryToast');if(toast){toast.textContent='';toast.classList.remove('show')}
+  const assistantInput=document.getElementById('assistantInput'),assistantButton=document.getElementById('assistantForm')?.querySelector('button');if(assistantInput)assistantInput.disabled=false;if(assistantButton){assistantButton.disabled=false;assistantButton.textContent='Ask'}
+  document.querySelectorAll('.modal-backdrop.open,.inventory-modal-backdrop.open,.assistant-panel.open').forEach(el=>el.classList.remove('open'));
+  document.querySelectorAll('.modal-backdrop input,.modal-backdrop textarea,.modal-backdrop select,.inventory-modal-backdrop input,#assistantInput').forEach(el=>{el.value='';if('checked' in el)el.checked=false});
+  editingWallId=editingPlanWallId=editingProjectId=editingPieceProjectId=editingPieceId=null;editingWallCompletionDirty=false;
+  const client=sb,channels=[stateChannel,inventoryChannel,productionChannel,weeklyPlannerChannel,wallsInstallationChannel];
+  stateChannel=inventoryChannel=productionChannel=weeklyPlannerChannel=wallsInstallationChannel=null;
+  for(const channel of channels)if(channel&&client)Promise.resolve().then(()=>client.removeChannel(channel)).catch(()=>{});
+  showAuthGate(true)
+}
+async function signOut(){const client=sb;resetLocalSession();const epoch=hubSessionEpoch;setAuthMode('login','Signing out...');try{const result=client?await client.auth.signOut():{};if(result?.error)throw result.error;if(epoch===hubSessionEpoch&&!currentUser)setAuthMode('login','Signed out.')}catch(error){if(epoch!==hubSessionEpoch||currentUser)return;document.getElementById('retrySignOutBtn').hidden=false;setAuthMessage('The screen is locked, but sign-out could not be confirmed. Retry Sign Out before leaving this device.',true)}}
 function updateAccessStatus(){
   const el=document.getElementById('accessStatus');
   if(!el)return;
@@ -1020,7 +1050,9 @@ function applyAccessNavigation(){
 }
 async function loadCurrentAccess(user){
   currentUserRole='none';currentUserCanWrite=false;currentUserAuthorized=false;currentUserIsAdmin=false;currentAllowedViews=[];currentAllowedWallSubviews=[];
+  const client=sb,epoch=hubSessionEpoch;
   const {data,error}=await sb.rpc('get_app_access');
+  if(currentUser!==user||client!==sb||epoch!==hubSessionEpoch)return;
   if(error)console.error('Could not load application role:',error);
   if(data){currentUserAuthorized=Boolean(data.authorized);currentUserRole=data.profile_key||'viewer';currentUserCanWrite=Boolean(data.can_write);currentUserIsAdmin=Boolean(data.is_admin);currentAllowedViews=Array.isArray(data.allowed_views)?data.allowed_views:[];currentAllowedWallSubviews=Array.isArray(data.allowed_wall_subviews)?data.allowed_wall_subviews:[]}
   applyAccessNavigation();
@@ -1054,8 +1086,11 @@ async function applyRemoteRow(row,notice){
 }
 async function loadRemoteState(manual=false){
   if(!sb||!currentUser)return false;
+  const user=currentUser,client=sb,epoch=hubSessionEpoch,token=++remoteLoadToken;const valid=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch&&remoteLoadToken===token;
+  try{
   const s=document.getElementById('saveStatus');if(s)s.textContent='Loading shared hub...';
   const structured=await sb.rpc('get_schedule_snapshot');
+  if(!valid())return false;
   if(!structured.error&&structured.data){
     structuredBackendReady=true;
     return await applyRemoteRow(structured.data,manual?'Refreshed structured hub':'Live structured hub')
@@ -1063,8 +1098,10 @@ async function loadRemoteState(manual=false){
   if(!currentUserIsAdmin){structuredBackendReady=false;if(s)s.textContent='Could not load authorized workspace';alert('Your authorized workspace could not be loaded. No unrestricted data was requested.');return false}
   structuredBackendReady=false;
   const {data,error}=await sb.from('schedule_state').select('id,payload,revision,updated_at,updated_by').eq('id',1).single();
+  if(!valid())return false;
   if(error){if(s)s.textContent='Could not load shared hub';alert('Could not load the shared hub: '+error.message);return false}
   return await applyRemoteRow(data,manual?'Refreshed live hub':'Live shared hub')
+  }catch(error){if(valid()){remoteReady=false;const status=document.getElementById('saveStatus');if(status)status.textContent='Hub refresh failed — retry Refresh before editing';}return false}
 }
 function validateOperationalTransition(snapshot){
   if(!lastRemoteData)return'';
@@ -1096,17 +1133,20 @@ async function persistState(reason='Saved'){
   if(json===lastSharedJson){saveUiPrefs();return true}
   const gateMessage=validateOperationalTransition(snapshot);
   if(gateMessage){alert('Evidence gate: '+gateMessage);await loadRemoteState(true);return false}
+  const user=currentUser,client=sb,epoch=hubSessionEpoch;const valid=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch;
   saveBusy=true;const s=document.getElementById('saveStatus');if(s)s.textContent='Saving...';
   const next=lastRevision+1,payload={schemaVersion:35,data:snapshot};
-  let data,error;
+  let data,error,uncertain=false;
+  try{
   if(structuredBackendReady){
     const result=await sb.rpc('save_schedule_snapshot',{p_expected_revision:lastRevision,p_snapshot:snapshot,p_reason:reason||'Saved'});data=result.data;error=result.error;
   }else{
     const result=await sb.from('schedule_state').update({payload,revision:next,updated_at:new Date().toISOString(),updated_by:currentUser.email}).eq('id',1).eq('revision',lastRevision).select('id,payload,revision,updated_at,updated_by').maybeSingle();data=result.data;error=result.error;
   }
-  saveBusy=false;
-  if(error){if(s)s.textContent='Save failed';alert('Hub save failed: '+error.message);await loadRemoteState(true);return false}
-  if(!data){if(s)s.textContent='Another update happened first';alert('Someone else changed the hub at the same time. I reloaded the newest version so nobody gets overwritten. Please make your change again.');await loadRemoteState(true);return false}
+  }catch(cause){error=cause;uncertain=true}finally{if(valid())saveBusy=false}
+  if(!valid())return false;
+  if(error){remoteLoadToken++;saveQueued=false;queuedReason='Saved';remoteReady=false;if(s)s.textContent=uncertain?'Save outcome unknown — refresh before retrying':'Save failed — refresh before editing';alert(uncertain?'The save response was lost. It may have been saved. Your edits remain on screen; refresh and verify before retrying. No automatic retry was made.':'Hub save failed: '+(error.message||'Request failed')+'. Your edits remain on screen. Refresh before editing again.');return false}
+  if(!data){saveQueued=false;queuedReason='Saved';if(s)s.textContent='Another update happened first';alert('Someone else changed the hub at the same time. I reloaded the newest version so nobody gets overwritten. Please make your change again.');await loadRemoteState(true);return false}
   lastRevision=Number(data.revision||next);lastRemoteUpdatedAt=data.updated_at||new Date().toISOString();lastRemoteData=clone(snapshot);lastSharedJson=json;saveUiPrefs();if(s)s.textContent=(reason||'Saved')+' - '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
   if(saveQueued){saveQueued=false;const r=queuedReason;queuedReason='Saved';if(JSON.stringify(sharedDataFromState(state))!==lastSharedJson)persistState(r)}
   return true
@@ -1115,19 +1155,19 @@ function subscribeLive(){
   if(!sb)return;if(stateChannel)sb.removeChannel(stateChannel);
   const table=structuredBackendReady?'schedule_meta':'schedule_state';
   stateChannel=sb.channel('superior-master-operations-live').on('postgres_changes',{event:'UPDATE',schema:'public',table,filter:'id=eq.1'},evt=>{
-    const row=evt.new;if(Number(row.revision||0)>lastRevision&&!saveBusy)loadRemoteState(false)
+    const row=evt.new;if(remoteReady&&Number(row.revision||0)>lastRevision&&!saveBusy)loadRemoteState(false)
   }).subscribe()
 }
 async function startSession(user){
   if(!user)return;const email=(user.email||'').toLowerCase();
   if(!authAllowed(email)){setAuthMessage('This hub is limited to @'+ALLOWED_EMAIL_DOMAIN+' accounts.',true);await sb.auth.signOut();showAuthGate(true);return}
-  currentUser=user;await loadCurrentAccess(user);if(!currentUserAuthorized){setAuthMessage('This account has not been assigned access to the Superior Operations Hub.',true);await sb.auth.signOut();currentUser=null;showAuthGate(true);return}showAuthGate(false);const sign=document.getElementById('signOutBtn');if(sign){sign.style.display='inline-block';sign.textContent='Sign Out - '+email.split('@')[0]}
-  await loadRemoteState();
+  currentUser=user;const epoch=hubSessionEpoch,client=sb;await loadCurrentAccess(user);if(currentUser!==user||epoch!==hubSessionEpoch||client!==sb)return;if(!currentUserAuthorized){setAuthMessage('This account has not been assigned access to the Superior Operations Hub.',true);await sb.auth.signOut();currentUser=null;showAuthGate(true);return}showAuthGate(false);const sign=document.getElementById('signOutBtn');if(sign){sign.style.display='inline-block';sign.textContent='Sign Out - '+email.split('@')[0]}
+  await loadRemoteState();if(currentUser!==user||epoch!==hubSessionEpoch||client!==sb)return;
   const requestedView=new URLSearchParams(location.search).get('view');
   if(requestedView&&viewAllowed(requestedView)){state.view=requestedView;if(requestedView==='walls'&&!wallSubviewAllowed(state.subview.walls))state.subview.walls=currentAllowedWallSubviews[0]||'current';saveUiPrefs();render()}
   // Keep the all-year Installation snapshot off the sign-in critical path.
   // It is loaded only when Installation, final QC, or Delivery is opened.
-  subscribeLive();await Promise.all([loadInventory(),loadWallsProduction()]);subscribeInventory();subscribeWallsProduction();if((state.view==='walls'&&state.subview.walls==='installation')||state.view==='qc'||state.view==='delivery')ensureWallsInstallationLoaded()
+  subscribeLive();await Promise.all([loadInventory(),loadWallsProduction()]);if(currentUser!==user||epoch!==hubSessionEpoch||client!==sb)return;subscribeInventory();subscribeWallsProduction();if((state.view==='walls'&&state.subview.walls==='installation')||state.view==='qc'||state.view==='delivery')ensureWallsInstallationLoaded()
 }
 let state={...clone(seed),...loadUiPrefs()},editingWallId=null,editingWallCompletionDirty=false,editingPlanWallId=null,editingProjectId=null,editingPieceProjectId=null,editingPieceId=null,importData=null,importHeaders=[];
 const inventoryScopeDefinitions=[
@@ -1148,34 +1188,51 @@ let weeklyPlanner={permissions:{},week:null,sections:[],people:[],assignments:[]
 let weeklyPlannerEmployeeHistory=null;
 let weeklyPlannerInstallEmployees=[],weeklyPlannerInstallEmployeesReady=false,weeklyPlannerInstallEmployeesPromise=null,weeklyPlannerInstallEmployeesError='';
 
+let wallsProductionLoadToken=0;
 async function loadWallsProduction(){
   if(!sb||!currentUser||!wallSubviewAllowed('production'))return false;
+  const token=++wallsProductionLoadToken,user=currentUser,client=sb,epoch=hubSessionEpoch;
   const day=normalizeDate(state.productionDay)||todayISO(),from=addDays(weekStart(day),-7),to=addDays(weekStart(day),52);
-  const [{data,error},{data:weeklyForecast,error:weeklyError}]=await Promise.all([
-    sb.rpc('get_walls_production_snapshot',{p_from:from,p_to:to}),
-    sb.rpc('get_walls_production_weekly_forecast',{p_week_start:weekStart(day)})
-  ]);
-  if(error){wallsProductionReady=false;wallsProductionError=error.message||'Production system is unavailable.';console.error('Could not load Superior Walls production:',error);if(state.view==='walls'&&state.subview.walls==='production')render();return false}
-  if(weeklyError)console.error('Could not load Superior Walls weekly forecast:',weeklyError);
-  wallsProduction={...(data||{permissions:{},tables:[],jobs:[],assignments:[],issues:[],events:[]}),weeklyForecast:weeklyForecast||null};wallsProductionReady=true;wallsProductionError=weeklyError?.message||'';if(state.view==='walls'&&state.subview.walls==='production')render();return true
+  const isCurrent=()=>token===wallsProductionLoadToken&&currentUser===user&&sb===client&&hubSessionEpoch===epoch&&(normalizeDate(state.productionDay)||todayISO())===day&&wallSubviewAllowed('production');
+  try{
+    const [{data,error},{data:weeklyForecast,error:weeklyError}]=await Promise.all([
+      client.rpc('get_walls_production_snapshot',{p_from:from,p_to:to}),
+      client.rpc('get_walls_production_weekly_forecast',{p_week_start:weekStart(day)})
+    ]);
+    if(!isCurrent())return false;
+    if(error)throw error;
+    if(weeklyError)console.error('Could not load Superior Walls weekly forecast:',weeklyError);
+    wallsProduction={...(data||{permissions:{},tables:[],jobs:[],assignments:[],issues:[],events:[]}),weeklyForecast:weeklyForecast||null};wallsProductionReady=true;wallsProductionError=weeklyError?.message||'';
+    if(state.view==='walls'&&state.subview.walls==='production')render();
+    return true
+  }catch(error){
+    if(!isCurrent())return false;
+    wallsProductionReady=false;wallsProductionError=error?.message||'Production system is unavailable.';
+    console.error('Could not load Superior Walls production:',error);
+    if(state.view==='walls'&&state.subview.walls==='production')render();
+    return false
+  }
 }
 let wallsInstallationLoadPromise=null,wallsInstallationReloadQueued=false;
 function ensureWallsInstallationLoaded(force=false){
   if(wallsInstallationLoadPromise){if(force)wallsInstallationReloadQueued=true;return wallsInstallationLoadPromise}
   if(wallsInstallationReady&&!force)return Promise.resolve(true);
   if(!wallsInstallationChannel)subscribeWallsInstallation();
-  wallsInstallationLoadPromise=loadWallsInstallation().finally(()=>{
-    wallsInstallationLoadPromise=null;
+  const request=loadWallsInstallation().finally(()=>{
+    if(wallsInstallationLoadPromise!==request)return;wallsInstallationLoadPromise=null;
     if(wallsInstallationReloadQueued){wallsInstallationReloadQueued=false;if((state.view==='walls'&&state.subview.walls==='installation')||state.view==='qc'||state.view==='delivery')ensureWallsInstallationLoaded(true)}
   });
-  return wallsInstallationLoadPromise
+  wallsInstallationLoadPromise=request;return request
 }
 async function loadWallsInstallation(){
   if(!sb||!currentUser||!wallSubviewAllowed('installation')){wallsInstallationReady=false;wallsInstallation={permissions:{},jobs:[],day_cards:[],resource_conflicts:[]};return false}
+  const sessionUser=currentUser,sessionClient=sb,sessionEpoch=hubSessionEpoch;const sessionValid=()=>currentUser===sessionUser&&sb===sessionClient&&hubSessionEpoch===sessionEpoch;
   const day=normalizeDate(state.installationDay)||todayISO(),weekAnchor=state.installationView==='week'?(normalizeDate(state.installationWeek)||normalizeDate(state.week)||day):day,from=addDays(weekStart(weekAnchor),-7),to=addDays(weekStart(weekAnchor),52);
   const {data,error}=await sb.rpc('get_walls_installation_snapshot',{p_from:from,p_to:to});
+  if(!sessionValid())return false;
   if(error){wallsInstallationReady=false;wallsInstallationError=error.message||'Installation system is unavailable.';console.error('Could not load Superior Walls Installation:',error);if(state.view==='walls'&&state.subview.walls==='installation')render();return false}
    const {data:scopeRows,error:scopeError}=await sb.from('walls_installation_activity_assignments').select('activity_id,assignment_id,load_record_id');
+   if(!sessionValid())return false;
    if(scopeError){wallsInstallationReady=false;wallsInstallationError=scopeError.message||'Installation production scope could not be loaded.';if(state.view==='walls'&&state.subview.walls==='installation')render();return false}
    const scopesByActivity=new Map();(scopeRows||[]).forEach(x=>{const rows=scopesByActivity.get(x.activity_id)||[];rows.push(x);scopesByActivity.set(x.activity_id,rows)});
    (data?.jobs||[]).forEach(j=>(j.activities||[]).forEach(a=>{a.production_scope=scopesByActivity.get(a.activity_id)||[]}));
@@ -1187,32 +1244,80 @@ function subscribeWallsInstallation(){
   ['walls_installation_jobs','walls_installation_activities','walls_installation_activity_assignments','walls_installation_resources','walls_installation_issues','walls_installation_load_assignments','walls_installation_qc_releases','walls_installation_day_cards','walls_installation_day_tasks','walls_production_assignments','walls_production_issues','schedule_records'].forEach(table=>wallsInstallationChannel.on('postgres_changes',{event:'*',schema:'public',table},()=>{if(installationBusy||!((state.view==='walls'&&state.subview.walls==='installation')||state.view==='qc'||state.view==='delivery'))return;clearTimeout(wallsInstallationReloadTimer);wallsInstallationReloadTimer=setTimeout(()=>ensureWallsInstallationLoaded(true),500)}));wallsInstallationChannel.subscribe()
 }
 async function wallsInstallationRpc(name,args,success){
+  if(!sb||!currentUser)return false;
+  const user=currentUser,client=sb,epoch=hubSessionEpoch;const valid=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch;
   if(installationBusy){showInventoryToast('An Installation save is still finishing. Wait briefly, then retry.');return false}
-  installationBusy=true;let result;
-  try{result=await sb.rpc(name,args||{})}catch(error){result={error}}
-  finally{installationBusy=false}
+  installationBusy=true;let result,uncertain=false;
+  try{result=await client.rpc(name,args||{})}catch(error){result={error};uncertain=true}
+  finally{if(valid())installationBusy=false}
+  if(!valid())return false;
   if(result&&result.error){
     const message=result.error.message||'The request did not complete.';
     console.error('Installation update failed:',name,result.error);
-    alert('Installation update was not saved: '+message);
+    alert(uncertain?'Installation save outcome unknown. Refresh and verify before retrying; no automatic retry was made.':'Installation update was not saved: '+message);
     try{await ensureWallsInstallationLoaded(true)}catch(refreshError){console.error('Installation refresh after failed save:',refreshError)}
     return false
   }
   let refreshed=false;
   try{refreshed=await ensureWallsInstallationLoaded(true)}catch(refreshError){console.error('Installation refresh after save:',refreshError)}
+  if(!valid())return false;
   if(success)showInventoryToast(refreshed?success:'Saved. Refresh this Installation view to confirm the latest status.');
   return true
 }
+// Realtime has a bounded read budget: one request at a time plus one dirty trailing
+// refresh. Explicit/manual/post-write loaders stay independent and always fetch fresh.
+function createOperationalRealtimeRefresh({load,isOwner,isBusy,key,failed,recovered}){
+  let active=null,paused=false;
+  return function refresh(){
+    if(!isOwner()||isBusy())return Promise.resolve(false);
+    if(failed())paused=true;
+    if(paused){if(!recovered())return Promise.resolve(false);paused=false}
+    const requestedKey=key();
+    if(active&&active.key===requestedKey){active.dirty=true;return active.promise}
+    const work={key:requestedKey,dirty:true,promise:null};active=work;
+    const valid=()=>isOwner()&&active===work&&key()===requestedKey&&!isBusy();
+    work.promise=Promise.resolve().then(async()=>{
+      while(work.dirty&&valid()){
+        // Also pace fast responses: a realtime storm cannot become a tight read loop.
+        await new Promise(resolve=>setTimeout(resolve,350));
+        if(!valid())return false;
+        work.dirty=false;
+        let ok=false;try{ok=await load()}catch(error){if(valid())paused=true;return false}
+        if(!valid())return false;
+        if(!ok){
+          if(failed()){paused=true;return false}
+          // A newer explicit read can supersede this read. Events received after
+          // that read began still require the dirty trailing snapshot.
+          if(!work.dirty)return false;
+        }
+      }
+      return valid();
+    }).finally(()=>{if(active===work)active=null});
+    return work.promise;
+  }
+}
 function subscribeWallsProduction(){
-  if(!sb)return;if(productionChannel)sb.removeChannel(productionChannel);
-  productionChannel=sb.channel('walls-production-live');
-  ['walls_production_tables','walls_production_assignments','walls_production_events','walls_production_issues'].forEach(table=>productionChannel.on('postgres_changes',{event:'*',schema:'public',table},()=>{if(!productionBusy)loadWallsProduction()}));
-  productionChannel.subscribe()
+  if(!sb||!currentUser)return;if(productionChannel)sb.removeChannel(productionChannel);
+  const user=currentUser,client=sb,epoch=hubSessionEpoch,channel=client.channel('walls-production-live');productionChannel=channel;
+  const refresh=createOperationalRealtimeRefresh({load:()=>loadWallsProduction(),isOwner:()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch&&productionChannel===channel&&wallSubviewAllowed('production'),isBusy:()=>productionBusy,key:()=>normalizeDate(state.productionDay)||todayISO(),failed:()=>!wallsProductionReady&&Boolean(wallsProductionError),recovered:()=>wallsProductionReady&&!wallsProductionError});
+  ['walls_production_tables','walls_production_assignments','walls_production_events','walls_production_issues'].forEach(table=>channel.on('postgres_changes',{event:'*',schema:'public',table},()=>{void refresh()}));
+  channel.subscribe()
 }
 async function wallsProductionRpc(name,args,success){
-  if(productionBusy)return false;productionBusy=true;const {error}=await sb.rpc(name,args||{});productionBusy=false;
-  if(error){alert('Production update was not saved: '+error.message);await loadWallsProduction();return false}
-  await loadWallsProduction();if(success)showInventoryToast(success);return true
+  if(!sb||!currentUser||productionBusy)return false;
+  const user=currentUser,client=sb,epoch=hubSessionEpoch;const valid=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch;
+  productionBusy=true;let result,unconfirmed=false;
+  try{result=await client.rpc(name,args||{})}catch(error){result={error};unconfirmed=true}
+  finally{if(valid())productionBusy=false}
+  if(!valid())return false;
+  if(result?.error){
+    alert((unconfirmed?'Could not confirm the production update. Refresh before retrying: ':'Production update was not saved: ')+(result.error.message||'The request did not complete.'));
+    await loadWallsProduction();return false
+  }
+  const refreshed=await loadWallsProduction();
+  if(!valid())return false;
+  if(success)showInventoryToast(refreshed?success:'Saved. Refresh this Production view to confirm the latest status.');
+  return true
 }
 function closeProductionModal(){document.getElementById('productionModal')?.classList.remove('open');productionModalSaveAction=null}
 function openProductionModal(title,sub,body,saveLabel,onSave){
@@ -1222,32 +1327,44 @@ function openProductionModal(title,sub,body,saveLabel,onSave){
 
 async function loadInventory(){
   if(!sb||!currentUser)return false;inventoryLoadError='';
+  const user=currentUser,client=sb,epoch=hubSessionEpoch,token=++inventoryLoadToken;let requestedScope=inventoryScopeKey;const valid=()=>currentUser===user&&sb===client&&epoch===hubSessionEpoch&&token===inventoryLoadToken&&requestedScope===inventoryScopeKey;
+  try{
   const scopesResult=await sb.rpc('get_inventory_scopes');
+  if(!valid())return false;
   if(scopesResult.error){inventoryReady=false;inventoryLoadError=scopesResult.error.message;console.error('Inventory scopes failed:',scopesResult.error);if(state.view==='inventory')renderInventory();return false}
   inventoryAvailableScopes=Array.isArray(scopesResult.data)?scopesResult.data:[];
   if(!inventoryAvailableScopes.some(x=>`${x.division_key}-${x.inventory_area}`===inventoryScopeKey))inventoryScopeKey=inventoryAvailableScopes.some(x=>x.division_key==='walls'&&x.inventory_area==='production')?'walls-production':`${inventoryAvailableScopes[0]?.division_key||'walls'}-${inventoryAvailableScopes[0]?.inventory_area||'production'}`;
+  requestedScope=inventoryScopeKey;
   const scope=inventoryScopeDefinitions.find(x=>x.key===inventoryScopeKey)||inventoryScopeDefinitions[0];
   const access=inventoryAvailableScopes.find(x=>x.division_key===scope.division&&x.inventory_area===scope.area)||{};
   inventoryCanView=Boolean(access.can_view);inventoryCanAdjust=Boolean(access.can_adjust);inventoryCanManage=Boolean(access.can_manage);
   if(!inventoryCanView){inventoryItems=[];inventoryEvents=[];inventoryReady=false;inventoryLoadError='Your account does not have access to this inventory section.';if(state.view==='inventory')renderInventory();return false}
   const itemsResult=await sb.from('inventory_items').select('item_id,titan_code,description,category,unit,quantity,reorder_threshold,ordered,version,updated_at,updated_by').eq('division_key',scope.division).eq('inventory_area',scope.area).order('item_id');
+  if(!valid())return false;
   if(itemsResult.error){inventoryReady=false;inventoryLoadError=itemsResult.error.message;console.error('Inventory load failed:',itemsResult.error);if(state.view==='inventory')renderInventory();return false}
   const itemIds=(itemsResult.data||[]).map(x=>x.item_id);
   const eventsResult=itemIds.length?await sb.from('inventory_events').select('event_id,item_id,event_type,quantity_before,quantity_after,detail,occurred_at,actor_email').in('item_id',itemIds).order('occurred_at',{ascending:false}).limit(50):{data:[],error:null};
+  if(!valid())return false;
   if(eventsResult.error){inventoryReady=false;inventoryLoadError=eventsResult.error.message;console.error('Inventory events failed:',eventsResult.error);if(state.view==='inventory')renderInventory();return false}
   inventoryItems=(itemsResult.data||[]).map(x=>({id:x.item_id,code:x.titan_code,description:x.description,group:x.category,unit:x.unit,qty:x.quantity,threshold:x.reorder_threshold,ordered:Boolean(x.ordered),version:Number(x.version||1),updatedAt:x.updated_at,updatedBy:x.updated_by}));
   inventoryEvents=(eventsResult.data||[]).map(x=>({id:x.event_id,itemId:x.item_id,type:x.event_type,before:x.quantity_before,after:x.quantity_after,detail:x.detail||{},at:x.occurred_at,actor:x.actor_email}));
   inventoryReady=true;inventoryLoadError='';if(state.view==='inventory')renderInventory();return true
+  }catch(error){if(valid()){inventoryReady=false;inventoryLoadError=error?.message||'Inventory could not be loaded. Retry Refresh.';if(state.view==='inventory')renderInventory()}return false}
 }
 function subscribeInventory(){
-  if(!sb)return;if(inventoryChannel)sb.removeChannel(inventoryChannel);
-  inventoryChannel=sb.channel('superior-inventory-live').on('postgres_changes',{event:'*',schema:'public',table:'inventory_items'},payload=>{const row=payload.new||payload.old||{};const scope=inventoryScopeDefinitions.find(x=>x.key===inventoryScopeKey)||inventoryScopeDefinitions[0];if(!inventoryBusy&&(!row.division_key||(row.division_key===scope.division&&row.inventory_area===scope.area)))loadInventory()}).on('postgres_changes',{event:'INSERT',schema:'public',table:'inventory_events'},()=>{if(!inventoryBusy)loadInventory()}).subscribe()
+  if(!sb||!currentUser)return;if(inventoryChannel)sb.removeChannel(inventoryChannel);
+  const user=currentUser,client=sb,epoch=hubSessionEpoch,channel=client.channel('superior-inventory-live');inventoryChannel=channel;
+  const refresh=createOperationalRealtimeRefresh({load:()=>loadInventory(),isOwner:()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch&&inventoryChannel===channel,isBusy:()=>inventoryBusy,key:()=>inventoryScopeKey,failed:()=>!inventoryReady&&Boolean(inventoryLoadError),recovered:()=>inventoryReady&&!inventoryLoadError});
+  channel.on('postgres_changes',{event:'*',schema:'public',table:'inventory_items'},payload=>{const row=payload.new||payload.old||{};const scope=inventoryScopeDefinitions.find(x=>x.key===inventoryScopeKey)||inventoryScopeDefinitions[0];if(!row.division_key||(row.division_key===scope.division&&row.inventory_area===scope.area))void refresh()}).on('postgres_changes',{event:'INSERT',schema:'public',table:'inventory_events'},()=>{void refresh()}).subscribe()
 }
 async function inventoryRpc(name,args,successMessage){
-  if(!sb||!currentUser||inventoryBusy)return false;inventoryBusy=true;renderInventory();
-  const {error}=await sb.rpc(name,args);inventoryBusy=false;
-  if(error){showInventoryToast(error.message.includes('version conflict')?'Someone else updated this material. The newest count has been loaded.':'Inventory update failed: '+error.message);await loadInventory();return false}
-  await loadInventory();if(successMessage)showInventoryToast(successMessage);return true
+  if(!sb||!currentUser||inventoryBusy)return false;
+  const user=currentUser,client=sb,epoch=hubSessionEpoch;const valid=()=>currentUser===user&&sb===client&&epoch===hubSessionEpoch;
+  inventoryBusy=true;renderInventory();let error,uncertain=false;
+  try{({error}=await client.rpc(name,args))}catch(cause){error=cause;uncertain=true}finally{if(valid())inventoryBusy=false}
+  if(!valid())return false;
+  if(error){inventoryLoadToken++;inventoryReady=false;inventoryLoadError=uncertain?'Save outcome unknown. Refresh and verify before retrying.':'Update failed. Refresh inventory before editing.';renderInventory();showInventoryToast(uncertain?'Inventory save outcome unknown. Refresh and verify the count before retrying; no automatic retry was made.':'Inventory update failed: '+(error.message||'Request failed'));if(!uncertain)await loadInventory();return false}
+  const refreshed=await loadInventory();if(!valid())return false;if(successMessage)showInventoryToast(refreshed?successMessage:'Saved. Inventory could not refresh; refresh before editing again.');return true
 }
 
 function defaultWallPlanReview(){
@@ -1294,7 +1411,7 @@ function wallPlanRiskClass(w){
 function wallPlanSummaryHtml(w){
   if(!w)return '<div class="muted" style="font-size:10px">Save this Wall job first, then open Plan Review.</div>';
   const p=wallPlanProgress(w),stage=wallPlanCurrentStage(w),status=wallPlanCurrentStatus(w);
-  return `<div class="plan-summary-line"><span class="plan-badge ${wallPlanReleased(w)?'released':status==='Waiting'?'waiting':'hold'}">${wallPlanReleased(w)?'Released for Production':status}</span><strong style="font-size:11px;color:var(--navy)">${wallPlanReleased(w)?'Approved for Production':stage.label}</strong><span class="muted" style="font-size:10px">${p.done}/${p.total} steps complete</span></div><div class="plan-progress" style="margin-top:7px"><span style="width:${p.pct}%"></span></div>${w.planReview?.trackerStatus?`<div class="plan-source-note">Precon tracker status: ${w.planReview.trackerStatus}</div>`:''}`
+  return `<div class="plan-summary-line"><span class="plan-badge ${wallPlanReleased(w)?'released':status==='Waiting'?'waiting':'hold'}">${wallPlanReleased(w)?'Released for Production':status}</span><strong style="font-size:11px;color:var(--navy)">${wallPlanReleased(w)?'Approved for Production':stage.label}</strong><span class="muted" style="font-size:10px">${p.done}/${p.total} steps complete</span></div><div class="plan-progress" style="margin-top:7px"><span style="width:${p.pct}%"></span></div>${w.planReview?.trackerStatus?`<div class="plan-source-note">Precon tracker status: ${htmlSafe(w.planReview.trackerStatus)}</div>`:''}`
 }
 
 const WALL_HEIGHTS=[
@@ -1371,11 +1488,17 @@ function logAction(type,detail,user){
   const timestamp=new Date().toISOString();
   state.audit.push({date:timestamp,timestamp,weekKey:operationsWeekKey(new Date()),type,user:user||currentUser?.email||state.role||'User',detail})
 }
+function billingSourceMismatch(b){
+  if(b.key?.startsWith('wall:'))return !state.walls.some(w=>'wall:'+w.id===b.key&&wallIsCompleted(w));
+  if(b.key?.startsWith('precast:'))return !state.jobs.some(j=>'precast:'+j.id===b.key&&j.completedDate);
+  return false
+}
 function syncBilling(){
   const completedWallKeys=new Set(state.walls.filter(w=>wallIsCompleted(w)).map(w=>'wall:'+w.id));
   const completedPrecastKeys=new Set(state.jobs.filter(j=>j.completedDate).map(j=>'precast:'+j.id));
 
   state.billing=state.billing.filter(b=>{
+    if(b.status==='Billed'||String(b.invoice||'').trim()||String(b.invoiceDate||'').trim())return true;
     if(b.key?.startsWith('wall:'))return completedWallKeys.has(b.key);
     if(b.key?.startsWith('precast:'))return completedPrecastKeys.has(b.key);
     return true
@@ -1397,7 +1520,15 @@ function syncBilling(){
   })
 }
 function printCurrent(label){const old=document.title;document.title=label||'Superior Operations Report';window.print();setTimeout(()=>{document.title=old},300)}
-function linkListHtml(links){if(!links||!links.length)return'';return `<div class="doc-links">${links.map((u,i)=>`<a href="${String(u).replace(/"/g,'&quot;')}" target="_blank" rel="noopener">Document ${i+1}</a>`).join('')}</div>`}
+function safeDocumentUrl(value){
+  const text=String(value??'').trim();
+  if(!/^https?:\/\//i.test(text))return '';
+  try{const url=new URL(text);return ['http:','https:'].includes(url.protocol)?url.href:''}catch{return ''}
+}
+function linkListHtml(links){
+  if(!Array.isArray(links)||!links.length)return '';
+  return `<div class="doc-links">${links.map((value,i)=>{const url=safeDocumentUrl(value);return url?`<a href="${htmlSafe(url)}" target="_blank" rel="noopener noreferrer">Document ${i+1}</a>`:`<span class="muted">Document ${i+1}: invalid link — use an HTTP or HTTPS address</span>`}).join('')}</div>`
+}
 ensureState();syncAllLinkedDeliveries();syncBilling();
 
 function saveState(reason='Saved'){
@@ -1896,7 +2027,7 @@ function plannerSources(){const linked=weeklyPlanner.assignments.filter(x=>x.sou
   <section class="planner-panel"><div class="planner-panel-head"><div><h3>Employee availability</h3><div class="planner-hint">Management-confirmed planning input only. Availability is never inferred.</div></div>${weeklyPlanner.permissions?.edit?'<button class="mini" data-planner-action="add-availability">+ Add employee</button>':''}</div><div class="planner-table-wrap"><table class="planner-table"><thead><tr><th>Employee</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Notes</th><th></th></tr></thead><tbody>${plannerAvailabilityRows()||'<tr><td colspan="8">No availability has been confirmed for this week.</td></tr>'}</tbody></table></div></section>
   <section class="planner-panel"><div class="planner-panel-head"><div><h3>Equipment and resource allocations</h3><div class="planner-hint">Record crane, truck, trailer, forklift, and other shared-resource readiness. Duplicate resource/day assignments are blocked.</div></div>${weeklyPlanner.permissions?.edit?'<button class="mini" data-planner-action="add-resource">+ Add resource</button>':''}</div><div class="planner-table-wrap"><table class="planner-table"><thead><tr><th>Type</th><th>Resource</th><th>Date</th><th>Start</th><th>End</th><th>Work area</th><th>Project / location</th><th>Readiness</th><th></th></tr></thead><tbody>${plannerResourceRows()||'<tr><td colspan="9">No equipment allocations have been entered.</td></tr>'}</tbody></table></div>${weeklyPlanner.permissions?.edit?'<div class="planner-panel-body"><button class="dark" data-planner-action="save-inputs">Save availability and resources</button></div>':''}</section>
   <section class="planner-panel"><div class="planner-panel-head"><h3>Manual planning assignments</h3><span class="planner-status needs_review">${manual.length} management input</span></div><div class="planner-panel-body"><div class="planner-hint">Crew-specific notes, backup work, maintenance priorities, and other planning details are maintained in Crew Review and do not rewrite production, delivery, installation, or QC source records.</div></div></section>`}
-async function loadWeeklyPlannerInstallEmployees(force=false){if(weeklyPlannerInstallEmployeesPromise)return weeklyPlannerInstallEmployeesPromise;if(weeklyPlannerInstallEmployeesReady&&!force)return Promise.resolve(!weeklyPlannerInstallEmployeesError);if(!sb||!currentUser){weeklyPlannerInstallEmployeesError='Sign in to load Installation employee names.';weeklyPlannerInstallEmployeesReady=true;return Promise.resolve(false)}weeklyPlannerInstallEmployeesPromise=(async()=>{let ok=false;try{const {data,error}=await sb.from('walls_installation_resources').select('resource_name').eq('resource_type','employee').not('resource_name','is',null).limit(250);if(error)throw error;weeklyPlannerInstallEmployees=[...new Set((data||[]).map(x=>String(x.resource_name||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));weeklyPlannerInstallEmployeesError='';ok=true}catch(error){weeklyPlannerInstallEmployees=[];weeklyPlannerInstallEmployeesError=error?.message||'Installation employee names could not be loaded.';console.error('Weekly Planner could not load Installation employees:',error)}finally{weeklyPlannerInstallEmployeesReady=true;weeklyPlannerInstallEmployeesPromise=null;if(state.view==='weekly-planner'&&state.weeklyPlannerView==='review'&&plannerSection(weeklyPlannerSelected)?.section_key==='installation_stone'){refreshPlannerEmployeeHistoryChoices();const hint=document.getElementById('plannerInstallationEmployeeHint');if(hint)hint.textContent=plannerInstallationEmployeeHint()}}return ok})();return weeklyPlannerInstallEmployeesPromise}
+async function loadWeeklyPlannerInstallEmployees(force=false){if(weeklyPlannerInstallEmployeesPromise)return weeklyPlannerInstallEmployeesPromise;if(weeklyPlannerInstallEmployeesReady&&!force)return Promise.resolve(!weeklyPlannerInstallEmployeesError);if(!sb||!currentUser){weeklyPlannerInstallEmployeesError='Sign in to load Installation employee names.';weeklyPlannerInstallEmployeesReady=true;return Promise.resolve(false)}const user=currentUser,client=sb,epoch=hubSessionEpoch;const valid=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch;weeklyPlannerInstallEmployeesPromise=Promise.resolve().then(async()=>{let ok=false;try{const {data,error}=await sb.from('walls_installation_resources').select('resource_name').eq('resource_type','employee').not('resource_name','is',null).limit(250);if(!valid())return false;if(error)throw error;weeklyPlannerInstallEmployees=[...new Set((data||[]).map(x=>String(x.resource_name||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));weeklyPlannerInstallEmployeesError='';ok=true}catch(error){if(!valid())return false;weeklyPlannerInstallEmployees=[];weeklyPlannerInstallEmployeesError=error?.message||'Installation employee names could not be loaded.';console.error('Weekly Planner could not load Installation employees:',error)}finally{if(valid()){weeklyPlannerInstallEmployeesReady=true;weeklyPlannerInstallEmployeesPromise=null;if(state.view==='weekly-planner'&&state.weeklyPlannerView==='review'&&plannerSection(weeklyPlannerSelected)?.section_key==='installation_stone'){refreshPlannerEmployeeHistoryChoices();const hint=document.getElementById('plannerInstallationEmployeeHint');if(hint)hint.textContent=plannerInstallationEmployeeHint()}}}return ok});return weeklyPlannerInstallEmployeesPromise}
 // Names stay in the authorized planner snapshot; this picker never provisions accounts.
 // RLS on both tables checks weekly_planner_permission('view'); no service-role client.
 function plannerInstallationEmployeeHint(){return weeklyPlannerInstallEmployeesError?'Installation names unavailable: '+weeklyPlannerInstallEmployeesError:weeklyPlannerInstallEmployeesReady?'Installation employee names are loaded from the live Installation dashboard. Check or uncheck to add or remove; Save section to keep the change.':'Loading employee names from the Installation dashboard…'}
@@ -1993,27 +2124,40 @@ function refreshWeeklyPlannerFromRealtime(){
   weeklyPlannerRealtimePromise=request;return request;
 }
 function subscribeWeeklyPlanner(){if(!sb||!currentUserIsAdmin||state.view!=='weekly-planner')return;const week=state.week;if(weeklyPlannerChannel&&weeklyPlannerChannelWeek===week)return;if(weeklyPlannerChannel)sb.removeChannel(weeklyPlannerChannel);if(weeklyPlannerRefreshTimer){clearTimeout(weeklyPlannerRefreshTimer);weeklyPlannerRefreshTimer=null}weeklyPlannerChannelWeek=week;weeklyPlannerChannel=sb.channel('weekly-planner-live-'+week);['weekly_planner_weeks','weekly_planner_sections','weekly_planner_conflicts'].forEach(table=>weeklyPlannerChannel.on('postgres_changes',{event:'*',schema:'public',table,filter:`week_start=eq.${week}`},()=>{if(weeklyPlannerBusy||state.view!=='weekly-planner'||state.week!==week)return;if(weeklyPlannerRefreshTimer)clearTimeout(weeklyPlannerRefreshTimer);weeklyPlannerRefreshTimer=setTimeout(()=>{weeklyPlannerRefreshTimer=null;if(!weeklyPlannerBusy&&state.view==='weekly-planner'&&state.week===week)void refreshWeeklyPlannerFromRealtime()},450)}));weeklyPlannerChannel.subscribe()}
-async function weeklyPlannerRpc(name,args,success){if(weeklyPlannerBusy)return false;weeklyPlannerBusy=true;showInventoryToast('Saving Weekly Planner…');let data=null,error=null;try{({data,error}=await sb.rpc(name,args||{}))}catch(cause){error=cause}finally{weeklyPlannerBusy=false}if(error){showInventoryToast('Weekly Planner update failed: '+(error.message||'request could not be completed'));if(state.view==='weekly-planner')await loadWeeklyPlanner(true);return false}const refreshed=state.view==='weekly-planner'?await loadWeeklyPlanner(true):true;if(success)showInventoryToast(refreshed?success:'Saved, but the planner could not refresh. Use Refresh screen before editing again.');return data||true}
+async function weeklyPlannerRpc(name,args,success){
+  if(!sb||!currentUser||weeklyPlannerBusy)return false;
+  const user=currentUser,client=sb,epoch=hubSessionEpoch,week=state.week;const valid=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch;
+  weeklyPlannerBusy=true;showInventoryToast('Saving Weekly Planner…');let data=null,error=null,uncertain=false;
+  try{({data,error}=await client.rpc(name,args||{}))}catch(cause){error=cause;uncertain=true}finally{if(valid())weeklyPlannerBusy=false}
+  if(!valid()||state.week!==week)return false;
+  if(error){showInventoryToast(uncertain?'Weekly Planner save outcome unknown. Refresh and verify before retrying; no automatic retry was made.':'Weekly Planner update failed: '+(error.message||'request could not be completed'));if(state.view==='weekly-planner')await loadWeeklyPlanner(true);return false}
+  const refreshed=state.view==='weekly-planner'?await loadWeeklyPlanner(true):true;if(valid()&&state.week===week&&success)showInventoryToast(refreshed?success:'Saved, but the planner could not refresh. Use Refresh screen before editing again.');return data||true
+}
 function plannerCaptureInputs(){const availability=[...document.querySelectorAll('[data-planner-availability]')].map(row=>{const get=f=>row.querySelector(`[data-field="${f}"]`)?.value||'';return {employee_name:get('employee_name').trim(),availability:{mon:get('mon'),tue:get('tue'),wed:get('wed'),thu:get('thu'),fri:get('fri')},notes:get('notes').trim(),confirmed:true}}).filter(x=>x.employee_name);const resources=[...document.querySelectorAll('[data-planner-resource]')].map(row=>{const get=f=>row.querySelector(`[data-field="${f}"]`)?.value||'';return {resource_type:get('resource_type'),resource_name:get('resource_name').trim(),work_date:get('work_date'),start_time:get('start_time'),end_time:get('end_time'),section_key:get('section_key'),project_location:get('project_location').trim(),readiness_status:get('readiness_status'),notes:''}}).filter(x=>x.resource_name);return {availability,resources}}
 function plannerCaptureSection(section){const previous=new Map(plannerSectionPeople(section.section_id).map(person=>[String(person.employee_name||'').trim().toLowerCase(),person])),people=plannerSelectedEmployeeNames().map(name=>({name,role:previous.get(name.toLowerCase())?.role_name||'',is_leader:name.toLowerCase()===(document.getElementById('plannerCrewLeader')?.value||'').trim().toLowerCase()}));const assignments=[...document.querySelectorAll('[data-planner-assignment]')].map(row=>{const get=f=>row.querySelector(`[data-field="${f}"]`)?.value||'';return {work_date:get('work_date'),project_location:get('project_location'),assignment_text:get('assignment_text'),start_time:get('start_time'),status_hold:get('status_hold'),backup_instructions:get('backup_instructions'),readiness_status:get('readiness_status'),source_authority:get('source_authority')||'manual',source_type:get('source_type'),source_id:get('source_id'),sort_order:Number(get('sort_order')||0)}});return {p_section_id:section.section_id,p_expected_version:Number(section.schedule_version),p_crew_leader:(document.getElementById('plannerCrewLeader')?.value||'').trim(),p_people:people,p_assignments:assignments}}
 function plannerSectionFeedback(message){weeklyPlannerDraftError=message;const target=document.getElementById('plannerSectionFeedback');if(target)target.textContent=message;showInventoryToast(message)}
 async function plannerSaveSection(approve=false){
-  const section=plannerSection(weeklyPlannerSelected);if(!section||weeklyPlannerBusy)return false;
+  const section=plannerSection(weeklyPlannerSelected);if(!sb||!currentUser||!section||weeklyPlannerBusy)return false;
+  const user=currentUser,client=sb,epoch=hubSessionEpoch,week=state.week;const valid=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch;const current=()=>valid()&&state.week===week;
   const input=plannerCaptureSection(section);
   if(approve&&(!input.p_crew_leader||!input.p_people.length)){plannerSectionFeedback('Before approval, enter a crew leader and select at least one employee. Your edits have not been submitted.');return false}
-  weeklyPlannerBusy=true;let draftSaved=false,approved=false,message='';
+  weeklyPlannerBusy=true;let draftSaved=false,approved=false,message='',uncertain=false;
   showInventoryToast(approve?'Saving and approving section…':'Saving crew schedule…');
   try{
-    const result=await sb.rpc('save_weekly_planner_section',input);
+    let result;try{result=await client.rpc('save_weekly_planner_section',input)}catch(error){uncertain=true;throw error};
+    if(!current())return false;
     if(result.error)throw new Error(result.error.message||'Section draft could not be saved.');
     draftSaved=true;const version=Number(result.data?.schedule_version);
     if(!Number.isFinite(version))throw new Error('The draft saved, but its new version was not returned. Refresh before trying approval again.');
     // Keep the confirmed version even if approval fails; never reuse the pre-save version.
     section.schedule_version=version;section.status=result.data?.status||'needs_review';
-    if(approve){const approval=await sb.rpc('approve_weekly_planner_section',{p_section_id:section.section_id,p_expected_version:version});if(approval.error)throw new Error('Draft saved, but approval failed: '+approval.error.message);approved=true}
-  }catch(error){message=error?.message||'Section save or approval failed.'}finally{weeklyPlannerBusy=false}
+    if(approve){let approval;try{approval=await client.rpc('approve_weekly_planner_section',{p_section_id:section.section_id,p_expected_version:version})}catch(error){uncertain=true;throw error};if(!current())return false;if(approval.error)throw new Error('Draft saved, but approval failed: '+approval.error.message);approved=true}
+  }catch(error){message=error?.message||'Section save or approval failed.'}finally{if(valid())weeklyPlannerBusy=false}
+  if(!current())return false;
+  if(uncertain){plannerSectionFeedback('The save or approval response was lost; it may have completed. Your on-screen edits are retained. Refresh and verify the section before retrying. No automatic retry was made.');return false}
   if(message){plannerSectionFeedback(message+(draftSaved?' Your saved draft is retained; correct the issue or refresh before retrying.':' Your on-screen edits are retained. Try Save section again; refreshing will discard unsaved edits.'));return false}
   weeklyPlannerDraftError='';const refreshed=state.view==='weekly-planner'?await loadWeeklyPlanner(true):true;
+  if(!current())return false;
   showInventoryToast((approved?'Section saved and approved.':'Crew schedule saved.')+(refreshed?'':' Refresh failed. Use Refresh screen before editing again.'));return true;
 }
 function plannerAddAssignment(){const section=plannerSection(weeklyPlannerSelected);if(!section)return;const days=[0,1,2,3,4],used=plannerSectionAssignments(section.section_id);weeklyPlanner.assignments.push({assignment_id:'temp-'+Date.now(),section_id:section.section_id,work_date:addDays(state.week,days[Math.min(used.length,4)]),project_location:'',assignment_text:'',start_time:'',status_hold:'',backup_instructions:'',source_authority:'manual',source_type:'',source_id:'',readiness_status:'unconfirmed',sort_order:used.length+1});renderWeeklyPlanner()}
@@ -2176,7 +2320,7 @@ function renderOverview(){
       <div class="section-head"><h3>Needs Attention</h3><span class="muted" style="font-size:11px">Exceptions only</span></div>
       <div class="section-body">
         <div class="attention-grid">
-          ${alerts.length?alerts.map(a=>`<div class="attention-card ${a.cls}"><div class="attention-title">${a.title}</div><div class="attention-text">${a.text}</div></div>`).join(''):'<div class="attention-card ok"><div class="attention-title">No major exceptions</div><div class="attention-text">Nothing currently requires attention.</div></div>'}
+          ${alerts.length?alerts.map(a=>`<div class="attention-card ${a.cls}"><div class="attention-title">${htmlSafe(a.title)}</div><div class="attention-text">${htmlSafe(a.text)}</div></div>`).join(''):'<div class="attention-card ok"><div class="attention-title">No major exceptions</div><div class="attention-text">Nothing currently requires attention.</div></div>'}
         </div>
       </div>
     </section>`;
@@ -2201,7 +2345,7 @@ function productionHeightLabel(value){return Number(value)+"′ walls"}
 function productionLfBreakdown(job){const h=job.lfByHeight||{};return [['h4','4′'],['h5','5′'],['h8','8′'],['h9','9′'],['h10','10′'],['h12','12′']].filter(([k])=>Number(h[k]||0)>0).map(([k,l])=>`${l}: ${Number(h[k]).toLocaleString()} LF`).join(' · ')||'Wall-height LF not entered'}
 function productionStageRank(stage){return ['planned','setup_in_progress','setup_complete','ready_for_pour','poured','curing','stripped'].indexOf(stage)}
 function productionReleasePill(job){return job.releaseStatus==='Released for Production'?'<span class="production-pill release">Released for Production</span>':'<span class="production-pill blocked">Not Released for Production</span>'}
-function productionDocumentLink(job){const link=Array.isArray(job.documentLinks)&&job.documentLinks[0];return link?`<a class="mini" href="${htmlSafe(link)}" target="_blank" rel="noopener">Open released job documents</a>`:''}
+function productionDocumentLink(job){const link=Array.isArray(job.documentLinks)&&job.documentLinks[0];if(!link)return '';const url=safeDocumentUrl(link);return url?`<a class="mini" href="${htmlSafe(url)}" target="_blank" rel="noopener noreferrer">Open released job documents</a>`:'<span class="muted">Invalid document link — use an HTTP or HTTPS address</span>'}
 function productionAssignmentActions(a){
   const p=wallsProduction.permissions||{},job=productionJob(a.wall_record_id),released=job.releaseStatus==='Released for Production',buttons=[];
   if(a.stage==='planned'&&p.assign)buttons.push(`<button class="mini" data-prod-edit="${a.assignment_id}">Edit plan</button><button class="mini" data-prod-cancel="${a.assignment_id}" style="color:#9e3434;border-color:#e7bcbc">Delete assignment</button>`);
@@ -2300,16 +2444,16 @@ function wallStageLabel(stage){
 function wallCard(w,stage,date,dragMode=false){
   const canManage=currentUserIsAdmin;
   const canDrag=canManage&&dragMode;
-  const dragAttrs=canDrag?` draggable="true" data-drag-wall="${w.id}" data-drag-stage="${stage}"`:'';
+  const dragAttrs=canDrag?` draggable="true" data-drag-wall="${htmlSafe(w.id)}" data-drag-stage="${htmlSafe(stage)}"`:'';
   return `<div class="wall-job ${wallIsCompleted(w)?'complete':''} ${dragMode?'draggable':''}"${dragAttrs}>
-    <div class="wall-job-top">${canManage?`<button type="button" draggable="false" class="job-link" data-wall="${w.id}">${w.job}</button>`:`<strong>${htmlSafe(w.job)}</strong>`}<div class="badges"><span class="badge ${w.source==='Verity'?'verity':'other'}">${w.source}</span><span class="badge ${w.saleType==='Pre-Sold'?'presold':w.saleType==='Inventory'?'inventory':w.saleType==='BTR'?'btr':w.saleType==='Mixed'?'mixed':'other'}">${w.saleType}</span></div></div>
-    <div class="wall-model">${w.type||'—'}</div><div class="wall-dev">${w.project||w.development||'—'}</div>${w.development&&w.development!==w.project?`<div class="job-sub">${w.development}</div>`:''}<div class="wall-address">${w.address||'—'}</div>
-    ${w.constraint?`<div class="job-sub" style="margin-top:5px;color:#9a5d16"><strong>Constraint:</strong> ${w.constraint}</div>`:''}${linkListHtml(w.links)}
-    <div class="milestone ${stage}">${stage==='dig'?'Dig Week':stage==='prod'?'Production':'Install'}: ${fmt(date)}</div>${w.deliveryDate?`<div class="job-sub" style="margin-top:5px;font-weight:850">Delivery: ${fmt(w.deliveryDate)}</div>`:''}
+    <div class="wall-job-top">${canManage?`<button type="button" draggable="false" class="job-link" data-wall="${htmlSafe(w.id)}">${htmlSafe(w.job)}</button>`:`<strong>${htmlSafe(w.job)}</strong>`}<div class="badges"><span class="badge ${w.source==='Verity'?'verity':'other'}">${htmlSafe(w.source)}</span><span class="badge ${w.saleType==='Pre-Sold'?'presold':w.saleType==='Inventory'?'inventory':w.saleType==='BTR'?'btr':w.saleType==='Mixed'?'mixed':'other'}">${htmlSafe(w.saleType)}</span></div></div>
+    <div class="wall-model">${htmlSafe(w.type||'—')}</div><div class="wall-dev">${htmlSafe(w.project||w.development||'—')}</div>${w.development&&w.development!==w.project?`<div class="job-sub">${htmlSafe(w.development)}</div>`:''}<div class="wall-address">${htmlSafe(w.address||'—')}</div>
+    ${w.constraint?`<div class="job-sub" style="margin-top:5px;color:#9a5d16"><strong>Constraint:</strong> ${htmlSafe(w.constraint)}</div>`:''}${linkListHtml(w.links)}
+    <div class="milestone ${htmlSafe(stage)}">${stage==='dig'?'Dig Week':stage==='prod'?'Production':'Install'}: ${fmt(date)}</div>${w.deliveryDate?`<div class="job-sub" style="margin-top:5px;font-weight:850">Delivery: ${fmt(w.deliveryDate)}</div>`:''}
     ${canManage&&stage==='prod'?(wallPlanReleased(w)?`<div class="plan-ok">✓ Released for Production</div>`:`<div class="plan-warning">⚠ NOT RELEASED FOR PRODUCTION · ${wallPlanCurrentStage(w).label}</div>`):''}
     ${canDrag?`<div class="drag-hint">Grab anywhere on this card and drag it to the same lane in another week.</div>`:''}
     ${wallLfSummary(w)?`<div class="wall-lf-breakdown">${wallLfSummary(w)}</div>`:''}
-    <div class="wall-foot"><span>${w.units||1} unit${Number(w.units||1)===1?'':'s'} / shell${Number(w.units||1)===1?'':'s'}${Number(w.lf||0)>0?' · '+Number(w.lf).toLocaleString()+' total LF':''}</span>${canManage?`<div class="wall-actions">${canDrag?`<button type="button" draggable="false" data-move-wall="${w.id}|${stage}|-7">← 1 wk</button><button type="button" draggable="false" data-move-wall="${w.id}|${stage}|7">1 wk →</button>`:''}<button type="button" draggable="false" data-wall="${w.id}">Edit</button><button type="button" draggable="false" data-plan-review="${w.id}">Plans</button>${!wallIsCompleted(w)?`<button type="button" draggable="false" data-complete-wall="${w.id}">Complete</button>`:''}</div>`:''}</div>
+    <div class="wall-foot"><span>${htmlSafe(w.units||1)} unit${Number(w.units||1)===1?'':'s'} / shell${Number(w.units||1)===1?'':'s'}${Number(w.lf||0)>0?' · '+Number(w.lf).toLocaleString()+' total LF':''}</span>${canManage?`<div class="wall-actions">${canDrag?`<button type="button" draggable="false" data-move-wall="${htmlSafe(w.id)}|${htmlSafe(stage)}|-7">← 1 wk</button><button type="button" draggable="false" data-move-wall="${htmlSafe(w.id)}|${htmlSafe(stage)}|7">1 wk →</button>`:''}<button type="button" draggable="false" data-wall="${htmlSafe(w.id)}">Edit</button><button type="button" draggable="false" data-plan-review="${htmlSafe(w.id)}">Plans</button>${!wallIsCompleted(w)?`<button type="button" draggable="false" data-complete-wall="${htmlSafe(w.id)}">Complete</button>`:''}</div>`:''}</div>
   </div>`
 }
 function wallWeekCard(week,dragMode=false){
@@ -2444,7 +2588,7 @@ function installationWorkspaceActivityRows(job){
 const installationWorkspacePanelFull=installationWorkspacePanel;
 installationWorkspacePanel=function(job,tab,events=[]){return tab==='activities'?installationWorkspaceActivityRows(job):installationWorkspacePanelFull(job,tab,events)};
 function installationWorkspacePanel(job,tab,events=[]){const activities=job.activities||[],prod=job.production||[],qc=new Map((job.qc||[]).map(x=>[x.assignment_id,x])),loads=job.delivery||[],issues=job.issues||[],resources=activities.flatMap(a=>installResources(a).map(r=>({...r,_activity:a}))),resourceSummary=[...new Map(resources.map(r=>[`${r.resource_type}|${String(r.resource_name||'').toLowerCase()}`,r.resource_name]).filter(([key,name])=>name)).values()],d=job.job||{},status=job.overall_status||'Scheduled';if(tab==='activities'){const canManage=Boolean(currentUserIsAdmin||wallsInstallation.permissions?.manage),canAssign=canManage||wallsInstallation.permissions?.resources,visibleActivities=activities.slice(0,100),activityMarkup=visibleActivities.map(a=>{const id=htmlSafe(a.activity_id||''),title=htmlSafe(String(a.activity_type||'Field activity').replaceAll('_',' ')),status=htmlSafe(String(a.status||'planned').replaceAll('_',' ')),date=htmlSafe(a.activity_date||'Date not entered'),notes=htmlSafe(String(a.notes||'').slice(0,240));return `<article class="install-card"><div style="display:flex;justify-content:space-between;gap:8px"><strong>${title}</strong><span class="install-status">${status}</span></div><div class="production-meta">${date}${a.start_time?' · '+htmlSafe(String(a.start_time).slice(0,5)):''}${a.end_time?'–'+htmlSafe(String(a.end_time).slice(0,5)):''}</div>${notes?`<div class="production-meta">${notes}</div>`:''}${canManage||canAssign?`<div class="install-actions no-print">${canManage?`<button type="button" class="mini" data-install-edit-activity="${id}">Edit activity</button>`:''}${canAssign?`<button type="button" class="mini" data-install-edit-resources="${id}">Manage crew/equipment</button>`:''}</div>`:''}</article>`}).join('');return `${activityMarkup||'<div class="production-empty">No field activities are recorded yet.</div>'}${activities.length>visibleActivities.length?`<div class="production-meta">Showing the most recent 100 activities; ${activities.length-visibleActivities.length} older activities remain in History.</div>`:''}${canManage?`<button type="button" class="mini" data-install-add-for-job="${htmlSafe(job.record_id)}">+ Add activity to this job</button>`:''}`};if(tab==='resources')return `${resources.map(r=>`<div class="history-row"><div>${htmlSafe(r._activity.activity_date)}</div><div><strong>${htmlSafe(r.resource_name)}</strong><div class="job-sub">${htmlSafe(r.resource_type)} · ${htmlSafe(r.role_name||'Role unconfirmed')}</div></div><div>${htmlSafe(r.availability_status)} · ${htmlSafe(r.readiness_status)}</div><div>${htmlSafe(r._activity.activity_type.replaceAll('_',' '))}</div></div>`).join('')||'<div class="production-empty">No crew or equipment assignments yet.</div>'}<button class="mini" data-install-readiness="${job.record_id}">Site readiness & closeout</button>`;if(tab==='production')return `<div class="lookahead"><table><thead><tr><th>Run</th><th>Stage</th><th>Final QC</th><th>Delivered load</th><th>Installation</th></tr></thead><tbody>${prod.map(p=>{const q=qc.get(p.assignment_id),ship=loads.find(l=>(l.assignment_ids||[]).includes(p.assignment_id)),installed=activities.some(a=>a.activity_type==='wall_installation'&&a.status==='completed'&&(a.production_scope||[]).some(s=>s.assignment_id===p.assignment_id));return `<tr><td>Table ${htmlSafe(p.table_id||'—')} · ${htmlSafe(productionHeightLabel(p.wall_height))} · ${Number(p.planned_lf||0).toLocaleString()} LF</td><td>${htmlSafe(p.stage)}</td><td>${htmlSafe(q?.status||'Pending')}</td><td>${htmlSafe(ship?.load||ship?.record_id||'Not linked')}</td><td>${installed?'Installed':'Not installed'}</td></tr>`}).join('')||'<tr><td colspan="5">No production assignments linked to this job.</td></tr>'}</tbody></table></div>`;if(tab==='closeout')return `<div class="production-warning">${htmlSafe(status)} · closeout is separate from QC release and wall installation.</div><button class="mini" data-install-readiness="${job.record_id}">Update readiness & closeout</button><h3>Open issues</h3>${issues.filter(i=>i.status==='open').map(i=>`<div class="attention-card ${i.severity==='hold'?'hold':''}"><strong>${htmlSafe(i.category)} · ${htmlSafe(i.severity)}</strong><div>${htmlSafe(i.description)}</div><button class="mini" data-install-resolve="${i.issue_id}">Resolve issue</button></div>`).join('')||'<div class="production-empty">No open field issues.</div>'}<button class="mini" data-install-issue="${job.record_id}|">Report issue</button>`;if(tab==='history')return events.length?events.map(e=>`<div class="history-row"><div>${htmlSafe(fmt(e.occurred_at))}</div><div><strong>${htmlSafe(e.event_type.replaceAll('_',' '))}</strong><div class="job-sub">${htmlSafe(e.actor_email||'System')}</div></div><div>${htmlSafe(JSON.stringify(e.detail||{}))}</div></div>`).join(''):'<div class="production-empty">No installation event history has been recorded.</div>';const next=activities.find(a=>!['completed','cancelled'].includes(a.status));return `<div class="install-workspace-summary"><p><strong>Job:</strong> ${htmlSafe(d.job||job.record_id)} · ${htmlSafe(d.project||d.development||'—')}</p><p><strong>Address:</strong> ${htmlSafe(d.address||'Not entered')} · <strong>Model:</strong> ${htmlSafe(d.type||'—')}</p><p><strong>Master installation date:</strong> ${htmlSafe(d.installDate||'Not scheduled')} · <strong>Status:</strong> ${htmlSafe(status)}</p><p><strong>Next planned activity:</strong> ${next?`${htmlSafe(next.activity_type.replaceAll('_',' '))} · ${htmlSafe(next.activity_date)}`:'Review site readiness / plan next activity'}</p><p><strong>Resources:</strong> ${resourceSummary.length?htmlSafe(resourceSummary.join(', ')):'Not assigned'}</p><p><strong>Open restrictions:</strong> ${issues.filter(i=>i.status==='open').length} · <strong>Production runs:</strong> ${prod.length} · <strong>Loads:</strong> ${loads.length}</p></div><button class="mini" data-install-open-master="${job.record_id}">Open authoritative Current Week job</button><button class="mini" data-install-readiness="${job.record_id}">Readiness & closeout</button>`}
-async function openInstallationJobWorkspace(id,initialTab='overview'){const job=installationJob(id);if(!job)return;const {data:events,error}=await sb.from('walls_installation_events').select('event_id,event_type,detail,actor_email,occurred_at').eq('wall_record_id',id).order('occurred_at',{ascending:false}).limit(100);if(error){alert('Could not load installation history: '+error.message);return}const tabs=[['overview','Overview'],['activities','Field Activities'],['resources','Crew & Equipment'],['production','Production & Loads'],['closeout','Issues & Closeout'],['history','History']];let active=tabs.some(([k])=>k===initialTab)?initialTab:'overview';const body=`<nav class="install-job-tabs">${tabs.map(([k,label])=>`<button type="button" class="mini ${k===active?'active':''}" data-install-job-tab="${k}">${label}</button>`).join('')}</nav><div class="install-job-panel">${installationWorkspacePanel(job,active,events||[])}</div>`;openProductionModal(`${job.job.job||id} · Installation workspace`,`${job.job.project||job.job.development||'Superior Walls'} · one foundation record; production, shipments, and field history remain linked.`,body,'Close',closeProductionModal);const modalBody=document.getElementById('productionModalBody'),panel=modalBody?.querySelector('.install-job-panel'),tabNav=modalBody?.querySelector('.install-job-tabs');tabNav?.addEventListener('click',event=>{const button=event.target?.closest?.('[data-install-job-tab]');if(!button||!panel)return;active=button.dataset.installJobTab;tabNav.querySelectorAll('[data-install-job-tab]').forEach(x=>x.classList.toggle('active',x===button));panel.innerHTML=installationWorkspacePanel(job,active,events||[]);bindWallsInstallationEnhancedControls(panel);bindWallsInstallationEditControls()});panel?.querySelectorAll('[data-install-open-master]').forEach(button=>button.onclick=()=>{closeProductionModal();openWallModal(button.dataset.installOpenMaster)});if(panel)bindWallsInstallationEnhancedControls(panel);bindWallsInstallationEditControls()}
+async function openInstallationJobWorkspace(id,initialTab='overview'){const job=installationJob(id);if(!job)return;const user=currentUser,client=sb,epoch=hubSessionEpoch;const {data:events,error}=await sb.from('walls_installation_events').select('event_id,event_type,detail,actor_email,occurred_at').eq('wall_record_id',id).order('occurred_at',{ascending:false}).limit(100);if(currentUser!==user||sb!==client||hubSessionEpoch!==epoch)return;if(error){alert('Could not load installation history: '+error.message);return}const tabs=[['overview','Overview'],['activities','Field Activities'],['resources','Crew & Equipment'],['production','Production & Loads'],['closeout','Issues & Closeout'],['history','History']];let active=tabs.some(([k])=>k===initialTab)?initialTab:'overview';const body=`<nav class="install-job-tabs">${tabs.map(([k,label])=>`<button type="button" class="mini ${k===active?'active':''}" data-install-job-tab="${k}">${label}</button>`).join('')}</nav><div class="install-job-panel">${installationWorkspacePanel(job,active,events||[])}</div>`;openProductionModal(`${job.job.job||id} · Installation workspace`,`${job.job.project||job.job.development||'Superior Walls'} · one foundation record; production, shipments, and field history remain linked.`,body,'Close',closeProductionModal);const modalBody=document.getElementById('productionModalBody'),panel=modalBody?.querySelector('.install-job-panel'),tabNav=modalBody?.querySelector('.install-job-tabs');tabNav?.addEventListener('click',event=>{const button=event.target?.closest?.('[data-install-job-tab]');if(!button||!panel)return;active=button.dataset.installJobTab;tabNav.querySelectorAll('[data-install-job-tab]').forEach(x=>x.classList.toggle('active',x===button));panel.innerHTML=installationWorkspacePanel(job,active,events||[]);bindWallsInstallationEnhancedControls(panel);bindWallsInstallationEditControls()});panel?.querySelectorAll('[data-install-open-master]').forEach(button=>button.onclick=()=>{closeProductionModal();openWallModal(button.dataset.installOpenMaster)});if(panel)bindWallsInstallationEnhancedControls(panel);bindWallsInstallationEditControls()}
 function openWallsInstallationIssueForm(jobId,activityId=''){if(!installationCanManage()&&!wallsInstallation.permissions?.field_progress)return;openProductionModal('Report field issue','Issue time and reporting identity are recorded by Supabase when you save.',`<div class="production-modal-grid"><label class="field"><span>Category</span><select id="installIssueCategory">${['site','stone','production','qc','delivery','equipment','crew','weather','schedule','other'].map(x=>`<option value="${x}">${x.replaceAll('_',' ')}</option>`).join('')}</select></label><label class="field"><span>Severity</span><select id="installIssueSeverity"><option value="warning">Needs review</option><option value="hold">Hold / stop work</option></select></label><label class="field full"><span>Description</span><textarea id="installIssueDescription" rows="4" maxlength="2000" required></textarea></label></div>`,'Save issue',async()=>{const description=document.getElementById('installIssueDescription').value.trim();if(description.length<3){alert('Describe the issue before saving.');return}closeProductionModal();await wallsInstallationRpc('report_walls_installation_issue',{p_wall_record_id:jobId,p_activity_id:activityId||null,p_category:document.getElementById('installIssueCategory').value,p_severity:document.getElementById('installIssueSeverity').value,p_description:description},'Field issue recorded.')})}
 function openWallsInstallationResolveForm(issueId){const issue=(wallsInstallation.jobs||[]).flatMap(j=>j.issues||[]).find(x=>String(x.issue_id)===String(issueId));if(!issue)return;openProductionModal('Resolve field issue',`${issue.category} · ${issue.severity} · ${issue.reported_by_email||'Reported field issue'}. Original issue remains in history.`, `<label class="field full"><span>Resolution details</span><textarea id="installResolutionNote" rows="4" maxlength="2000" required></textarea></label>`,'Resolve issue',async()=>{const note=document.getElementById('installResolutionNote').value.trim();if(note.length<3){alert('Enter resolution details before saving.');return}closeProductionModal();await wallsInstallationRpc('resolve_walls_installation_issue',{p_issue_id:Number(issueId),p_resolution_note:note},'Field issue resolved.')})}
 function openWallsInstallationResourceStatusForm(value){const [id,availability,readiness]=value.split('|'),row=(wallsInstallation.jobs||[]).flatMap(j=>(j.activities||[]).flatMap(a=>installResources(a))).find(x=>x.resource_assignment_id===id);if(!row)return;openProductionModal('Update resource readiness',`${row.resource_name} · ${row.resource_type}`,`<div class="production-modal-grid"><label class="field"><span>Availability</span><select id="installResourceAvailability">${['unconfirmed','confirmed','unavailable'].map(x=>`<option value="${x}" ${x===availability?'selected':''}>${x.replaceAll('_',' ')}</option>`).join('')}</select></label><label class="field"><span>Readiness</span><select id="installResourceReadiness">${['unconfirmed','ready','needs_service','hold','not_applicable'].map(x=>`<option value="${x}" ${x===readiness?'selected':''}>${x.replaceAll('_',' ')}</option>`).join('')}</select></label><label class="field full"><span>Operator / crew role</span><input id="installResourceRole" value="${htmlSafe(row.role_name||'')}"></label><label class="field full"><span>Problem / status note</span><textarea id="installResourceProblem" rows="3">${htmlSafe(row.problem_notes||'')}</textarea></label></div>`,'Save resource status',async()=>{const nextReadiness=document.getElementById('installResourceReadiness').value,problem=document.getElementById('installResourceProblem').value.trim();if(['hold','needs_service'].includes(nextReadiness)&&problem.length<3){alert('Describe the resource issue before setting a hold.');return}closeProductionModal();await wallsInstallationRpc('update_walls_installation_resource',{p_resource_assignment_id:id,p_expected_version:row.version,p_availability_status:document.getElementById('installResourceAvailability').value,p_readiness_status:nextReadiness,p_role_name:document.getElementById('installResourceRole').value,p_problem_notes:problem},'Resource status updated.')})}
@@ -2546,21 +2690,21 @@ function renderWallsActive(){
             ${active.length?active.map(w=>{
               const late=w.installDate&&normalizeDate(w.installDate)<today;
               const search=[w.job,w.type,w.project,w.development,w.customer,w.address].join(' ').toLowerCase();
-              return `<tr class="${late?'past-due':''}" data-active-wall-row="${w.id}" data-search="${search.replace(/"/g,'&quot;')}">
-                ${currentUserIsAdmin?`<td class="no-print"><input type="checkbox" data-wall-select="${w.id}"></td>`:''}
-                <td>${currentUserIsAdmin?`<button class="job-link" data-wall="${w.id}">${w.job}</button>`:htmlSafe(w.job)}</td>
-                <td>${w.type||'—'}</td>
-                <td>${w.project||'—'}</td>
-                <td>${w.development||'—'}</td>
+              return `<tr class="${late?'past-due':''}" data-active-wall-row="${htmlSafe(w.id)}" data-search="${htmlSafe(search)}">
+                ${currentUserIsAdmin?`<td class="no-print"><input type="checkbox" data-wall-select="${htmlSafe(w.id)}"></td>`:''}
+                <td>${currentUserIsAdmin?`<button class="job-link" data-wall="${htmlSafe(w.id)}">${htmlSafe(w.job)}</button>`:htmlSafe(w.job)}</td>
+                <td>${htmlSafe(w.type||'—')}</td>
+                <td>${htmlSafe(w.project||'—')}</td>
+                <td>${htmlSafe(w.development||'—')}</td>
                 <td>${fmt(w.digDate)}</td>
                 <td>${fmt(w.productionDate)}</td>
                 <td>${fmt(w.installDate)}</td>
                 <td>${late?'<span class="past-due-label">Past Install Date</span>':'Active'}</td>
-                ${currentUserIsAdmin?`<td><button type="button" class="mini" data-plan-review="${w.id}">${wallPlanReleased(w)?'Released':wallPlanCurrentStage(w).label}</button></td>
+                ${currentUserIsAdmin?`<td><button type="button" class="mini" data-plan-review="${htmlSafe(w.id)}">${wallPlanReleased(w)?'Released':wallPlanCurrentStage(w).label}</button></td>
                 <td class="no-print">
                   <div class="completion-cell">
-                    <input class="completion-month" type="month" data-completion-month="${w.id}" />
-                    <button type="button" class="quick-complete" data-quick-complete-wall="${w.id}">Complete</button>
+                    <input class="completion-month" type="month" data-completion-month="${htmlSafe(w.id)}" />
+                    <button type="button" class="quick-complete" data-quick-complete-wall="${htmlSafe(w.id)}">Complete</button>
                   </div>
                 </td>`:''}
               </tr>`
@@ -2596,7 +2740,7 @@ function renderWallsActive(){
   document.querySelectorAll('[data-quick-complete-wall]').forEach(btn=>{
     btn.onclick=()=>{
       const id=btn.dataset.quickCompleteWall;
-      const monthInput=document.querySelector(`[data-completion-month="${id}"]`);
+      const monthInput=document.querySelector(`[data-completion-month="${CSS.escape(id)}"]`);
       const month=monthInput?.value||'';
       if(!month){alert('Choose the month this job was completed first.');monthInput?.focus();return}
       quickCompleteWall(id,month,true)
@@ -2652,12 +2796,12 @@ function renderWallsPlanReview(){
   const card=w=>{
     const p=wallPlanProgress(w),stage=wallPlanCurrentStage(w),u=urgency(w);
     const search=[w.job,w.project,w.type,w.address,stage.label,w.planReview?.notes,w.planReview?.trackerStatus].join(' ').toLowerCase();
-    return `<article class="plan-task-card ${u.card}" data-plan-card data-search="${search.replace(/"/g,'&quot;')}">
+    return `<article class="plan-task-card ${u.card}" data-plan-card data-search="${htmlSafe(search)}">
       <div class="plan-task-top">
         <div>
-          <button class="job-link plan-task-job" data-wall="${w.id}">${w.job}</button>
-          <div class="plan-task-title">${w.project||w.type||'Wall Job'}</div>
-          <div class="plan-task-sub">${w.type||'—'}${w.address?' · '+w.address:''}</div>
+          <button class="job-link plan-task-job" data-wall="${htmlSafe(w.id)}">${htmlSafe(w.job)}</button>
+          <div class="plan-task-title">${htmlSafe(w.project||w.type||'Wall Job')}</div>
+          <div class="plan-task-sub">${htmlSafe(w.type||'—')}${htmlSafe(w.address?' · '+w.address:'')}</div>
         </div>
         <span class="plan-urgency ${u.cls}">${u.label}</span>
       </div>
@@ -2669,10 +2813,10 @@ function renderWallsPlanReview(){
         <div><span>Production</span><strong>${fmt(w.productionDate)}</strong></div>
         <div><span>Plan Progress</span><strong>${p.done}/${p.total} complete</strong></div>
       </div>
-      ${w.planReview?.notes?`<div class="job-sub" style="margin-top:8px"><strong>Note:</strong> ${w.planReview.notes}</div>`:''}
+      ${w.planReview?.notes?`<div class="job-sub" style="margin-top:8px"><strong>Note:</strong> ${htmlSafe(w.planReview.notes)}</div>`:''}
       <div class="plan-task-actions">
         <div class="plan-progress"><span style="width:${p.pct}%"></span></div>
-        <button type="button" class="plan-review-button" data-plan-review="${w.id}">${wallPlanReleased(w)?'View Plans':'Open Job'}</button>
+        <button type="button" class="plan-review-button" data-plan-review="${htmlSafe(w.id)}">${wallPlanReleased(w)?'View Plans':'Open Job'}</button>
       </div>
     </article>`
   };
@@ -2936,7 +3080,7 @@ function yearBarHtml(weeks,start,end,label,classes='',title=''){
   const first=yearWeekIndex(weeks,start),last=yearWeekIndex(weeks,end||start);
   if(first<0&&last<0)return'';
   const a=Math.max(0,first<0?0:first),b=Math.min(weeks.length-1,last<0?a:last),span=Math.max(1,b-a+1);
-  return `<div class="year-bar ${classes}" style="grid-column:${a+2}/span ${span};grid-row:1" title="${title||label}">${label}</div>`
+  return `<div class="year-bar ${htmlSafe(classes)}" style="grid-column:${a+2}/span ${span};grid-row:1" title="${htmlSafe(title||label)}">${htmlSafe(label)}</div>`
 }
 function projectProductionDates(j){
   return (j.products||[]).flatMap(p=>pieceScheduleDates(p)).filter(Boolean).sort()
@@ -2957,7 +3101,7 @@ function renderWallsYearOutlook(){
     const productionDate=normalizeDate(w.productionDate),complete=wallIsCompleted(w);
     const detail=[w.customer||w.project||'',`Production ${fmt(productionDate)}`,w.type||''].filter(Boolean).join(' · ');
     const title=[`Job ${w.job}`,`Production ${fmt(productionDate)}`,w.customer||w.project||''].filter(Boolean).join(' | ');
-    return `<div class="year-gantt" style="--weeks:${weeks.length}"><div class="year-row-label"><div><div class="yr-main">${w.job} · ${w.type||'Wall Job'}</div><div class="yr-sub">${detail}</div></div></div>${yearCells(weeks)}${yearBarHtml(weeks,productionDate,productionDate,w.job,complete?'complete':'',title)}</div>`
+    return `<div class="year-gantt" style="--weeks:${weeks.length}"><div class="year-row-label"><div><div class="yr-main">${htmlSafe(w.job)} · ${htmlSafe(w.type||'Wall Job')}</div><div class="yr-sub">${htmlSafe(detail)}</div></div></div>${yearCells(weeks)}${yearBarHtml(weeks,productionDate,productionDate,w.job,complete?'complete':'',title)}</div>`
   }).join('');
   document.getElementById('view').innerHTML=`${divisionSubtabs('walls')}
     <div class="stats">${kpi('Production Jobs in '+year,walls.length)}${kpi('Scheduled LF',walls.reduce((n,w)=>n+Number(w.lf||0),0).toLocaleString())}${kpi('Active Jobs Missing Production Date',activeMissing)}</div>
@@ -2971,7 +3115,7 @@ function precastSpecialMarkers(j,weeks,year){
     const label=productDisplayName(j,p),seen=new Set();
     pieceScheduleDates(p).filter(d=>d.startsWith(yearText)).forEach(d=>{
       const idx=yearWeekIndex(weeks,d);if(idx<0||seen.has(idx))return;seen.add(idx);
-      marks.push(`<div class="year-special-marker" style="grid-column:${idx+2};grid-row:1" title="${label} · Production ${fmt(d)}"></div>`)
+      marks.push(`<div class="year-special-marker" style="grid-column:${idx+2};grid-row:1" title="${htmlSafe(label)} · Production ${fmt(d)}"></div>`)
     })
   });
   return marks.join('')
@@ -2990,7 +3134,7 @@ function renderPrecastYearOutlook(div){
     const uns=(j.products||[]).filter(p=>p.isSpecial&&!p.plannedDate&&!p.pouredDate).length;
     const detail=[j.customer||'',`Production ${fmt(span.start)} – ${fmt(span.end)}`,`${span.days} scheduled production day${span.days===1?'':'s'}`,['boxes','manholes'].includes(div)?`${regular} regular${specials?` · ${specials} scheduled special${specials===1?'':'s'}`:''}`:'',uns?`${uns} unscheduled special${uns===1?'':'s'}`:''].filter(Boolean).join(' · ');
     const title=[j.name,`Production ${fmt(span.start)} to ${fmt(span.end)}`].filter(Boolean).join(' | ');
-    return `<div class="year-gantt" style="--weeks:${weeks.length}"><div class="year-row-label"><div><div class="yr-main">${j.name}</div><div class="yr-sub">${detail}</div></div></div>${yearCells(weeks)}${yearBarHtml(weeks,span.start,span.end,j.name,complete?'complete':'',title)}${precastSpecialMarkers(j,weeks,year)}</div>`
+    return `<div class="year-gantt" style="--weeks:${weeks.length}"><div class="year-row-label"><div><div class="yr-main">${htmlSafe(j.name)}</div><div class="yr-sub">${htmlSafe(detail)}</div></div></div>${yearCells(weeks)}${yearBarHtml(weeks,span.start,span.end,j.name,complete?'complete':'',title)}${precastSpecialMarkers(j,weeks,year)}</div>`
   }).join('');
   document.getElementById('view').innerHTML=`${divisionSubtabs(div)}
     <div class="stats">${kpi('Production Jobs in '+year,jobs.length)}${kpi('Scheduled Production Qty',scheduledQty.toLocaleString()+' '+m.unit)}${kpi('Unscheduled Specials',unscheduledSpecials)}</div>
@@ -3014,7 +3158,7 @@ function renderWallsMonthly(){
     <section class="section">
       <div class="section-head">
         <div><h3>Superior Walls — Monthly Completion</h3><div class="muted" style="font-size:11px">${monthLabel(m)}</div></div>
-        <div class="report-controls"><input id="reportMonth" type="month" value="${m}"><button class="mini no-print" id="printMonthly">Print / Save PDF</button></div>
+        <div class="report-controls"><input id="reportMonth" type="month" value="${htmlSafe(m)}"><button class="mini no-print" id="printMonthly">Print / Save PDF</button></div>
       </div>
       <div class="section-body">
         <div class="stats">${kpi('Jobs Completed',js.length)}${kpi('LF Completed',lf.toLocaleString())}${kpi('Units / Shells',units)}${kpi('Verity',js.filter(w=>w.source==='Verity').length)}${kpi('Other',js.filter(w=>w.source==='Other').length)}</div>
@@ -3022,7 +3166,7 @@ function renderWallsMonthly(){
         <div class="stats">${WALL_HEIGHTS.map(h=>kpi(`${h.label} Wall LF`,heightTotals[h.key].toLocaleString())).join('')}${unassignedLF>0?kpi('Unassigned Legacy LF',unassignedLF.toLocaleString()):''}</div>
         <div class="lookahead"><table>
           <thead><tr><th>Completed</th><th>Job #</th><th>Model</th><th>Customer</th>${WALL_HEIGHTS.map(h=>`<th>${h.label} LF</th>`).join('')}<th>Unassigned</th><th>Total LF</th><th>Dig</th><th>Production</th><th>Install</th></tr></thead>
-          <tbody>${js.length?js.map(w=>{const b=wallHeightBreakdown(w);return `<tr><td>${wallCompletionDisplay(w)}</td><td><button class="job-link" data-wall="${w.id}">${w.job}</button></td><td>${w.type||'—'}</td><td>${w.customer||'—'}</td>${WALL_HEIGHTS.map(h=>`<td>${b[h.key]>0?b[h.key].toLocaleString():'—'}</td>`).join('')}<td>${nonnegativeNumber(w.lfUnassigned)>0?nonnegativeNumber(w.lfUnassigned).toLocaleString():'—'}</td><td><strong>${Number(w.lf||0)>0?Number(w.lf).toLocaleString():'—'}</strong></td><td>${fmt(w.digDate)}</td><td>${fmt(w.productionDate)}</td><td>${fmt(w.installDate)}</td></tr>`}).join(''):'<tr><td colspan="14">No completed wall jobs for this month.</td></tr>'}</tbody>
+          <tbody>${js.length?js.map(w=>{const b=wallHeightBreakdown(w);return `<tr><td>${wallCompletionDisplay(w)}</td><td><button class="job-link" data-wall="${htmlSafe(w.id)}">${htmlSafe(w.job)}</button></td><td>${htmlSafe(w.type||'—')}</td><td>${htmlSafe(w.customer||'—')}</td>${WALL_HEIGHTS.map(h=>`<td>${b[h.key]>0?b[h.key].toLocaleString():'—'}</td>`).join('')}<td>${nonnegativeNumber(w.lfUnassigned)>0?nonnegativeNumber(w.lfUnassigned).toLocaleString():'—'}</td><td><strong>${Number(w.lf||0)>0?Number(w.lf).toLocaleString():'—'}</strong></td><td>${fmt(w.digDate)}</td><td>${fmt(w.productionDate)}</td><td>${fmt(w.installDate)}</td></tr>`}).join(''):'<tr><td colspan="14">No completed wall jobs for this month.</td></tr>'}</tbody>
         </table></div>
       </div>
     </section>`;
@@ -3089,8 +3233,8 @@ function renderProjectSpecials(j){
       ? `${fmt(p.plannedDate)}${dates.length>1?' → '+fmt(dates[dates.length-1]):''}`
       : 'Unscheduled';
     return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid #edf1f4">
-      <div><strong style="font-size:10px">${productDisplayName(j,p)}</strong><div class="job-sub">${schedule} · ${Math.max(1,Number(p.productionDays||1))} production day${Number(p.productionDays||1)===1?'':'s'}</div></div>
-      <button type="button" class="mini" data-edit-piece="${j.id}|${p.id}">${p.plannedDate?'Edit Schedule':'Schedule'}</button>
+      <div><strong style="font-size:10px">${htmlSafe(productDisplayName(j,p))}</strong><div class="job-sub">${schedule} · ${Math.max(1,Number(p.productionDays||1))} production day${Number(p.productionDays||1)===1?'':'s'}</div></div>
+      <button type="button" class="mini" data-edit-piece="${htmlSafe(j.id)}|${htmlSafe(p.id)}">${p.plannedDate?'Edit Schedule':'Schedule'}</button>
     </div>`
   }).join('');
   return `<details class="project-specials-dropdown">
@@ -3104,28 +3248,28 @@ function renderProjectSpecials(j){
 
 function renderProductRow(j,p){
   let actions='';
-  if(p.status==='scheduled')actions=`<button data-pre="${j.id}|${p.id}">This Piece → Pre-QC</button>`;
-  else if(p.status==='pre-passed')actions=`<button data-pour="${j.id}|${p.id}">Mark THIS Piece Poured</button>`;
+  if(p.status==='scheduled')actions=`<button data-pre="${htmlSafe(j.id)}|${htmlSafe(p.id)}">This Piece → Pre-QC</button>`;
+  else if(p.status==='pre-passed')actions=`<button data-pour="${htmlSafe(j.id)}|${htmlSafe(p.id)}">Mark THIS Piece Poured</button>`;
   else if(p.status==='pre-ready')actions=`<span class="muted" style="font-size:9px">Waiting on QC</span>`;
   else if(p.status==='final-needed')actions=`<span class="muted" style="font-size:9px">Waiting on Final QC</span>`;
   else if(p.status==='hold')actions=`<span class="muted" style="font-size:9px">QC Hold</span>`;
   else if(p.status==='released')actions=`<span class="muted" style="font-size:9px">✓ This piece released</span>`;
 
   if(['boxes','manholes'].includes(j.division)){
-    actions=`<button type="button" data-edit-piece="${j.id}|${p.id}">Edit Piece</button>${actions}`;
+    actions=`<button type="button" data-edit-piece="${htmlSafe(j.id)}|${htmlSafe(p.id)}">Edit Piece</button>${actions}`;
   }
 
   const scheduleDates=pieceScheduleDates(p);
   const durationNote=p.isSpecial&&Number(p.productionDays||1)>1&&scheduleDates.length
-    ? `<div class="job-sub" style="font-weight:850;color:#8b5b19">${p.productionDays} production days · ${fmt(scheduleDates[0])} → ${fmt(scheduleDates[scheduleDates.length-1])}</div>`:'';
+    ? `<div class="job-sub" style="font-weight:850;color:#8b5b19">${htmlSafe(p.productionDays)} production days · ${fmt(scheduleDates[0])} → ${fmt(scheduleDates[scheduleDates.length-1])}</div>`:'';
   const secondary=['boxes','manholes'].includes(j.division)
-    ? `${durationNote}${p.pieceNotes?`<div class="job-sub">${p.pieceNotes}</div>`:''}`
-    : `<div class="job-sub">${p.qty>1?p.qty+' '+divisionMeta[j.division].unit:''}</div>`;
+    ? `${durationNote}${p.pieceNotes?`<div class="job-sub">${htmlSafe(p.pieceNotes)}</div>`:''}`
+    : `<div class="job-sub">${htmlSafe(p.qty>1?p.qty+' '+divisionMeta[j.division].unit:'')}</div>`;
 
   return `<div class="product-row">
     <div class="product-top">
-      <div><div class="product-name">${productDisplayName(j,p)}</div>${secondary}</div>
-      <span class="product-status ${productStatusClass(p)}">${productStatusText(p)}</span>
+      <div><div class="product-name">${htmlSafe(productDisplayName(j,p))}</div>${secondary}</div>
+      <span class="product-status ${productStatusClass(p)}">${htmlSafe(productStatusText(p))}</span>
     </div>
     <div class="product-actions">${actions}</div>
   </div>`
@@ -3156,8 +3300,8 @@ function renderPrecast(div){
       ${projects.length?projects.map(j=>{
         const c=pieceCountsForDate(j,d);
         return `<div class="project-day">
-          <button class="job-link" data-project="${j.id}">${j.name}</button>
-          <div class="job-sub">${j.type}</div>
+          <button class="job-link" data-project="${htmlSafe(j.id)}">${htmlSafe(j.name)}</button>
+          <div class="job-sub">${htmlSafe(j.type)}</div>
           <div class="job-sub" style="margin-top:5px;font-weight:800">${c.poured}/${c.total} ${m.unit} poured · ${c.released}/${c.total} released${c.waitingQC?` · ${c.waitingQC} waiting QC`:''}</div>
           <div class="job-sub" style="margin-top:3px">${['block','fence'].includes(div)?'Each row below is that day\'s scheduled production batch.':'Each button below changes only that individual piece.'}</div>
           <div class="product-list">${j.products.filter(p=>pieceIsScheduledOn(p,d)).map(p=>renderProductRow(j,p)).join('')}</div>
@@ -3174,25 +3318,25 @@ function renderPrecast(div){
       const status=p.status==='released'?'Final QC Released':'Waiting Final QC';
       return `<div class="weekly-complete-row">
         <div><div class="weekly-complete-meta">Completed</div><strong>${fmt(p.pouredDate)}</strong></div>
-        <div class="weekly-complete-project-wrap"><div class="weekly-complete-project">${j.name}</div><div class="weekly-complete-meta">${j.customer||''}</div></div>
-        <div class="weekly-complete-piece-wrap"><div class="weekly-complete-piece">${productDisplayName(j,p)}</div><div class="weekly-complete-meta">${j.type||''}</div></div>
+        <div class="weekly-complete-project-wrap"><div class="weekly-complete-project">${htmlSafe(j.name)}</div><div class="weekly-complete-meta">${htmlSafe(j.customer||'')}</div></div>
+        <div class="weekly-complete-piece-wrap"><div class="weekly-complete-piece">${htmlSafe(productDisplayName(j,p))}</div><div class="weekly-complete-meta">${htmlSafe(j.type||'')}</div></div>
         <div><div class="weekly-complete-meta">Quantity</div><strong>${qty} ${m.unit}</strong></div>
         <div><span class="pill ${p.status==='released'?'on':'risk'}">${status}</span></div>
-        <div class="weekly-complete-action"><button type="button" class="undo-production" data-undo-production="${j.id}|${p.id}">Undo</button></div>
+        <div class="weekly-complete-action"><button type="button" class="undo-production" data-undo-production="${htmlSafe(j.id)}|${htmlSafe(p.id)}">Undo</button></div>
       </div>`
     }).join('');
 
   const projects=js.map(j=>{
     const span=projectProductionSpan(j);
     return `<div class="project-card">
-      <div class="project-top"><div><button class="job-link" data-project="${j.id}">${j.name}</button><div class="job-sub">${j.customer} · ${j.type}</div></div><span class="pill ${statusClass(j.status)}">${j.status}</span></div>
-      ${span.start?`<div class="job-sub" style="margin:7px 0;font-weight:850">Production Schedule: ${fmt(span.start)} → ${fmt(span.end)} · ${span.days} scheduled production day${span.days===1?'':'s'}${j.dailyRate?' · '+j.dailyRate+' '+m.unit+'/day':''}</div>`:''}
-      <div class="project-meta"><span>Poured ${producedQty(j)} / ${j.total} ${m.unit}</span><b>${pct(producedQty(j),j.total)}%</b></div>
+      <div class="project-top"><div><button class="job-link" data-project="${htmlSafe(j.id)}">${htmlSafe(j.name)}</button><div class="job-sub">${htmlSafe(j.customer)} · ${htmlSafe(j.type)}</div></div><span class="pill ${statusClass(j.status)}">${htmlSafe(j.status)}</span></div>
+      ${span.start?`<div class="job-sub" style="margin:7px 0;font-weight:850">Production Schedule: ${fmt(span.start)} → ${fmt(span.end)} · ${span.days} scheduled production day${span.days===1?'':'s'}${htmlSafe(j.dailyRate?' · '+j.dailyRate+' '+m.unit+'/day':'')}</div>`:''}
+      <div class="project-meta"><span>Poured ${producedQty(j)} / ${htmlSafe(j.total)} ${m.unit}</span><b>${pct(producedQty(j),j.total)}%</b></div>
       <div class="progress"><span style="width:${pct(producedQty(j),j.total)}%"></span></div>
       <div class="project-meta"><span>Released ${releasedQty(j)}</span><span>${Math.max(0,j.total-producedQty(j))} remaining</span></div>
       ${j.deliveryDate?`<div class="job-sub" style="margin-top:7px;font-weight:850">Delivery: ${fmt(j.deliveryDate)}</div>`:''}
-      ${['boxes','manholes'].includes(j.division)?`<div class="job-sub" style="margin-top:7px"><strong>Regular ${j.division==='boxes'?'sections':'pieces'}:</strong> ${Number(j.regularPieceCount||0)} · ${Number(j.dailyRate||1)} per production day</div>${renderProjectSpecials(j)}<button type="button" class="mini" style="margin-top:7px" data-add-special="${j.id}">+ Add Special</button>`:''}
-      ${j.constraint?`<div class="job-sub" style="margin-top:7px;color:#9a5d16"><strong>Constraint:</strong> ${j.constraint}</div>`:''}
+      ${['boxes','manholes'].includes(j.division)?`<div class="job-sub" style="margin-top:7px"><strong>Regular ${j.division==='boxes'?'sections':'pieces'}:</strong> ${Number(j.regularPieceCount||0)} · ${Number(j.dailyRate||1)} per production day</div>${renderProjectSpecials(j)}<button type="button" class="mini" style="margin-top:7px" data-add-special="${htmlSafe(j.id)}">+ Add Special</button>`:''}
+      ${j.constraint?`<div class="job-sub" style="margin-top:7px;color:#9a5d16"><strong>Constraint:</strong> ${htmlSafe(j.constraint)}</div>`:''}
       ${linkListHtml(j.links)}
     </div>`
   }).join('');
@@ -3240,12 +3384,12 @@ function renderPrecast(div){
 }
 function renderPrecastOverall(div){
   const m=divisionMeta[div],starts=[0,7,14,21,28,35,42,49].map(n=>addDays(state.week,n)),js=state.jobs.filter(j=>j.division===div&&!j.completedDate);
-  document.getElementById('view').innerHTML=`${divisionSubtabs(div)}<section class="section"><div class="section-head"><h3>${m.label} — 8-Week Overall Production Schedule</h3><button type="button" class="mini" id="addPrecastBtn">+ Add Job</button></div><div class="section-body lookahead"><table><thead><tr><th>Project</th>${starts.map(s=>`<th>Week of ${fmt(s)}</th>`).join('')}</tr></thead><tbody>${js.map(j=>`<tr><td><button class="job-link" data-project="${j.id}">${j.name}</button><div class="job-sub">${j.type}</div></td>${starts.map(s=>{const ds=[0,1,2,3,4,5,6].map(n=>addDays(s,n)),q=(j.products||[]).filter(p=>pieceScheduleDates(p).some(d=>ds.includes(d))).reduce((n,p)=>n+Number(['block','fence'].includes(j.division)?(p.qty||1):1),0);return `<td>${q||'—'}</td>`}).join('')}</tr>`).join('')}</tbody></table></div></section>`;
+  document.getElementById('view').innerHTML=`${divisionSubtabs(div)}<section class="section"><div class="section-head"><h3>${m.label} — 8-Week Overall Production Schedule</h3><button type="button" class="mini" id="addPrecastBtn">+ Add Job</button></div><div class="section-body lookahead"><table><thead><tr><th>Project</th>${starts.map(s=>`<th>Week of ${fmt(s)}</th>`).join('')}</tr></thead><tbody>${js.map(j=>`<tr><td><button class="job-link" data-project="${htmlSafe(j.id)}">${htmlSafe(j.name)}</button><div class="job-sub">${htmlSafe(j.type)}</div></td>${starts.map(s=>{const ds=[0,1,2,3,4,5,6].map(n=>addDays(s,n)),q=(j.products||[]).filter(p=>pieceScheduleDates(p).some(d=>ds.includes(d))).reduce((n,p)=>n+Number(['block','fence'].includes(j.division)?(p.qty||1):1),0);return `<td>${q||'—'}</td>`}).join('')}</tr>`).join('')}</tbody></table></div></section>`;
   bindPrecastControls(div)
 }
 function renderPrecastMonthly(div){
   const m=divisionMeta[div],month=state.reportMonth,js=state.jobs.filter(j=>j.division===div&&(j.completedDate||'').startsWith(month)),qty=js.reduce((n,j)=>n+Number(j.total||0),0);
-  document.getElementById('view').innerHTML=`${divisionSubtabs(div)}<section class="section"><div class="section-head"><div><h3>${m.label} — Monthly Completion</h3><div class="muted" style="font-size:11px">${monthLabel(month)}</div></div><div class="report-controls"><input id="reportMonth" type="month" value="${month}"><button class="mini no-print" id="printMonthly">Print / Save PDF</button></div></div><div class="section-body"><div class="stats">${kpi('Jobs Completed',js.length)}${kpi('Quantity Completed',qty+' '+m.unit)}${kpi('Month',monthLabel(month))}</div><div class="lookahead"><table><thead><tr><th>Completed</th><th>Project</th><th>Customer</th><th>Type</th><th>Quantity</th></tr></thead><tbody>${js.length?js.map(j=>`<tr><td>${fmt(j.completedDate)}</td><td><button class="job-link" data-project="${j.id}">${j.name}</button></td><td>${j.customer}</td><td>${j.type}</td><td>${j.total} ${m.unit}</td></tr>`).join(''):'<tr><td colspan="5">No completed jobs for this month.</td></tr>'}</tbody></table></div></div></section>`;
+  document.getElementById('view').innerHTML=`${divisionSubtabs(div)}<section class="section"><div class="section-head"><div><h3>${m.label} — Monthly Completion</h3><div class="muted" style="font-size:11px">${monthLabel(month)}</div></div><div class="report-controls"><input id="reportMonth" type="month" value="${htmlSafe(month)}"><button class="mini no-print" id="printMonthly">Print / Save PDF</button></div></div><div class="section-body"><div class="stats">${kpi('Jobs Completed',js.length)}${kpi('Quantity Completed',qty+' '+m.unit)}${kpi('Month',monthLabel(month))}</div><div class="lookahead"><table><thead><tr><th>Completed</th><th>Project</th><th>Customer</th><th>Type</th><th>Quantity</th></tr></thead><tbody>${js.length?js.map(j=>`<tr><td>${htmlSafe(fmt(j.completedDate))}</td><td><button class="job-link" data-project="${htmlSafe(j.id)}">${htmlSafe(j.name)}</button></td><td>${htmlSafe(j.customer)}</td><td>${htmlSafe(j.type)}</td><td>${htmlSafe(j.total)} ${m.unit}</td></tr>`).join(''):'<tr><td colspan="5">No completed jobs for this month.</td></tr>'}</tbody></table></div></div></section>`;
   bindPrecastControls(div);document.getElementById('reportMonth').onchange=e=>{state.reportMonth=e.target.value;saveState();render()};document.getElementById('printMonthly').onclick=()=>printCurrent(`${m.label} Monthly Completion - ${monthLabel(month)}`)
 }
 function openPieceModal(projectId,pieceId){
@@ -3325,8 +3469,8 @@ function markPoured(projectId,productId){const j=projectById(projectId),p=produc
 /* QC QUEUES */
 function renderQC(){
   const all=allProducts(),pre=all.filter(x=>x.product.status==='pre-ready'),finals=all.filter(x=>x.product.status==='final-needed'),holds=all.filter(x=>x.product.status==='hold'),releasedToday=all.filter(x=>x.product.status==='released'&&x.product.releasedDate===todayISO()).length,logWeek=currentLogWeek(),weekQC=state.qcHistory.filter(h=>eventWeekKey(h)===logWeek);
-  const queue=(title,items,type)=>`<div class="queue"><div class="queue-head"><span>${title}</span><span>${items.length}</span></div><div class="queue-body">${items.length?items.map(({project:j,product:p})=>`<div class="qc-card"><div class="qc-product">${productDisplayName(j,p)}</div><div class="qc-project">${j.name} · ${j.type}</div><div class="qc-meta">${divisionMeta[j.division].label} · Planned ${fmt(p.plannedDate)}${p.qty>1?' · '+p.qty+' '+divisionMeta[j.division].unit:''}</div><div class="qc-actions">${type==='hold'?`<button class="pass" data-release-hold="${j.id}|${p.id}">Release Hold</button>`:`<button class="pass" data-qc-pass="${j.id}|${p.id}">Pass ${type==='pre'?'Pre-QC':'Final QC'}</button><button class="hold" data-qc-hold="${j.id}|${p.id}">Hold</button>`}</div></div>`).join(''):'<div class="empty">Nothing waiting</div>'}</div></div>`;
-  document.getElementById('view').innerHTML=`<div class="stats">${kpi('Pre-QC Needed',pre.length)}${kpi('Final QC Needed',finals.length)}${kpi('QC Holds',holds.length)}${kpi('Released Today',releasedToday)}</div><div class="queue-grid">${queue('Pre-QC Needed',pre,'pre')}${queue('Final QC Needed',finals,'final')}${queue('QC Holds',holds,'hold')}</div>${renderWallsQcQueue()}<section class="section"><div class="section-head"><div><h3>This Week — QC Activity</h3><div class="muted" style="font-size:10px">Resets from the working view Friday at 5:00 PM; full history is kept in History.</div></div></div><div class="section-body">${weekQC.slice().reverse().slice(0,12).map(h=>`<div class="history-row"><div>${fmt(h.date)}</div><div><strong>${h.product}</strong><div class="job-sub">${h.project}</div></div><div>${h.action}</div><div>${h.user||'QC Team'}</div></div>`).join('')||'<div class="empty">No QC activity yet.</div>'}</div></section><div class="notice" style="margin-top:14px"><span><strong>QC flow:</strong> Every precast piece moves independently. Superior Walls has a separate final-QC release tied to each stripped production assignment; plan approval does not substitute for final inspection.</span></div>`;
+  const queue=(title,items,type)=>`<div class="queue"><div class="queue-head"><span>${title}</span><span>${items.length}</span></div><div class="queue-body">${items.length?items.map(({project:j,product:p})=>`<div class="qc-card"><div class="qc-product">${htmlSafe(productDisplayName(j,p))}</div><div class="qc-project">${htmlSafe(j.name)} · ${htmlSafe(j.type)}</div><div class="qc-meta">${divisionMeta[j.division].label} · Planned ${fmt(p.plannedDate)}${htmlSafe(p.qty>1?' · '+p.qty+' '+divisionMeta[j.division].unit:'')}</div><div class="qc-actions">${type==='hold'?`<button class="pass" data-release-hold="${htmlSafe(j.id)}|${htmlSafe(p.id)}">Release Hold</button>`:`<button class="pass" data-qc-pass="${htmlSafe(j.id)}|${htmlSafe(p.id)}">Pass ${type==='pre'?'Pre-QC':'Final QC'}</button><button class="hold" data-qc-hold="${htmlSafe(j.id)}|${htmlSafe(p.id)}">Hold</button>`}</div></div>`).join(''):'<div class="empty">Nothing waiting</div>'}</div></div>`;
+  document.getElementById('view').innerHTML=`<div class="stats">${kpi('Pre-QC Needed',pre.length)}${kpi('Final QC Needed',finals.length)}${kpi('QC Holds',holds.length)}${kpi('Released Today',releasedToday)}</div><div class="queue-grid">${queue('Pre-QC Needed',pre,'pre')}${queue('Final QC Needed',finals,'final')}${queue('QC Holds',holds,'hold')}</div>${renderWallsQcQueue()}<section class="section"><div class="section-head"><div><h3>This Week — QC Activity</h3><div class="muted" style="font-size:10px">Resets from the working view Friday at 5:00 PM; full history is kept in History.</div></div></div><div class="section-body">${weekQC.slice().reverse().slice(0,12).map(h=>`<div class="history-row"><div>${fmt(h.date)}</div><div><strong>${htmlSafe(h.product)}</strong><div class="job-sub">${htmlSafe(h.project)}</div></div><div>${htmlSafe(h.action)}</div><div>${htmlSafe(h.user||'QC Team')}</div></div>`).join('')||'<div class="empty">No QC activity yet.</div>'}</div></section><div class="notice" style="margin-top:14px"><span><strong>QC flow:</strong> Every precast piece moves independently. Superior Walls has a separate final-QC release tied to each stripped production assignment; plan approval does not substitute for final inspection.</span></div>`;
   document.querySelectorAll('[data-qc-pass]').forEach(b=>b.onclick=()=>{const [j,p]=b.dataset.qcPass.split('|');passQC(j,p)});
   document.querySelectorAll('[data-qc-hold]').forEach(b=>b.onclick=()=>{const [j,p]=b.dataset.qcHold.split('|');holdQC(j,p)});
   document.querySelectorAll('[data-release-hold]').forEach(b=>b.onclick=()=>{const [j,p]=b.dataset.releaseHold.split('|');releaseHold(j,p)})
@@ -3365,6 +3509,7 @@ function openWallsInstallationLoadMap(loadRecordId){
   const canSave=!delivered||activeProduction.some(eligible);
   const saveLabel=delivered?'Record delivered runs':'Save shipment runs';
   const saveAction=canSave?async()=>{
+    const user=currentUser,client=sb,epoch=hubSessionEpoch;const current=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch&&productionModalSaveAction===saveAction;
     const ids=[...document.querySelectorAll('[data-load-assignment]:checked')].map(x=>x.dataset.loadAssignment);
     const feedback=document.getElementById('loadMapFeedback');
     if(delivered&&!ids.length){
@@ -3376,6 +3521,7 @@ function openWallsInstallationLoadMap(loadRecordId){
     if(saveButton){saveButton.disabled=true;saveButton.textContent='Recording…'}
     try{
       const saved=await wallsInstallationRpc('link_walls_installation_load_assignments',{p_load_record_id:loadRecordId,p_assignment_ids:ids},delivered?'Delivered shipment runs recorded for Installation.':'Production runs assigned to the shipment.');
+      if(!current())return;
       if(saved){
         closeProductionModal();
         if(state.view==='delivery')render()
@@ -3383,6 +3529,7 @@ function openWallsInstallationLoadMap(loadRecordId){
         saveButton.disabled=false;saveButton.textContent=saveLabel
       }
     }catch(error){
+      if(!current())return;
       console.error('Could not save delivered shipment run links:',error);
       if(feedback){feedback.hidden=false;feedback.textContent='The run list was not saved. Your selections are still here; retry after the connection is restored.'}
       if(saveButton){saveButton.disabled=false;saveButton.textContent=saveLabel}
@@ -3420,17 +3567,17 @@ function renderDelivery(){
 
   const card=l=>{
     const q=loadReadiness(l);
-    return `<div class="project-day delivery-card-drag" draggable="true" data-drag-delivery="${l.id}">
-      <div class="job-title">${l.project}</div>
-      <div class="job-sub">${l.division==='walls'?'Superior Walls':divisionMeta[l.division]?.label||l.division} · ${deliverySourceLabel(l)}</div>
-      <div style="font-size:11px;margin-top:5px">${l.load}</div>
+    return `<div class="project-day delivery-card-drag" draggable="true" data-drag-delivery="${htmlSafe(l.id)}">
+      <div class="job-title">${htmlSafe(l.project)}</div>
+      <div class="job-sub">${htmlSafe(l.division==='walls'?'Superior Walls':divisionMeta[l.division]?.label||l.division)} · ${htmlSafe(deliverySourceLabel(l))}</div>
+      <div style="font-size:11px;margin-top:5px">${htmlSafe(l.load)}</div>
       ${q.wall||l.division!=='walls'?`<div class="job-sub" style="margin-top:5px;font-weight:800;color:${q.ready?'#23664d':'#9e3434'}">${q.wall?'Final QC for '+htmlSafe(installationJob(l.linkId)?.job?.job||l.project):'QC Gate'}: ${q.ready?'READY':'NOT READY'} · ${q.released}/${q.need} runs released</div>`:''}
       <div class="delivery-drag-hint">Drag this card to another day to reschedule</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-        <button class="mini" data-load="${l.id}">${l.status}</button>
-        ${l.linkType?`<button class="mini" data-open-delivery-source="${l.id}">Open ${l.division==='walls'?'Job':'Project'}</button>`:''}
-        ${installationCanManage()&&l.division==='walls'&&l.linkType==='wall'&&l.status==='Scheduled'?`<button class="mini" type="button" data-wall-load-map="${l.id}">Assign production runs</button>`:l.status==='Loaded'&&l.division==='walls'&&l.linkType==='wall'?'<span class="job-sub">Run links lock after loading starts.</span>':''}
-        <button class="mini" data-delete-delivery="${l.id}" style="color:#9e3434">Delete</button>
+        <button class="mini" data-load="${htmlSafe(l.id)}">${htmlSafe(l.status)}</button>
+        ${l.linkType?`<button class="mini" data-open-delivery-source="${htmlSafe(l.id)}">Open ${l.division==='walls'?'Job':'Project'}</button>`:''}
+        ${installationCanManage()&&l.division==='walls'&&l.linkType==='wall'&&l.status==='Scheduled'?`<button class="mini" type="button" data-wall-load-map="${htmlSafe(l.id)}">Assign production runs</button>`:l.status==='Loaded'&&l.division==='walls'&&l.linkType==='wall'?'<span class="job-sub">Run links lock after loading starts.</span>':''}
+        <button class="mini" data-delete-delivery="${htmlSafe(l.id)}" style="color:#9e3434">Delete</button>
       </div>
     </div>`
   };
@@ -3450,18 +3597,18 @@ function renderDelivery(){
       const q=loadReadiness(l);
       return `<div class="delivery-row">
         <div>
-          <div class="project-name">${l.project}</div>
-          <div class="job-sub">${l.division==='walls'?'Superior Walls':divisionMeta[l.division]?.label||l.division} · ${deliverySourceLabel(l)}</div>
+          <div class="project-name">${htmlSafe(l.project)}</div>
+          <div class="job-sub">${htmlSafe(l.division==='walls'?'Superior Walls':divisionMeta[l.division]?.label||l.division)} · ${htmlSafe(deliverySourceLabel(l))}</div>
         </div>
         <div>${fmt(l.date)}</div>
-        <div>${l.load}${q.wall||l.division!=='walls'?`<div class="job-sub">${q.wall?'Final QC '+htmlSafe(installationJob(l.linkId)?.job?.job||l.project):'QC'} ${q.ready?'Ready':'Not Ready'} · ${q.released}/${q.need} runs released</div>`:''}</div>
-        <div><span class="pill ${l.status==='Loaded'?'risk':'on'}">${l.status}</span></div>
+        <div>${htmlSafe(l.load)}${q.wall||l.division!=='walls'?`<div class="job-sub">${q.wall?'Final QC '+htmlSafe(installationJob(l.linkId)?.job?.job||l.project):'QC'} ${q.ready?'Ready':'Not Ready'} · ${q.released}/${q.need} runs released</div>`:''}</div>
+        <div><span class="pill ${l.status==='Loaded'?'risk':'on'}">${htmlSafe(l.status)}</span></div>
         <div class="delivery-actions no-print">
-          <input type="date" value="${l.date||''}" data-delivery-date-input="${l.id}">
-          <button data-move-delivery="${l.id}">Move</button>
-          ${l.linkType?`<button data-open-delivery-source="${l.id}">Open ${l.division==='walls'?'Job':'Project'}</button>`:''}
-          ${installationCanManage()&&l.division==='walls'&&l.linkType==='wall'&&l.status==='Scheduled'?`<button type="button" data-wall-load-map="${l.id}">Assign production runs</button>`:l.status==='Loaded'&&l.division==='walls'&&l.linkType==='wall'?'<span class="job-sub">Run links lock after loading starts.</span>':''}
-          <button class="delete-delivery" data-delete-delivery="${l.id}">Delete</button>
+          <input type="date" value="${htmlSafe(l.date||'')}" data-delivery-date-input="${htmlSafe(l.id)}">
+          <button data-move-delivery="${htmlSafe(l.id)}">Move</button>
+          ${l.linkType?`<button data-open-delivery-source="${htmlSafe(l.id)}">Open ${l.division==='walls'?'Job':'Project'}</button>`:''}
+          ${installationCanManage()&&l.division==='walls'&&l.linkType==='wall'&&l.status==='Scheduled'?`<button type="button" data-wall-load-map="${htmlSafe(l.id)}">Assign production runs</button>`:l.status==='Loaded'&&l.division==='walls'&&l.linkType==='wall'?'<span class="job-sub">Run links lock after loading starts.</span>':''}
+          <button class="delete-delivery" data-delete-delivery="${htmlSafe(l.id)}">Delete</button>
         </div>
       </div>`
     }).join('');
@@ -3470,11 +3617,11 @@ function renderDelivery(){
     .slice()
     .sort((a,b)=>(b.deliveredAt||b.date||'').localeCompare(a.deliveredAt||a.date||''))
     .map(l=>`<div class="delivery-row">
-      <div><div class="project-name">${l.project}</div><div class="job-sub">${l.division==='walls'?'Superior Walls':divisionMeta[l.division]?.label||l.division}</div></div>
+      <div><div class="project-name">${htmlSafe(l.project)}</div><div class="job-sub">${htmlSafe(l.division==='walls'?'Superior Walls':divisionMeta[l.division]?.label||l.division)}</div></div>
       <div>${fmt(l.date)}</div>
-      <div>${l.load}<div class="job-sub">${l.qty} ${l.division==='walls'?'unit(s)':divisionMeta[l.division]?.unit||'items'}</div></div>
+      <div>${htmlSafe(l.load)}<div class="job-sub">${htmlSafe(l.qty)} ${l.division==='walls'?'unit(s)':divisionMeta[l.division]?.unit||'items'}</div></div>
       <div><span class="pill on">Released</span><div class="job-sub">${l.deliveredAt?new Date(l.deliveredAt).toLocaleString():''}</div></div>
-      <div class="no-print">${l.linkType?`<button class="mini" data-open-delivery-source="${l.id}">Open ${l.division==='walls'?'Job':'Project'}</button>`:''}</div>
+      <div class="no-print">${l.linkType?`<button class="mini" data-open-delivery-source="${htmlSafe(l.id)}">Open ${l.division==='walls'?'Job':'Project'}</button>`:''}</div>
     </div>`).join('');
   const deliveredWallLoadRecords=[...state.loads.filter(l=>l.status==='Delivered'&&l.division==='walls'),...releasedThisWeek.filter(l=>l.division==='walls'),...state.deliveryHistory.filter(l=>l.division==='walls').map(l=>({...l,status:'Delivered'}))];
   const deliveredWallLoads=[...new Map(deliveredWallLoadRecords.map(l=>[l.id,l])).values()].sort((a,b)=>(b.deliveredAt||b.date||'').localeCompare(a.deliveredAt||a.date||''));
@@ -3554,7 +3701,7 @@ function renderDelivery(){
   });
 
   document.querySelectorAll('[data-move-delivery]').forEach(b=>b.onclick=()=>{
-    const input=document.querySelector(`[data-delivery-date-input="${b.dataset.moveDelivery}"]`);
+    const input=document.querySelector(`[data-delivery-date-input="${CSS.escape(b.dataset.moveDelivery)}"]`);
     if(!input?.value){alert('Choose a delivery date first.');return}
     moveDelivery(b.dataset.moveDelivery,input.value)
   });
@@ -3575,7 +3722,7 @@ function renderDelivery(){
   }
 }
 /* BILLING / COMPLETIONS */
-function renderBilling(){syncBilling();const month=state.reportMonth,divFilter=state.billingDivision||'all',statusFilter=state.billingStatus||'all';let rows=state.billing.filter(b=>billingPeriod(b)===month);if(divFilter!=='all')rows=rows.filter(b=>b.division===divFilter);if(statusFilter!=='all')rows=rows.filter(b=>b.status===statusFilter);const ready=rows.filter(b=>b.status==='Ready to Bill').length,billed=rows.filter(b=>b.status==='Billed').length,holds=rows.filter(b=>b.status==='Hold').length,totalQty=rows.reduce((n,b)=>n+Number(b.qty||0),0);document.getElementById('view').innerHTML=`<h2 class="print-title">Billing / Completions - ${monthLabel(month)}</h2><div class="stats">${kpi('Completed / Billable Records',rows.length)}${kpi('Ready to Bill',ready)}${kpi('Billed',billed)}${kpi('Billing Holds',holds)}${kpi('Total Completed Qty',totalQty.toLocaleString())}</div><section class="section"><div class="section-head"><div><h3>Spencer - Billing / Completions</h3><div class="muted" style="font-size:11px">Operational completion stays separate from invoice status.</div></div><div class="billing-filters no-print"><input id="billMonth" type="month" value="${month}"><select id="billDivision"><option value="all">All Divisions</option><option value="walls">Superior Walls</option><option value="boxes">Box Culverts</option><option value="manholes">Manholes</option><option value="fence">Precast Fence</option><option value="block">Precast Block</option></select><select id="billStatus"><option value="all">All Billing Statuses</option><option>Ready to Bill</option><option>Billed</option><option>Hold</option></select><button class="mini" id="printBilling">Print / Save PDF</button></div></div><div class="section-body lookahead"><table><thead><tr><th>Billable Date</th><th>Division</th><th>Job / Project</th><th>Customer</th><th>Quantity</th><th>Billing Status</th><th>Invoice #</th><th class="no-print">Actions</th></tr></thead><tbody>${rows.length?rows.map(b=>`<tr><td>${billingDateDisplay(b)}</td><td>${b.division==='walls'?'Superior Walls':divisionMeta[b.division]?.label||b.division}</td><td><strong>${b.project}</strong></td><td>${b.customer}</td><td>${b.qty} ${b.unit}</td><td><span class="pill ${b.status==='Billed'?'on':b.status==='Hold'?'hold':'risk'}">${b.status}</span></td><td>${b.invoice||'-'}${b.invoiceDate?`<div class="job-sub">${fmt(b.invoiceDate)}</div>`:''}</td><td class="no-print">${b.status!=='Billed'?`<button class="billing-action bill" data-bill="${b.key}">Mark Billed</button>`:''}<button class="billing-action hold" data-bhold="${b.key}">${b.status==='Hold'?'Release Hold':'Hold'}</button></td></tr>`).join(''):'<tr><td colspan="8">No billing records for this filter.</td></tr>'}</tbody></table></div></section>`;const dm=document.getElementById('billDivision'),sm=document.getElementById('billStatus');dm.value=divFilter;sm.value=statusFilter;document.getElementById('billMonth').onchange=e=>{state.reportMonth=e.target.value;saveState();render()};dm.onchange=e=>{state.billingDivision=e.target.value;saveState();render()};sm.onchange=e=>{state.billingStatus=e.target.value;saveState();render()};document.getElementById('printBilling').onclick=()=>printCurrent(`Superior Billing Completions - ${monthLabel(month)}`);document.querySelectorAll('[data-bill]').forEach(btn=>btn.onclick=()=>{const b=state.billing.find(x=>x.key===btn.dataset.bill);if(!b)return;const inv=prompt('Invoice number?',b.invoice||'');if(inv===null)return;b.invoice=inv.trim();b.invoiceDate=todayISO();b.status='Billed';logAction('Billing',`${b.project}: marked billed${b.invoice?' as '+b.invoice:''}`,'Accounting');saveState();render()});document.querySelectorAll('[data-bhold]').forEach(btn=>btn.onclick=()=>{const b=state.billing.find(x=>x.key===btn.dataset.bhold);if(!b)return;b.status=b.status==='Hold'?'Ready to Bill':'Hold';logAction('Billing',`${b.project}: billing status changed to ${b.status}`,'Accounting');saveState();render()})}
+function renderBilling(){syncBilling();const month=state.reportMonth,divFilter=state.billingDivision||'all',statusFilter=state.billingStatus||'all';let rows=state.billing.filter(b=>billingPeriod(b)===month);if(divFilter!=='all')rows=rows.filter(b=>b.division===divFilter);if(statusFilter!=='all')rows=rows.filter(b=>b.status===statusFilter);const ready=rows.filter(b=>b.status==='Ready to Bill').length,billed=rows.filter(b=>b.status==='Billed').length,holds=rows.filter(b=>b.status==='Hold').length,totalQty=rows.reduce((n,b)=>n+Number(b.qty||0),0);document.getElementById('view').innerHTML=`<h2 class="print-title">Billing / Completions - ${htmlSafe(monthLabel(month))}</h2><div class="stats">${kpi('Completed / Billable Records',rows.length)}${kpi('Ready to Bill',ready)}${kpi('Billed',billed)}${kpi('Billing Holds',holds)}${kpi('Total Completed Qty',totalQty.toLocaleString())}</div><section class="section"><div class="section-head"><div><h3>Spencer - Billing / Completions</h3><div class="muted" style="font-size:11px">Operational completion stays separate from invoice status.${state.billing.some(billingSourceMismatch)?' Retained invoice records have a source completion that needs review.':''}</div></div><div class="billing-filters no-print"><input id="billMonth" type="month" value="${htmlSafe(month)}"><select id="billDivision"><option value="all">All Divisions</option><option value="walls">Superior Walls</option><option value="boxes">Box Culverts</option><option value="manholes">Manholes</option><option value="fence">Precast Fence</option><option value="block">Precast Block</option></select><select id="billStatus"><option value="all">All Billing Statuses</option><option>Ready to Bill</option><option>Billed</option><option>Hold</option></select><button class="mini" id="printBilling">Print / Save PDF</button></div></div><div class="section-body lookahead"><table><thead><tr><th>Billable Date</th><th>Division</th><th>Job / Project</th><th>Customer</th><th>Quantity</th><th>Billing Status</th><th>Invoice #</th><th class="no-print">Actions</th></tr></thead><tbody>${rows.length?rows.map(b=>`<tr><td>${htmlSafe(billingDateDisplay(b))}</td><td>${htmlSafe(b.division==='walls'?'Superior Walls':divisionMeta[b.division]?.label||b.division)}</td><td><strong>${htmlSafe(b.project)}</strong>${billingSourceMismatch(b)?'<div class="job-sub">Source completion needs review — invoice history retained.</div>':''}</td><td>${htmlSafe(b.customer)}</td><td>${htmlSafe(b.qty)} ${htmlSafe(b.unit)}</td><td><span class="pill ${b.status==='Billed'?'on':b.status==='Hold'?'hold':'risk'}">${htmlSafe(b.status)}</span></td><td>${htmlSafe(b.invoice||'-')}${b.invoiceDate?`<div class="job-sub">${htmlSafe(fmt(b.invoiceDate))}</div>`:''}</td><td class="no-print">${b.status!=='Billed'?`<button class="billing-action bill" data-bill="${htmlSafe(b.key)}">Mark Billed</button>`:''}<button class="billing-action hold" data-bhold="${htmlSafe(b.key)}">${b.status==='Hold'?'Release Hold':'Hold'}</button></td></tr>`).join(''):'<tr><td colspan="8">No billing records for this filter.</td></tr>'}</tbody></table></div></section>`;const dm=document.getElementById('billDivision'),sm=document.getElementById('billStatus');dm.value=divFilter;sm.value=statusFilter;document.getElementById('billMonth').onchange=e=>{state.reportMonth=e.target.value;saveState();render()};dm.onchange=e=>{state.billingDivision=e.target.value;saveState();render()};sm.onchange=e=>{state.billingStatus=e.target.value;saveState();render()};document.getElementById('printBilling').onclick=()=>printCurrent(`Superior Billing Completions - ${monthLabel(month)}`);document.querySelectorAll('[data-bill]').forEach(btn=>btn.onclick=()=>{const b=state.billing.find(x=>x.key===btn.dataset.bill);if(!b)return;const inv=prompt('Invoice number?',b.invoice||'');if(inv===null)return;b.invoice=inv.trim();b.invoiceDate=todayISO();b.status='Billed';logAction('Billing',`${b.project}: marked billed${b.invoice?' as '+b.invoice:''}`,'Accounting');saveState();render()});document.querySelectorAll('[data-bhold]').forEach(btn=>btn.onclick=()=>{const b=state.billing.find(x=>x.key===btn.dataset.bhold);if(!b)return;b.status=b.status==='Hold'?'Ready to Bill':'Hold';logAction('Billing',`${b.project}: billing status changed to ${b.status}`,'Accounting');saveState();render()})}
 
 /* IMPORT CENTER */
 function parseCSV(csv){const rows=[];let row=[],cell='',q=false;for(let i=0;i<csv.length;i++){const ch=csv[i],next=csv[i+1];if(ch==='"'&&q&&next==='"'){cell+='"';i++}else if(ch==='"'){q=!q}else if(ch===','&&!q){row.push(cell);cell=''}else if((ch==='\n'||ch==='\r')&&!q){if(ch==='\r'&&next==='\n')i++;row.push(cell);cell='';if(row.some(x=>x.trim()!==''))rows.push(row);row=[]}else cell+=ch}row.push(cell);if(row.some(x=>x.trim()!==''))rows.push(row);if(!rows.length)return[];const headers=rows[0].map(h=>h.trim());return rows.slice(1).map(r=>Object.fromEntries(headers.map((h,i)=>[h,(r[i]||'').trim()]))) }
@@ -3583,7 +3730,7 @@ function importTargets(div){if(div==='walls')return[{k:'job',l:'Job Number'},{k:
 function guessHeader(target,headers){const aliases={job:['job','job number','job #'],customer:['customer','builder','gc'],project:['project','development'],type:['type','model','box size','size'],address:['address','location'],lf4:["4 lf","4' lf",'4 ft lf','4 foot lf','4 wall lf'],lf5:["5 lf","5' lf",'5 ft lf','5 foot lf','5 wall lf'],lf8:["8 lf","8' lf",'8 ft lf','8 foot lf','8 wall lf'],lf9:["9 lf","9' lf",'9 ft lf','9 foot lf','9 wall lf'],lf10:["10 lf","10' lf",'10 ft lf','10 foot lf','10 wall lf'],lf12:["12 lf","12' lf",'12 ft lf','12 foot lf','12 wall lf'],lf:['lf','linear feet','walls sold','total lf'],units:['units','shells'],digDate:['dig date','dig'],productionDate:['production date','production','cast date'],installDate:['install date','install'],name:['project','job name','project name'],total:['total quantity','qty','quantity','total pieces','pieces'],rate:['planned per day','per day','rate'],startDate:['start date','production start','cast date'],completedDate:['completed date','completion date']};const vals=aliases[target]||[target];return headers.find(h=>vals.includes(h.toLowerCase()))||''}
 function renderImport(){document.getElementById('view').innerHTML=`<div class="notice"><span><strong>Import safely:</strong> upload CSV or JSON, map columns, preview, then choose Apply Import. Existing Wall jobs match by Job #; precast projects match by Project name. Imported dates are normalized first so an odd CSV date format cannot break the dashboard.</span></div><div class="import-shell"><div class="import-panel"><h3 style="margin:0;color:var(--navy)">Import Schedule</h3><label>Division</label><select id="importDivision"><option value="walls">Superior Walls</option><option value="boxes">Box Culverts</option><option value="manholes">Manholes</option><option value="fence">Precast Fence</option><option value="block">Precast Block</option></select><label>Source</label><select id="importSource"><option>Generic CSV / Excel Export</option><option>Buildertrend Export</option><option>Titan Export</option><option>ExakTime Export</option><option>Superior Export</option></select><label>CSV or JSON File</label><input id="importFile" type="file" accept=".csv,.json,text/csv,application/json"><div style="margin-top:10px"><button class="dark" id="loadImport">Load & Preview</button></div></div><div class="import-panel"><h3 style="margin:0;color:var(--navy)">Preview / Field Mapping</h3><div id="importPreview" class="muted" style="font-size:11px;margin-top:8px">Choose a file and click Load & Preview.</div></div></div>`;document.getElementById('loadImport').onclick=loadImportFile}
 function loadImportFile(){const file=document.getElementById('importFile').files[0];if(!file){alert('Choose a CSV or JSON file first.');return}const reader=new FileReader();reader.onload=()=>{try{const raw=String(reader.result||''),data=file.name.toLowerCase().endsWith('.json')?JSON.parse(raw):parseCSV(raw);importData=Array.isArray(data)?data:(Array.isArray(data.jobs)?data.jobs:[]);if(!importData.length)throw new Error('No rows found');importHeaders=[...new Set(importData.flatMap(r=>Object.keys(r)))];renderImportPreview()}catch(e){alert('Could not read this file: '+e.message)}};reader.readAsText(file)}
-function renderImportPreview(){const div=document.getElementById('importDivision').value,targets=importTargets(div),preview=document.getElementById('importPreview');preview.innerHTML=`<div><strong>${importData.length} rows found.</strong> Map each target field to a source column.</div><div class="mapping-grid">${targets.map(t=>`<div class="map-card"><label>${t.l}</label><select data-map="${t.k}"><option value="">- Skip -</option>${importHeaders.map(h=>`<option value="${h}" ${guessHeader(t.k,importHeaders)===h?'selected':''}>${h}</option>`).join('')}</select></div>`).join('')}</div><div class="lookahead" style="margin-top:12px"><table><thead><tr>${importHeaders.slice(0,8).map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${importData.slice(0,5).map(r=>`<tr>${importHeaders.slice(0,8).map(h=>`<td>${r[h]??''}</td>`).join('')}</tr>`).join('')}</tbody></table></div><div style="margin-top:12px"><button class="dark" id="applyImport">Apply Import</button></div>`;document.getElementById('applyImport').onclick=applyImport}
+function renderImportPreview(){const div=document.getElementById('importDivision').value,targets=importTargets(div),preview=document.getElementById('importPreview');preview.innerHTML=`<div><strong>${importData.length} rows found.</strong> Map each target field to a source column.</div><div class="mapping-grid">${targets.map(t=>`<div class="map-card"><label>${htmlSafe(t.l)}</label><select data-map="${htmlSafe(t.k)}"><option value="">- Skip -</option>${importHeaders.map(h=>`<option value="${htmlSafe(h)}" ${guessHeader(t.k,importHeaders)===h?'selected':''}>${htmlSafe(h)}</option>`).join('')}</select></div>`).join('')}</div><div class="lookahead" style="margin-top:12px"><table><thead><tr>${importHeaders.slice(0,8).map(h=>`<th>${htmlSafe(h)}</th>`).join('')}</tr></thead><tbody>${importData.slice(0,5).map(r=>`<tr>${importHeaders.slice(0,8).map(h=>`<td>${htmlSafe(r[h]??'')}</td>`).join('')}</tr>`).join('')}</tbody></table></div><div style="margin-top:12px"><button class="dark" id="applyImport">Apply Import</button></div>`;document.getElementById('applyImport').onclick=applyImport}
 function applyImport(){
   const div=document.getElementById('importDivision').value,maps={};
   document.querySelectorAll('[data-map]').forEach(s=>maps[s.dataset.map]=s.value);
@@ -3692,7 +3839,7 @@ function applyImport(){
   render()
 }
 /* SEARCH */
-function renderSearchResults(){const q=(state.searchQuery||'').trim().toLowerCase(),results=[];if(q){state.walls.forEach(w=>{const blob=[w.job,w.customer,w.project,w.development,w.type,w.address,w.notes,w.constraint].join(' ').toLowerCase();if(blob.includes(q))results.push({division:'walls',title:w.job,sub:`${w.type} · ${w.project}`,id:w.id,type:'wall'})});state.jobs.forEach(j=>{const blob=[j.name,j.customer,j.type,j.notes,j.constraint].join(' ').toLowerCase();if(blob.includes(q))results.push({division:j.division,title:j.name,sub:`${divisionMeta[j.division]?.label||j.division} · ${j.type}`,id:j.id,type:'project'});(j.products||[]).forEach(p=>{if([p.label,p.structureId,p.pieceType,p.pieceSize,p.pieceNotes,j.name,j.customer].join(' ').toLowerCase().includes(q))results.push({division:j.division,title:p.label,sub:`${j.name} · ${productStatusText(p)}`,id:j.id,type:'project'})})})}document.getElementById('view').innerHTML=`<section class="section"><div class="section-head"><h3>Search Results</h3><span class="muted" style="font-size:11px">${results.length} result${results.length===1?'':'s'} for "${state.searchQuery||''}"</span></div><div class="section-body"><div class="search-results">${results.length?results.slice(0,60).map(r=>`<div class="search-result"><div class="project-name">${r.title}</div><div class="job-sub">${r.sub}</div><button class="mini" style="margin-top:8px" data-open-result="${r.type}|${r.division}|${r.id}">Open</button></div>`).join(''):'<div class="empty">No matching jobs, customers, addresses, or pieces.</div>'}</div></div></section>`;document.querySelectorAll('[data-open-result]').forEach(b=>b.onclick=()=>{const [type,div,id]=b.dataset.openResult.split('|');state.view=div;saveState();render();setTimeout(()=>{if(type==='wall')openWallModal(id);else openProjectModal(id)},0)})}
+function renderSearchResults(){const q=(state.searchQuery||'').trim().toLowerCase(),results=[];if(q){state.walls.forEach(w=>{const blob=[w.job,w.customer,w.project,w.development,w.type,w.address,w.notes,w.constraint].join(' ').toLowerCase();if(blob.includes(q))results.push({division:'walls',title:w.job,sub:`${w.type} · ${w.project}`,id:w.id,type:'wall'})});state.jobs.forEach(j=>{const blob=[j.name,j.customer,j.type,j.notes,j.constraint].join(' ').toLowerCase();if(blob.includes(q))results.push({division:j.division,title:j.name,sub:`${divisionMeta[j.division]?.label||j.division} · ${j.type}`,id:j.id,type:'project'});(j.products||[]).forEach(p=>{if([p.label,p.structureId,p.pieceType,p.pieceSize,p.pieceNotes,j.name,j.customer].join(' ').toLowerCase().includes(q))results.push({division:j.division,title:p.label,sub:`${j.name} · ${productStatusText(p)}`,id:j.id,type:'project'})})})}document.getElementById('view').innerHTML=`<section class="section"><div class="section-head"><h3>Search Results</h3><span class="muted" style="font-size:11px">${results.length} result${results.length===1?'':'s'} for "${htmlSafe(state.searchQuery||'')}"</span></div><div class="section-body"><div class="search-results">${results.length?results.slice(0,60).map(r=>`<div class="search-result"><div class="project-name">${htmlSafe(r.title)}</div><div class="job-sub">${htmlSafe(r.sub)}</div><button class="mini" style="margin-top:8px" data-open-result="${htmlSafe(r.id)}" data-result-type="${htmlSafe(r.type)}" data-result-division="${htmlSafe(r.division)}">Open</button></div>`).join(''):'<div class="empty">No matching jobs, customers, addresses, or pieces.</div>'}</div></div></section>`;document.querySelectorAll('[data-open-result]').forEach(b=>b.onclick=()=>{const {resultType:type,resultDivision:div,openResult:id}=b.dataset;state.view=div;saveState();render();setTimeout(()=>{if(type==='wall')openWallModal(id);else openProjectModal(id)},0)})}
 
 /* MANAGEMENT EXCEPTIONS */
 function htmlSafe(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
@@ -3747,6 +3894,7 @@ async function refreshAfterAgentAction(actionType){
   else await loadWallsProduction()
 }
 function appendAssistantProposal(proposal){
+  const user=currentUser,client=sb,epoch=hubSessionEpoch;const valid=()=>Boolean(user)&&currentUser===user&&sb===client&&hubSessionEpoch===epoch;
   const log=document.getElementById('assistantLog'),card=document.createElement('div');card.className='assistant-proposal';
   const title=document.createElement('div');title.className='assistant-proposal-title';title.textContent='Review proposed action';card.appendChild(title);
   const summary=document.createElement('div');summary.textContent=proposal.summary||'Review this proposed Operations Hub change.';card.appendChild(summary);
@@ -3758,23 +3906,30 @@ function appendAssistantProposal(proposal){
   const status=document.createElement('div');status.className='assistant-proposal-status';status.textContent='This preview expires in 10 minutes.';
   actions.append(confirmButton,rejectButton);card.append(actions,status);log.appendChild(card);log.scrollTop=log.scrollHeight;
   confirmButton.onclick=async()=>{
+    if(!valid()||confirmButton.disabled)return;
     confirmButton.disabled=true;rejectButton.disabled=true;status.textContent='Checking current data and permissions...';
-    const {data,error}=await sb.rpc('execute_operations_agent_action',{p_action_id:proposal.action_id,p_confirmation:'CONFIRM'});
+    let data,error;try{({data,error}=await client.rpc('execute_operations_agent_action',{p_action_id:proposal.action_id,p_confirmation:'CONFIRM'}))}catch(cause){if(valid())status.textContent='Action outcome unknown. Refresh the affected area and verify before asking for another action. No automatic retry was made.';return}
+    if(!valid())return;
     if(error||!data?.ok){status.textContent=error?.message||data?.message||'The action was not applied.';card.style.borderColor='#a8473f';return}
     status.textContent='Applied and recorded in the audit trail.';warning.textContent='Change completed.';warning.style.color='#2d7f5e';await refreshAfterAgentAction(proposal.action_type)
   };
   rejectButton.onclick=async()=>{
+    if(!valid()||rejectButton.disabled)return;
     confirmButton.disabled=true;rejectButton.disabled=true;status.textContent='Rejecting proposal...';
-    const {data,error}=await sb.rpc('reject_operations_agent_action',{p_action_id:proposal.action_id});
+    let data,error;try{({data,error}=await client.rpc('reject_operations_agent_action',{p_action_id:proposal.action_id}))}catch(cause){if(valid())status.textContent='Rejection could not be confirmed. Refresh before continuing.';return}
+    if(!valid())return;
     status.textContent=error?.message||(!data?.ok?'The proposal could not be rejected.':'Rejected. No operational data was changed.');if(error){confirmButton.disabled=false;rejectButton.disabled=false}
   }
 }
 async function askOperationsAgent(question){
   if(!sb||!currentUser){appendAssistantMessage('bot',answerOperationsQuestion(question));return}
-  const {data:authState,error:authError}=await sb.auth.getSession();
+  const user=currentUser,client=sb,epoch=hubSessionEpoch;const valid=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch;
+  const {data:authState,error:authError}=await client.auth.getSession();
+  if(!valid())return;
   const accessToken=authState?.session?.access_token||'';
   if(authError||!accessToken){appendAssistantMessage('bot','Your live session could not be verified, so no change was made. Sign out and sign back in, then try again.');return}
   const {data,error}=await sb.functions.invoke('operations-agent',{headers:{Authorization:`Bearer ${accessToken}`},body:{message:question}});
+  if(!valid())return;
   if(error||!data){appendAssistantMessage('bot',`The live AI action service is unavailable, so no change was made. Read-only fallback:\n${answerOperationsQuestion(question)}`);return}
   if(data.type==='proposal'&&data.proposal){appendAssistantProposal(data.proposal);return}
   if(data.type==='answer'){appendAssistantMessage('bot',data.message||'No reliable answer was returned.');return}
@@ -3791,7 +3946,7 @@ function renderAudit(){
       <div><h3>This Week — Change / Audit Log</h3><div class="muted" style="font-size:11px">Working log for week of ${fmt(logWeek)}. It clears from this view Friday at 5:00 PM; permanent history is retained.</div></div>
       <div style="display:flex;gap:7px"><button class="mini no-print" id="openHistoryFromAudit">Open Full History</button><button class="mini no-print" id="printAudit">Print / Save PDF</button></div>
     </div>
-    <div class="section-body">${rows.length?rows.map(a=>`<div class="audit-row"><div>${new Date(a.timestamp||a.date).toLocaleString()}</div><div><strong>${a.type}</strong></div><div>${a.user||'User'}</div><div>${a.detail}</div></div>`).join(''):'<div class="empty">No changes recorded for this operations week.</div>'}</div>
+    <div class="section-body">${rows.length?rows.map(a=>`<div class="audit-row"><div>${new Date(a.timestamp||a.date).toLocaleString()}</div><div><strong>${htmlSafe(a.type)}</strong></div><div>${htmlSafe(a.user||'User')}</div><div>${htmlSafe(a.detail)}</div></div>`).join(''):'<div class="empty">No changes recorded for this operations week.</div>'}</div>
   </section>`;
   document.getElementById('printAudit').onclick=()=>printCurrent('Superior Operations Weekly Audit Log');
   document.getElementById('openHistoryFromAudit').onclick=()=>{state.view='history';saveState();render()}
@@ -3812,17 +3967,17 @@ function renderHistory(){
 
     <section class="section">
       <div class="section-head"><div><h3>Delivery Release History</h3><div class="muted" style="font-size:10px">Permanent record of delivered / released loads.</div></div></div>
-      <div class="section-body">${deliveryRows.length?deliveryRows.map(l=>`<div class="history-row"><div>${l.deliveredAt?new Date(l.deliveredAt).toLocaleString():fmt(l.date)}</div><div><strong>${l.project}</strong><div class="job-sub">${l.division==='walls'?'Superior Walls':divisionMeta[l.division]?.label||l.division}</div></div><div>${l.load} · ${l.qty} ${l.division==='walls'?'unit(s)':divisionMeta[l.division]?.unit||'items'}</div><div>Released</div></div>`).join(''):'<div class="empty">No released deliveries yet.</div>'}</div>
+      <div class="section-body">${deliveryRows.length?deliveryRows.map(l=>`<div class="history-row"><div>${l.deliveredAt?new Date(l.deliveredAt).toLocaleString():fmt(l.date)}</div><div><strong>${htmlSafe(l.project)}</strong><div class="job-sub">${htmlSafe(l.division==='walls'?'Superior Walls':divisionMeta[l.division]?.label||l.division)}</div></div><div>${htmlSafe(l.load)} · ${htmlSafe(l.qty)} ${l.division==='walls'?'unit(s)':divisionMeta[l.division]?.unit||'items'}</div><div>Released</div></div>`).join(''):'<div class="empty">No released deliveries yet.</div>'}</div>
     </section>
 
     <section class="section">
       <div class="section-head"><div><h3>QC Activity History</h3><div class="muted" style="font-size:10px">Permanent QC event history across all weeks.</div></div></div>
-      <div class="section-body">${qcRows.length?qcRows.map(h=>`<div class="history-row"><div>${h.timestamp?new Date(h.timestamp).toLocaleString():fmt(h.date)}</div><div><strong>${h.product}</strong><div class="job-sub">${h.project}</div></div><div>${h.action}</div><div>${h.user||'QC Team'}</div></div>`).join(''):'<div class="empty">No QC activity yet.</div>'}</div>
+      <div class="section-body">${qcRows.length?qcRows.map(h=>`<div class="history-row"><div>${h.timestamp?new Date(h.timestamp).toLocaleString():fmt(h.date)}</div><div><strong>${htmlSafe(h.product)}</strong><div class="job-sub">${htmlSafe(h.project)}</div></div><div>${htmlSafe(h.action)}</div><div>${htmlSafe(h.user||'QC Team')}</div></div>`).join(''):'<div class="empty">No QC activity yet.</div>'}</div>
     </section>
 
     <section class="section">
       <div class="section-head"><div><h3>Full Change / Audit History</h3><div class="muted" style="font-size:10px">Permanent record across all operations weeks.</div></div><button class="mini no-print" id="printHistory">Print / Save PDF</button></div>
-      <div class="section-body">${auditRows.length?auditRows.map(a=>`<div class="audit-row"><div>${new Date(a.timestamp||a.date).toLocaleString()}</div><div><strong>${a.type}</strong></div><div>${a.user||'User'}</div><div>${a.detail}</div></div>`).join(''):'<div class="empty">No audit history yet.</div>'}</div>
+      <div class="section-body">${auditRows.length?auditRows.map(a=>`<div class="audit-row"><div>${new Date(a.timestamp||a.date).toLocaleString()}</div><div><strong>${htmlSafe(a.type)}</strong></div><div>${htmlSafe(a.user||'User')}</div><div>${htmlSafe(a.detail)}</div></div>`).join(''):'<div class="empty">No audit history yet.</div>'}</div>
     </section>`;
   document.getElementById('printHistory').onclick=()=>printCurrent('Superior Operations Full History')
 }
@@ -4248,10 +4403,11 @@ document.getElementById('refreshLiveBtn').onclick=()=>loadRemoteState(true);
 document.getElementById('signOutBtn').onclick=signOut;
 document.getElementById('assistantLaunch').onclick=openAssistant;
 document.getElementById('assistantClose').onclick=()=>document.getElementById('assistantPanel').classList.remove('open');
-document.getElementById('assistantForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,input=document.getElementById('assistantInput'),button=form.querySelector('button'),q=input.value.trim();if(!q||button.disabled)return;appendAssistantMessage('user',q);input.value='';input.disabled=true;button.disabled=true;button.textContent='Working...';try{await askOperationsAgent(q)}finally{input.disabled=false;button.disabled=false;button.textContent='Ask';input.focus()}};
+document.getElementById('assistantForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,input=document.getElementById('assistantInput'),button=form.querySelector('button'),q=input.value.trim();if(!q||button.disabled)return;const user=currentUser,client=sb,epoch=hubSessionEpoch;const valid=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch;appendAssistantMessage('user',q);input.value='';input.disabled=true;button.disabled=true;button.textContent='Working...';try{await askOperationsAgent(q)}catch(error){if(valid())appendAssistantMessage('bot','The request could not be completed. No automatic retry was made; check any pending action before trying again.')}finally{if(valid()){input.disabled=false;button.disabled=false;button.textContent='Ask';input.focus()}}};
 document.getElementById('authForm').addEventListener('submit',handleAuthSubmit);
 document.getElementById('forgotPasswordBtn').onclick=()=>setAuthMode('forgot');
 document.getElementById('backToLoginBtn').onclick=()=>setAuthMode('login');
+document.getElementById('retrySignOutBtn').onclick=signOut;
 document.getElementById('inventoryModalClose').onclick=closeInventoryModal;
 document.getElementById('inventoryModalCancel').onclick=closeInventoryModal;
 document.getElementById('inventoryModalSave').onclick=()=>{if(inventoryModalSaveAction)inventoryModalSaveAction()};
@@ -4276,10 +4432,11 @@ async function bootstrap(){
     if(event==='PASSWORD_RECOVERY'&&session){currentUser=null;showPasswordSetup(session,'Use this secure link to choose your password.');return}
     if(session&&session.user&&(event==='SIGNED_IN'||event==='INITIAL_SESSION')&&['invite','signup'].includes(authCallbackType())){currentUser=null;showPasswordSetup(session,'Your account is confirmed. Choose a private password to finish setup.');return}
     if(authMode==='recovery')return;
-    if(session&&session.user&&!currentUser)await startSession(session.user);
-    if(!session&&event==='SIGNED_OUT'){currentUser=null;weeklyPlannerEmployeeHistory=null;remoteReady=false;showAuthGate(true)}
+    if(session&&session.user&&!currentUser&&!hubSessionLocked)await startSession(session.user);
+    if(!session&&event==='SIGNED_OUT')resetLocalSession()
   });
-  const {data}=await sb.auth.getSession();
+  const initialEpoch=hubSessionEpoch;const {data}=await sb.auth.getSession();
+  if(initialEpoch!==hubSessionEpoch||hubSessionLocked)return;
   if(data.session&&authMode!=='recovery')await startSession(data.session.user);else showAuthGate(true)
 }
 bootstrap();

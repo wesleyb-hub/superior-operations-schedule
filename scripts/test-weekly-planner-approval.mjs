@@ -9,7 +9,7 @@ function setup(){
  const inputs={plannerCrewLeader:{value:'Synthetic Leader'},plannerCrewPeopleNew:{value:''},plannerSectionFeedback:{textContent:''}};
  const selected=[{value:'Synthetic Leader'}];
  const db={sections:Array.from({length:8},(_,i)=>({section_id:`synthetic-${i}`,section_key:`area-${i}`,schedule_version:1,status:'needs_review'})),people:[],permissions:{edit:true,approve:true,publish:true},packs:[]};
- const c={Promise,Number,Map,console,state:{week:'2026-10-26',view:'weekly-planner'},weeklyPlanner:structuredClone(db),weeklyPlannerSelected:'area-0',weeklyPlannerBusy:false,weeklyPlannerDraftError:'',refreshes:0,confirm:()=>true,saveUiPrefs:()=>{},showInventoryToast:m=>messages.push(m),document:{getElementById:id=>id==='view'?{querySelectorAll:()=>buttons}:inputs[id],querySelectorAll:q=>q.includes(':checked')?selected:[]}};
+ const c={currentUser:{id:"synthetic"},hubSessionEpoch:0,Promise,Number,Map,console,state:{week:'2026-10-26',view:'weekly-planner'},weeklyPlanner:structuredClone(db),weeklyPlannerSelected:'area-0',weeklyPlannerBusy:false,weeklyPlannerDraftError:'',refreshes:0,confirm:()=>true,saveUiPrefs:()=>{},showInventoryToast:m=>messages.push(m),document:{getElementById:id=>id==='view'?{querySelectorAll:()=>buttons}:inputs[id],querySelectorAll:q=>q.includes(':checked')?selected:[]}};
  c.bindPlannerEmployeePicker=()=>{};c.plannerSectionPeople=id=>c.weeklyPlanner.people.filter(p=>p.section_id===id);
  c.plannerSection=key=>c.weeklyPlanner.sections.find(s=>s.section_key===key);
  c.loadWeeklyPlanner=async()=>{c.refreshes++;c.weeklyPlanner=structuredClone(db);return true};

@@ -7,7 +7,7 @@ const html=readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const loader=html.slice(html.indexOf('function loadWeeklyPlanner('),html.indexOf('function subscribeWeeklyPlanner('));
 function setup(){
   const calls=[],errors=[];
-  const context={Promise,console:{error:(...args)=>errors.push(args)},state:{week:'2026-10-19',view:'weekly-planner'},currentUser:{id:'synthetic-admin'},currentUserIsAdmin:true,weeklyPlanner:{marker:'initial'},weeklyPlannerReady:false,weeklyPlannerError:'',weeklyPlannerDraftError:'',weeklyPlannerErrorWeek:'',weeklyPlannerRealtimePromise:null,weeklyPlannerRealtimeDirty:false,weeklyPlannerLoadPromise:null,weeklyPlannerLoadToken:null,weeklyPlannerLoadWeek:'',weeklyPlannerLoadedWeek:'',renders:0};
+  const context={hubSessionEpoch:0,Promise,console:{error:(...args)=>errors.push(args)},state:{week:'2026-10-19',view:'weekly-planner'},currentUser:{id:'synthetic-admin'},currentUserIsAdmin:true,weeklyPlanner:{marker:'initial'},weeklyPlannerReady:false,weeklyPlannerError:'',weeklyPlannerDraftError:'',weeklyPlannerErrorWeek:'',weeklyPlannerRealtimePromise:null,weeklyPlannerRealtimeDirty:false,weeklyPlannerLoadPromise:null,weeklyPlannerLoadToken:null,weeklyPlannerLoadWeek:'',weeklyPlannerLoadedWeek:'',renders:0};
   context.renderWeeklyPlanner=()=>context.renders++;
   context.sb={rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))};
   context.weeklyPlannerBusy=false;context.showInventoryToast=()=>{};
