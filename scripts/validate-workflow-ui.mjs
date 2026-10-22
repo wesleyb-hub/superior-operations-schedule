@@ -4,6 +4,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
+import {productionReleaseDomChecks} from './production-release-dom-checks.mjs';
 const {chromium}=createRequire(import.meta.url)('playwright');
 const root=resolve(import.meta.dirname,'..');
 const source=await readFile(resolve(root,'index.html'),'utf8');
@@ -14,6 +15,7 @@ const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH
 const failures=[],results=[];
 try{
  for(const width of [1440,390]){
+  results.push(await productionReleaseDomChecks(browser,html,width,output));
   const page=await browser.newPage({viewport:{width,height:1000}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',route=>route.request().url()==='http://offline.test/'?route.fulfill({contentType:'text/html',body:html}):route.abort());
