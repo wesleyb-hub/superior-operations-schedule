@@ -154,6 +154,7 @@ try{
     }
     if(name==='approve_weekly_planner_section'){
      if(section.schedule_version!==args.p_expected_version)throw new Error('Synthetic stale approval version');
+     if(window.qaPlannerDelayApproval)return new Promise(resolve=>window.qaPlannerResolveApproval=()=>{section.status='approved';resolve({data:structuredClone(section)})});
      section.status='approved';return {data:structuredClone(section)};
     }
     throw new Error('Unexpected synthetic RPC '+name);
@@ -167,6 +168,12 @@ try{
   await page.locator('#plannerCrewPeopleNew').fill('Retained Synthetic Employee');
   await page.locator('[data-planner-action="approve-section"]').click();
   await page.waitForFunction(()=>typeof window.qaPlannerResolveFailedSave==='function');
+  assert.equal(await page.locator('[data-planner-action="approve-section"]').isDisabled(),true);
+  assert.equal(await page.locator('[data-planner-action="save-section"]').isDisabled(),true);
+  assert.equal(await page.locator('#weekSelect').isDisabled(),true);
+  assert.equal(await page.locator('#addBtn').isDisabled(),true);
+  assert.equal(await page.locator('#refreshLiveBtn').isDisabled(),true);
+  assert.match(await page.locator('#plannerSectionFeedback').textContent(),/Saving your draft/);
   await page.evaluate(async()=>{window.qaPlannerResolveRead({data:structuredClone(window.qaPlannerDb)});await window.qaPendingPlannerRead});
   assert.equal(await page.evaluate(()=>window.qaPlannerDraftNode===document.getElementById('plannerCrewPeopleNew')),true);
   assert.equal(await page.locator('#plannerCrewPeopleNew').inputValue(),'Retained Synthetic Employee');
@@ -176,12 +183,37 @@ try{
   assert.equal(await page.evaluate(()=>window.qaPlannerCalls.length),2);
   assert.match(await page.locator('#plannerSectionFeedback').textContent(),/Synthetic save timed out/);
   if(output)await page.screenshot({path:resolve(output,`${width}-planner-save-retry.png`),fullPage:true});
-  await page.evaluate(()=>{window.qaPlannerFail=false});
+  await page.clock.install();
+  await page.evaluate(()=>{window.qaPlannerFail=false;window.qaPlannerDelayApproval=true});
   await page.locator('[data-planner-action="approve-section"]').click();
+  await page.waitForFunction(()=>typeof window.qaPlannerResolveApproval==='function');
+  await page.clock.fastForward(90_000);
+  await page.waitForFunction(()=>!document.getElementById('inventoryToast').classList.contains('show'));
+  assert.match(await page.locator('#plannerSectionFeedback').textContent(),/Approval is in progress/);
+  assert.equal(await page.locator('[data-planner-action="approve-section"]').textContent(),'Approving…');
+  assert.equal(await page.locator('[data-planner-action="approve-section"]').isDisabled(),true);
+  assert.equal(await page.locator('[data-planner-action="select-section"]').first().isDisabled(),true);
+  assert.equal(await page.locator('#plannerCrewPeopleNew').inputValue(),'Retained Synthetic Employee');
+  assert.equal(await page.evaluate(()=>window.qaPlannerDraftNode===document.getElementById('plannerCrewPeopleNew')),true);
+  if(output)await page.screenshot({path:resolve(output,`${width}-planner-approval-pending.png`),fullPage:true});
+  await page.evaluate(()=>window.qaPlannerResolveApproval());
   await page.waitForFunction(()=>weeklyPlanner.sections[0].status==='approved'&&!weeklyPlannerLoadPromise);
+  await page.waitForFunction(()=>!weeklyPlannerProgress);
+  assert.equal(await page.locator('[data-planner-action="approve-section"]').isEnabled(),true);
+  assert.equal(await page.locator('#weekSelect').isEnabled(),true);
   assert.equal(await page.getByRole('checkbox',{name:'Retained Synthetic Employee',exact:true}).isChecked(),true);
   assert.deepEqual(await page.evaluate(()=>window.qaPlannerCalls.map(c=>c.name)),['get_weekly_planner_snapshot','save_weekly_planner_section','save_weekly_planner_section','approve_weekly_planner_section','get_weekly_planner_snapshot']);
   results.push({width,view:'planner-approval-retry',passed:true});
+  await page.evaluate(()=>{window.qaPlannerBlockRead=true;window.qaPlannerResolveRead=null;const button=document.querySelector('[data-planner-action="reload"]');for(let i=0;i<40;i++)void button.onclick()});
+  await page.waitForFunction(()=>typeof window.qaPlannerResolveRead==='function');
+  assert.equal(await page.evaluate(()=>window.qaPlannerCalls.filter(c=>c.name==='get_weekly_planner_snapshot').length),3);
+  assert.equal(await page.locator('[data-planner-action="reload"]').isDisabled(),true);
+  assert.equal(await page.locator('[data-planner-action="reload"]').textContent(),'Refreshing…');
+  await page.evaluate(()=>{window.qaPlannerBlockRead=false;window.qaPlannerResolveRead({data:structuredClone(window.qaPlannerDb)})});
+  await page.waitForFunction(()=>!weeklyPlannerManualRefreshRequest);
+  assert.equal(await page.locator('[data-planner-action="reload"]').isEnabled(),true);
+  assert.equal(await page.locator('#plannerSectionFeedback').textContent(),'Weekly plan refreshed.');
+  results.push({width,view:'planner-manual-refresh-burst',passed:true});
   await page.evaluate(()=>{state.weeklyPlannerView='sources';renderWeeklyPlanner()});
   const availabilityName=page.locator('[data-planner-availability] [data-field="employee_name"]').first();
   await availabilityName.fill('Retained availability draft');
