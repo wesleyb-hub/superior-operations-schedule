@@ -263,9 +263,10 @@ test('denied, missing, malformed and omitted summaries cannot produce a partial 
   }
   assert.match(completionAnswer('how many LF of walls were completed this month?', { reporting: octoberClock, wall_completion_month: { status: 'omitted' } }), /cannot verify/);
 });
-test('shortcut never intercepts other periods, filtered questions, comparisons or writes', () => {
+test('unsupported completion periods and filters fail closed without substituting the current-month total', () => {
   const context = { reporting: octoberClock, wall_completion_month: wallCompletionContext(completionSnapshot([]), octoberClock) };
-  for (const question of ['how many LF of walls were completed for September so far', 'how many LF of walls were completed for October 2025', 'how many LF of walls were completed for October for customer X', 'mark walls completed this month', 'how many LF of walls were completed for October and September']) assert.equal(completionAnswer(question, context), null);
+  for (const question of ['how many LF of walls were completed for September so far', 'how many LF of walls were completed for October 2025', 'how many LF of walls were completed for October for customer X', 'how many LF of walls were completed for October and September']) assert.match(completionAnswer(question, context), /cannot verify LF Completed for the requested period or filter/);
+  assert.equal(completionAnswer('mark walls completed this month', context), null);
   assert.match(completionAnswer('how many LF of walls were completed for October 2026 so far?', context), /0\.00 LF/);
   assert.match(completionAnswer('how many LF of walls were completed this month?', context), /authorized schedule/);
 });
@@ -297,4 +298,14 @@ test('normalized aggregate matches actual frontend helpers for legacy LF and dat
   assert.equal(actual.lf_completed, expected);
   assert.equal(actual.future_dated_jobs, 0);
   assert.deepEqual(walls, original);
+});
+
+
+test('a stale completion summary can never answer a different reporting month', () => {
+  const metric = wallCompletionContext(completionSnapshot([{ lf: 9876, completedMonth: '2026-10' }]), octoberClock);
+  const answer = completionAnswer('how many LF of walls were completed this month?', {
+    reporting: reportingClock(new Date('2026-11-02T12:00:00Z')), wall_completion_month: metric,
+  });
+  assert.match(answer, /unavailable for that month/);
+  assert.doesNotMatch(answer, /9,876|9876/);
 });

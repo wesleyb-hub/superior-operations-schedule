@@ -9,7 +9,9 @@ const unavailable = (status = 'unavailable') => ({ status, read_only: true });
 
 async function read(client, name, parameters) {
   try {
-    return await client.rpc(name, parameters);
+    const result = await client.rpc(name, parameters);
+    if (!isObject(result)) throw new Error('Invalid context response');
+    return result;
   } catch {
     // A transport failure is not an empty dataset or an authorization decision.
     return { data: null, error: { message: 'Context source unavailable' } };
@@ -131,16 +133,24 @@ export function wallCompletionContext(result, reporting) {
 }
 
 // Narrow, read-only shortcut for the unambiguous current-month KPI question.
-// Other periods, job filters, comparisons and action requests remain with the model.
+// Recognized completion questions outside that scope fail closed, not back to
+// a model that could substitute this month's total or sum size-limited detail.
+// Unrelated questions and action requests remain with the model.
 export function completionAnswer(message, context) {
   const today = context?.reporting?.today;
   if (!today) return null;
   const monthName = new Date(`${today.slice(0, 7)}-01T12:00:00Z`).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' }).toLowerCase();
   const month = `(?:this month|${monthName}(?: ${today.slice(0, 4)})?)`;
   const pattern = new RegExp(`^how many (?:linear feet|lf) of (?:superior )?walls (?:were |have been )?completed (?:for |in )?${month}(?: so far| to date)?[?.!]*$`, 'i');
-  if (!pattern.test(message.trim().replace(/\s+/g, ' '))) return null;
+  const question = message.trim().replace(/\s+/g, ' ');
+  if (!pattern.test(question)) {
+    if (/^how many (?:linear feet|lf) of (?:superior )?walls (?:were |have been )?completed\b/i.test(question)) {
+      return `I cannot verify LF Completed for the requested period or filter from the available summary. It covers only ${today.slice(0, 7)} across your authorized schedule, not historical months, individual jobs/customers, or comparisons. I have not retrieved that narrower aggregate; current-month totals, weekly pours, and partial records are not a substitute.`;
+    }
+    return null;
+  }
   const metric = context.wall_completion_month;
-  if (metric?.status !== 'available') return 'I cannot verify the current month’s LF Completed because the authorized wall completion summary is unavailable. Weekly pours and partial production records are not a substitute.';
+  if (metric?.status !== 'available' || metric.month !== today.slice(0, 7)) return 'I cannot verify the current month’s LF Completed because the authorized wall completion summary is unavailable for that month. Weekly pours and partial production records are not a substitute.';
   const format = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   let answer = `As of ${today} (${context.reporting.timezone}), the Hub’s recorded ${metric.month} **LF Completed is ${format(metric.lf_completed)} LF**, across ${metric.completed_jobs} wall jobs in your authorized schedule. This matches the Monthly Completion calculation, not weekly poured LF.`;
   if (metric.month_only_jobs) answer += ` ${metric.month_only_jobs} jobs (${format(metric.month_only_lf)} LF) have a completion month only, so their exact completion dates cannot be verified.`;
@@ -266,8 +276,8 @@ export async function loadAuthorizedContext(client, now = new Date()) {
     context: boundContext({
       access: base.data.access,
       generated_at: base.data.generated_at ?? null,
-      inventory: base.data.inventory ?? [],
-      production: base.data.production ?? [],
+      inventory: Array.isArray(base.data.inventory) ? base.data.inventory : unavailable(),
+      production: Array.isArray(base.data.production) ? base.data.production : unavailable(),
       reporting,
       wall_completion_month: wallCompletionContext(schedule, reporting),
       production_week: forecast.error || !isObject(forecast.data) ? unavailable() : {
