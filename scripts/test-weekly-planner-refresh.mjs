@@ -10,19 +10,19 @@ function setup(){
   const context={hubSessionEpoch:0,Promise,console:{error:(...args)=>errors.push(args)},state:{week:'2026-10-19',view:'weekly-planner'},currentUser:{id:'synthetic-admin'},currentUserIsAdmin:true,weeklyPlanner:{marker:'initial'},weeklyPlannerReady:false,weeklyPlannerError:'',weeklyPlannerDraftError:'',weeklyPlannerErrorWeek:'',weeklyPlannerRealtimePromise:null,weeklyPlannerRealtimeDirty:false,weeklyPlannerLoadPromise:null,weeklyPlannerLoadToken:null,weeklyPlannerLoadWeek:'',weeklyPlannerLoadedWeek:'',renders:0};
   context.renderWeeklyPlanner=()=>context.renders++;
   context.sb={rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))};
-  context.weeklyPlannerBusy=false;context.weeklyPlannerProgress=null;context.weeklyPlannerManualRefreshRequest=null;context.showInventoryToast=()=>{};context.plannerSectionFeedback=message=>context.weeklyPlannerDraftError=message;
+  context.plannerUpdatePendingUI=()=>{};context.weeklyPlannerBusy=false;context.weeklyPlannerProgress=null;context.weeklyPlannerManualRefreshRequest=null;context.showInventoryToast=()=>{};context.plannerSectionFeedback=message=>context.weeklyPlannerDraftError=message;
   vm.createContext(context);vm.runInContext(loader,context);
   vm.runInContext(html.slice(html.indexOf('async function weeklyPlannerRpc('),html.indexOf('function plannerCaptureInputs(')),context);
   return {context,calls,errors,load:force=>context.loadWeeklyPlanner(force)};
 }
 const tick=()=>Promise.resolve();
 const result=marker=>({data:{marker},error:null});
-test('ordinary concurrent loads deduplicate; forced post-write load does not reuse old read',async()=>{
+test('ordinary concurrent loads deduplicate; post-write force queues a genuinely fresh read',async()=>{
   const {context:c,calls,load}=setup();const old=load();await tick();
   assert.equal(load(),old);const fresh=load(true);await tick();
-  assert.notEqual(fresh,old);assert.equal(calls.length,2);
+  assert.notEqual(fresh,old);assert.equal(calls.length,1,'forced refresh must not overlap transport');
+  calls[0].resolve(result('before-generation'));assert.equal(await old,false);await tick();assert.equal(calls.length,2);
   calls[1].resolve(result('generated'));assert.equal(await fresh,true);
-  calls[0].resolve(result('before-generation'));assert.equal(await old,false);
   assert.equal(c.weeklyPlanner.marker,'generated');assert.equal(c.renders,1);
 });
 test('older result resolving first cannot clear the newer in-flight request',async()=>{
@@ -30,11 +30,10 @@ test('older result resolving first cannot clear the newer in-flight request',asy
   calls[0].resolve(result('old'));assert.equal(await old,false);assert.equal(c.weeklyPlannerLoadPromise,fresh);
   calls[1].resolve(result('new'));assert.equal(await fresh,true);assert.equal(c.weeklyPlannerLoadPromise,null);
 });
-test('A to B to A navigation accepts only latest request, not first A',async()=>{
+test('A to B to A navigation coalesces to latest A without launching obsolete B',async()=>{
   const {context:c,calls,load}=setup();const a1=load();await tick();c.state.week='2026-10-26';const b=load();await tick();c.state.week='2026-10-19';const a2=load();await tick();
-  assert.equal(calls.length,3);calls[2].resolve(result('latest-A'));await a2;
-  calls[0].resolve(result('first-A'));calls[1].resolve(result('B'));assert.equal(await a1,false);assert.equal(await b,false);
-  assert.equal(c.weeklyPlanner.marker,'latest-A');assert.equal(c.renders,1);
+  assert.equal(calls.length,1);assert.equal(await b,false);calls[0].resolve(result('first-A'));assert.equal(await a1,false);await tick();assert.equal(calls.length,2);assert.equal(calls[1].args.p_week_start,'2026-10-19');
+  calls[1].resolve(result('latest-A'));assert.equal(await a2,true);assert.equal(c.weeklyPlanner.marker,'latest-A');assert.equal(c.renders,1);
 });
 test('missing user, client, or administrator access performs no RPC',async()=>{
   for(const [key,value] of [['currentUser',null],['sb',null],['currentUserIsAdmin',false]]){
@@ -47,9 +46,10 @@ test('sign-out or identity/access change while waiting cannot apply response',as
     assert.equal(await pending,false);assert.equal(c.weeklyPlanner.marker,'initial');assert.equal(c.renders,0);
   }
 });
-test('superseded error cannot replace successful newer snapshot with error screen',async()=>{
-  const {context:c,calls,errors,load}=setup();const old=load();await tick();const fresh=load(true);await tick();calls[1].resolve(result('fresh'));await fresh;
-  calls[0].reject(new Error('old failure'));assert.equal(await old,false);assert.equal(c.weeklyPlannerReady,true);assert.equal(c.weeklyPlannerError,'');assert.equal(errors.length,0);
+test('superseded error cannot poison queued explicit fresh snapshot',async()=>{
+  const {context:c,calls,errors,load}=setup();const old=load();await tick();const fresh=load(true);await tick();assert.equal(calls.length,1);
+  calls[0].reject(new Error('old failure'));assert.equal(await old,false);await tick();assert.equal(calls.length,2);assert.equal(errors.length,0);
+  calls[1].resolve(result('fresh'));await fresh;assert.equal(c.weeklyPlannerReady,true);assert.equal(c.weeklyPlannerError,'');
 });
 test('current RPC error clears pending slot and allows explicit retry',async()=>{
   const {context:c,calls,load}=setup();const first=load();await tick();calls[0].resolve({error:{message:'Synthetic offline'}});assert.equal(await first,false);assert.equal(c.weeklyPlannerError,'Synthetic offline');assert.equal(c.weeklyPlannerLoadPromise,null);
@@ -59,17 +59,17 @@ test('synchronous RPC failure also clears promise slot rather than rejecting loa
   const {context:c,load}=setup();c.sb.rpc=()=>{throw new Error('Synthetic synchronous failure')};assert.equal(await load(true),false);assert.equal(c.weeklyPlannerLoadPromise,null);assert.equal(c.weeklyPlannerError,'Synthetic synchronous failure');
 });
 test('cached ready week avoids unnecessary reads unless forced',async()=>{
-  const {context:c,calls,load}=setup();c.weeklyPlannerReady=true;c.weeklyPlannerLoadedWeek=c.state.week;assert.equal(await load(),true);assert.equal(calls.length,0);
+  const {context:c,calls,load}=setup();c.weeklyPlannerReady=true;c.weeklyPlannerLoadedWeek=c.state.week;c.loadWeeklyPlanner.loadedContext={user:c.currentUser,client:c.sb,epoch:c.hubSessionEpoch};assert.equal(await load(),true);assert.equal(calls.length,0);
   const fresh=load(true);await tick();assert.equal(calls.length,1);calls[0].resolve(result('fresh'));await fresh;
 });
 
-test('Generate RPC completion waits for a new snapshot instead of pre-generation read',async()=>{
+test('Generate RPC completion queues a new snapshot strictly after confirmed write and old read settlement',async()=>{
   const {context:c,calls,load}=setup();const old=load();await tick();
   const generation=c.weeklyPlannerRpc('generate_weekly_planner',{p_week_start:c.state.week},'Generated');
   assert.equal(calls[1].name,'generate_weekly_planner');calls[1].resolve({data:true,error:null});await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(calls.length,3);assert.equal(calls[2].name,'get_weekly_planner_snapshot');
-  calls[2].resolve(result('generated'));assert.equal(await generation,true);
-  calls[0].resolve(result('before-generation'));assert.equal(await old,false);assert.equal(c.weeklyPlanner.marker,'generated');
+  assert.equal(calls.length,2);assert.ok(c.weeklyPlannerProgress,'progress remains locked through queued refresh');
+  calls[0].resolve(result('before-generation'));assert.equal(await old,false);await tick();assert.equal(calls.length,3);assert.equal(calls[2].name,'get_weekly_planner_snapshot');
+  calls[2].resolve(result('generated'));assert.equal(await generation,true);assert.equal(c.weeklyPlannerProgress,null);assert.equal(c.weeklyPlanner.marker,'generated');
 });
 
 // Exercise the real renderer as well: a stubbed renderer hides error/reset loops.
@@ -151,10 +151,10 @@ test('week or user change aborts queued realtime work after pending read settles
     const {context:c,calls,load,notify}=setupRealtime();const initial=load();await flushRealtime();const worker=notify();await flushRealtime();change(c);calls[0].resolve(result('old-context'));await initial;await worker;await flushRealtime();assert.equal(calls.length,1,'must not issue queued reads for obsolete navigation/session');
   }
 });
-test('post-write forced refresh still starts immediately while realtime worker waits',async()=>{
-  const {context:c,calls,load,notify}=setupRealtime();const initial=load();await flushRealtime();const worker=notify();await flushRealtime();const postWrite=load(true);await flushRealtime();assert.equal(calls.length,2);
-  calls[1].resolve(result('post-write'));await postWrite;calls[0].resolve(result('before-write'));await initial;await worker;await flushRealtime();
-  assert.equal(c.weeklyPlanner.marker,'post-write');assert.equal(calls.length,2,'superseded initial read must not restart realtime worker');
+test('post-write forced refresh waits for old transport without accepting pre-write data',async()=>{
+  const {context:c,calls,load,notify}=setupRealtime();const initial=load();await flushRealtime();const worker=notify();await flushRealtime();const postWrite=load(true);await flushRealtime();assert.equal(calls.length,1);
+  calls[0].resolve(result('before-write'));await initial;await worker;await flushRealtime();assert.equal(calls.length,2);
+  calls[1].resolve(result('post-write'));await postWrite;await flushRealtime();assert.equal(c.weeklyPlanner.marker,'post-write');assert.equal(calls.length,2,'superseded initial read must not restart realtime worker');
 });
 test('failed-save draft protection pauses realtime and rejects preexisting snapshot until explicit refresh',async()=>{
  const {context:c,calls,load}=setup();const pending=load();await tick();c.weeklyPlannerDraftError='Synthetic save failed; keep edits';
