@@ -27,10 +27,13 @@ try {
   };
   const legacy = await insert({ delivery_status: 'failed', attempts: 1, last_error: 'Original synthetic provider failure' });
   const before = (await admin.query('select to_jsonb(a) as row from inventory_alert_outbox a where alert_id=$1', [legacy.alert_id])).rows[0].row;
+  const security = async () => (await admin.query("select proname,prosecdef,proconfig,proacl::text from pg_proc where oid in ('public.claim_inventory_alerts(bigint,integer)'::regprocedure,'public.mark_inventory_ordered(bigint,bigint)'::regprocedure) order by proname")).rows;
+  const securityBefore = await security();
   for (const name of migrations.filter((name) => name.endsWith('_inventory_alert_recovery.sql'))) {
     await admin.query(await fs.readFile(path.join(root, 'supabase/migrations', name), 'utf8'));
   }
   const after = (await admin.query("select to_jsonb(a)-'delivery_key'-'delivery_request'-'delivery_started_at' as row from inventory_alert_outbox a where alert_id=$1", [legacy.alert_id])).rows[0].row;
+  assert.deepEqual(await security(), securityBefore, 'RPC ownership/access settings must remain unchanged');
   assert.deepEqual(after, before, 'Applying migration must not rewrite existing alert records');
   console.log('PASS: all repository migrations apply; recovery migration preserves existing alert records');
 
@@ -88,6 +91,20 @@ try {
   assert.equal((await admin.query("select has_function_privilege('service_role','public.claim_inventory_alerts(bigint,integer)','EXECUTE') as allowed")).rows[0].allowed, true);
   assert.equal((await admin.query("select relrowsecurity from pg_class where oid='public.inventory_alert_outbox'::regclass")).rows[0].relrowsecurity, true);
   console.log('PASS: ordered material is suppressed; existing service-role-only RPC and RLS remain intact');
+
+  const quarantine = await insert({ delivery_status: 'failed', attempts: 2, delivery_key: 'synthetic-quarantine', next_attempt_at: 'infinity', last_error: 'Manual review required: accepted outcome unknown' });
+  const ordinary = await insert({ delivery_status: 'failed', attempts: 1, delivery_key: 'synthetic-ordinary', last_error: 'Original transient failure' });
+  await admin.query("insert into inventory_user_access(email,can_manage) values('synthetic-manager@example.invalid',true)");
+  const itemVersion = (await admin.query('select version from inventory_items where item_id=$1', [item])).rows[0].version;
+  await admin.query("select set_config('request.jwt.claims','{\"role\":\"authenticated\",\"email\":\"synthetic-manager@example.invalid\"}',false)");
+  await admin.query('set role authenticated');
+  await admin.query('select mark_inventory_ordered($1,$2)', [item, itemVersion]);
+  await admin.query('reset role'); await admin.query(auth);
+  saved = await row(quarantine.alert_id);
+  assert.equal(saved.delivery_status, 'failed'); assert.equal(saved.next_text, 'infinity'); assert.equal(saved.last_error, quarantine.last_error);
+  saved = await row(ordinary.alert_id);
+  assert.equal(saved.delivery_status, 'suppressed'); assert.match(saved.last_error, /Original transient failure.*marked ordered/);
+  console.log('PASS: real authenticated mark-ordered RPC preserves terminal quarantine and prior failure history');
 } finally {
   await Promise.allSettled([a.end(), b.end(), admin.end()]);
 }

@@ -66,4 +66,24 @@ $$;
 revoke all on function public.claim_inventory_alerts(bigint,integer) from public,anon,authenticated;
 grant execute on function public.claim_inventory_alerts(bigint,integer) to service_role;
 
+-- Preserve quarantine visibility/history when an inventory manager marks an
+-- item ordered. This replacement keeps the existing access gate, search path,
+-- SECURITY DEFINER setting and ACL; only alert suppression is narrowed.
+create or replace function public.mark_inventory_ordered(p_item_id bigint,p_expected_version bigint)
+returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_item public.inventory_items%rowtype;v_actor text:=lower(coalesce(auth.jwt()->>'email',''));
+begin
+  if not public.inventory_item_access(p_item_id,'manage') then raise exception 'Inventory management access required'; end if;
+  update public.inventory_items set ordered=true,ordered_at=now(),ordered_by=v_actor,updated_at=now(),updated_by=v_actor,version=version+1
+    where item_id=p_item_id and version=p_expected_version returning * into v_item;
+  if not found then raise exception 'Inventory item missing or version conflict'; end if;
+  update public.inventory_alert_outbox set delivery_status='suppressed',last_error=concat_ws(' | ',nullif(last_error,''),'Suppressed because material was marked ordered')
+    where item_id=p_item_id and delivery_status in ('pending','failed')
+      and next_attempt_at<>'infinity'::timestamptz;
+  insert into public.inventory_events(item_id,event_type,quantity_before,quantity_after,actor_email)
+  values(p_item_id,'marked_ordered',v_item.quantity,v_item.quantity,v_actor);
+  return to_jsonb(v_item);
+end;
+$$;
+
 commit;
