@@ -107,14 +107,15 @@ try{
    currentUser={id:'synthetic-browser-admin'};currentUserIsAdmin=true;
    subscribeWeeklyPlanner=()=>{};weeklyPlanner.permissions={edit:true,approve:true,publish:true};
    weeklyPlanner.sections[0].crew_leader='Test Alpha';
-   window.qaPlannerDb=structuredClone(weeklyPlanner);window.qaPlannerCalls=[];window.qaPlannerFail=true;
+   window.qaPlannerDb=structuredClone(weeklyPlanner);window.qaPlannerCalls=[];window.qaPlannerFail=true;window.qaPlannerBlockRead=true;
    const cache=plannerEmployeeHistoryCache();cache.ready=true;
    sb={rpc:async(name,args)=>{
     window.qaPlannerCalls.push({name,args:structuredClone(args)});
-    if(name==='get_weekly_planner_snapshot')return {data:structuredClone(window.qaPlannerDb)};
+    if(name==='get_weekly_planner_snapshot'){if(window.qaPlannerBlockRead)return new Promise(resolve=>window.qaPlannerResolveRead=resolve);return {data:structuredClone(window.qaPlannerDb)}};
+    if(name==='save_weekly_planner_inputs')return {error:{message:'Synthetic input save failed'}};
     const section=window.qaPlannerDb.sections.find(s=>s.section_id===args.p_section_id);
     if(name==='save_weekly_planner_section'){
-     if(window.qaPlannerFail)return {error:{message:'Synthetic save timed out',code:'57014'}};
+     if(window.qaPlannerFail)return new Promise(resolve=>window.qaPlannerResolveFailedSave=()=>resolve({error:{message:'Synthetic save timed out',code:'57014'}}));
      if(section.schedule_version!==args.p_expected_version)throw new Error('Synthetic stale save version');
      section.schedule_version++;section.crew_leader=args.p_crew_leader;section.status='needs_review';
      window.qaPlannerDb.people=window.qaPlannerDb.people.filter(p=>p.section_id!==section.section_id).concat(args.p_people.map(p=>({section_id:section.section_id,employee_name:p.name,role_name:p.role,is_leader:p.is_leader})));
@@ -128,22 +129,40 @@ try{
    }};plannerEmployeeHistoryCache().ready=true;renderWeeklyPlanner();
   });
   page.on('dialog',dialog=>dialog.accept());
+  await page.evaluate(()=>{window.qaPendingPlannerRead=loadWeeklyPlanner(true)});
+  await page.waitForFunction(()=>typeof window.qaPlannerResolveRead==='function');
+  await page.evaluate(()=>{window.qaPlannerBlockRead=false;window.qaPlannerDraftNode=document.getElementById('plannerCrewPeopleNew')});
   await page.locator('#plannerCrewLeader').fill('Test Alpha');
   await page.locator('#plannerCrewPeopleNew').fill('Retained Synthetic Employee');
   await page.locator('[data-planner-action="approve-section"]').click();
+  await page.waitForFunction(()=>typeof window.qaPlannerResolveFailedSave==='function');
+  await page.evaluate(async()=>{window.qaPlannerResolveRead({data:structuredClone(window.qaPlannerDb)});await window.qaPendingPlannerRead});
+  assert.equal(await page.evaluate(()=>window.qaPlannerDraftNode===document.getElementById('plannerCrewPeopleNew')),true);
+  assert.equal(await page.locator('#plannerCrewPeopleNew').inputValue(),'Retained Synthetic Employee');
+  await page.evaluate(()=>window.qaPlannerResolveFailedSave());
   await page.waitForFunction(()=>weeklyPlannerDraftError.includes('on-screen edits are retained'));
   assert.equal(await page.locator('#plannerCrewPeopleNew').inputValue(),'Retained Synthetic Employee');
-  assert.equal(await page.evaluate(()=>window.qaPlannerCalls.length),1);
+  assert.equal(await page.evaluate(()=>window.qaPlannerCalls.length),2);
   assert.match(await page.locator('#plannerSectionFeedback').textContent(),/Synthetic save timed out/);
   if(output)await page.screenshot({path:resolve(output,`${width}-planner-save-retry.png`),fullPage:true});
   await page.evaluate(()=>{window.qaPlannerFail=false});
   await page.locator('[data-planner-action="approve-section"]').click();
   await page.waitForFunction(()=>weeklyPlanner.sections[0].status==='approved'&&!weeklyPlannerLoadPromise);
   assert.equal(await page.getByRole('checkbox',{name:'Retained Synthetic Employee',exact:true}).isChecked(),true);
-  assert.deepEqual(await page.evaluate(()=>window.qaPlannerCalls.map(c=>c.name)),['save_weekly_planner_section','save_weekly_planner_section','approve_weekly_planner_section','get_weekly_planner_snapshot']);
+  assert.deepEqual(await page.evaluate(()=>window.qaPlannerCalls.map(c=>c.name)),['get_weekly_planner_snapshot','save_weekly_planner_section','save_weekly_planner_section','approve_weekly_planner_section','get_weekly_planner_snapshot']);
   results.push({width,view:'planner-approval-retry',passed:true});
+  await page.evaluate(()=>{state.weeklyPlannerView='sources';renderWeeklyPlanner()});
+  const availabilityName=page.locator('[data-planner-availability] [data-field="employee_name"]').first();
+  await availabilityName.fill('Retained availability draft');
+  await page.locator('[data-planner-action="save-inputs"]').click();
+  await page.waitForFunction(()=>weeklyPlannerDraftError.includes('Synthetic input save failed'));
+  assert.equal(await availabilityName.inputValue(),'Retained availability draft');
+  assert.match(await page.locator('#plannerSaveFeedback').textContent(),/on-screen edits are retained/);
+  assert.equal(await page.evaluate(()=>window.qaPlannerCalls.at(-1).name),'save_weekly_planner_inputs');
+  results.push({width,view:'planner-pending-read-and-input-draft',passed:true});
   // A delayed Installation name read must not replace the live draft DOM.
   await page.evaluate(()=>{
+   state.weeklyPlannerView='review';weeklyPlannerDraftError='';
    weeklyPlanner.sections[0].section_key='installation_stone';weeklyPlannerSelected='installation_stone';
    weeklyPlannerInstallEmployeesReady=false;weeklyPlannerInstallEmployeesPromise=null;
    sb.from=()=>{const chain={select:()=>chain,eq:()=>chain,not:()=>chain,limit:()=>new Promise(resolve=>window.qaResolveInstallNames=resolve)};return chain};
@@ -187,6 +206,39 @@ try{
   if(output)await page.screenshot({path:resolve(output,`${width}-installation-activity-modal.png`),fullPage:true});
   await page.evaluate(()=>closeProductionModal());
   results.push({width,view:'installation-draft-and-sequential-modal',passed:true});
+  // The actual assistant submit handler must not unlock the next session's question.
+  await page.evaluate(()=>{
+   window.qaOriginalAsk=askOperationsAgent;window.qaAssistantRequests=[];
+   askOperationsAgent=()=>new Promise((resolve,reject)=>window.qaAssistantRequests.push({resolve,reject}));
+   openAssistant();
+  });
+  await page.locator('#assistantInput').fill('Synthetic old-session question');
+  await page.locator('#assistantForm button').click();
+  assert.equal(await page.locator('#assistantInput').isDisabled(),true);
+  await page.evaluate(()=>{resetLocalSession();currentUser={id:'qa-new-session'};showAuthGate(false);openAssistant()});
+  await page.locator('#assistantInput').fill('Synthetic new-session question');
+  await page.locator('#assistantForm button').click();
+  await page.evaluate(async()=>{window.qaAssistantRequests[0].resolve();await Promise.resolve();await Promise.resolve()});
+  assert.equal(await page.locator('#assistantInput').isDisabled(),true);
+  assert.equal(await page.locator('#assistantForm button').isDisabled(),true);
+  assert.equal(await page.locator('#assistantForm button').textContent(),'Working...');
+  await page.evaluate(()=>window.qaAssistantRequests[1].reject(new Error('Synthetic transport failure')));
+  await page.waitForFunction(()=>!document.querySelector('#assistantForm button').disabled);
+  assert.match(await page.locator('#assistantLog').textContent(),/No automatic retry/);
+  await page.evaluate(()=>{askOperationsAgent=window.qaOriginalAsk;showInventoryToast('SYNTHETIC PRIVATE TOAST')});
+  results.push({width,view:'assistant-cross-session-completion',passed:true});
+  await page.evaluate(()=>{
+   for(const id of ['wallModal','planReviewModal','projectModal','pieceModal','productionModal','inventoryModal'])document.getElementById(id).classList.add('open');
+   for(const id of ['wCustomer','planReviewNotes','assistantInput'])document.getElementById(id).value='SYNTHETIC PRIVATE DRAFT';
+   for(const id of ['planReviewSummary','productionModalBody','inventoryModalTitle'])document.getElementById(id).textContent='SYNTHETIC PRIVATE DRAFT';
+   resetLocalSession();
+  });
+  assert.equal(await page.locator('.modal-backdrop.open,.inventory-modal-backdrop.open,.assistant-panel.open').count(),0);
+  for(const id of ['wCustomer','planReviewNotes','assistantInput'])assert.equal(await page.locator('#'+id).inputValue(),'');
+  for(const id of ['planReviewSummary','productionModalBody','inventoryModalTitle'])assert.equal(await page.locator('#'+id).textContent(),'');
+  assert.equal(await page.locator('#authGate').isVisible(),true);
+  assert.equal(await page.locator('#wallModal input').count()>0,true); // static form/event target retained
+  results.push({width,view:'signed-out-modal-cleanup',passed:true});
   failures.push(...errors.map(e=>`${width}: ${e}`));await page.close();
  }
  if(output)await writeFile(resolve(output,'results.json'),JSON.stringify({results,failures},null,2));

@@ -87,6 +87,14 @@ try{
  await page.waitForFunction(()=>!weeklyPlannerBusy&&weeklyPlannerDraftError.length>0);
  assert.match(await page.locator('#plannerSectionFeedback').textContent(),/conflict|blocking|resolve/i);
  assert.equal(await manual.locator('[data-field="assignment_text"]').inputValue(),'TEST correction and retry');
+ const blockedSection=await page.evaluate(id=>weeklyPlanner.sections.find(s=>s.section_id===id),sections[0].id);
+ const savedBlockedSection=(await harness.rpc(identities.admin,'get_weekly_planner_snapshot',{p_week_start:'2026-10-26'})).data.sections.find(s=>s.section_id===sections[0].id);
+ assert.notEqual(savedBlockedSection.status,'approved');
+ assert.equal(blockedSection.schedule_version,savedBlockedSection.schedule_version);
+ assert.match(await page.locator('#plannerSectionMetadata').textContent(),new RegExp(`Version ${savedBlockedSection.schedule_version}\\b`));
+ assert.equal(await page.locator('#plannerSectionMetadata .planner-status').textContent(),savedBlockedSection.status.replaceAll('_',' '));
+ assert.equal(await page.locator(`[data-planner-section-status="${sections[0].id}"]`).textContent(),savedBlockedSection.status.replaceAll('_',' '));
+ assert.equal(await page.locator('#plannerSectionMetadata .planner-status.approved').count(),0);
  await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:output+'/desktop-real-blocker-retained.png',fullPage:true});
  await manual.locator('[data-field="readiness_status"]').selectOption('unconfirmed');
  await page.locator('[data-planner-action="approve-section"]').click();

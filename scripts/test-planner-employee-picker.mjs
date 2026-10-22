@@ -27,7 +27,7 @@ test('RLS-empty history remains empty and never grants staff or copies availabil
 // Installation suggestions use the same choice-only refresh, not a full draft render.
 function installationSetup(){
  const {c,elements,...rest}=setup();let resolveRead,calls=0,refreshes=0;
- c.state={view:'weekly-planner',weeklyPlannerView:'review'};c.currentUser={id:'synthetic-install'};
+ c.hubSessionEpoch=0;c.state={view:'weekly-planner',weeklyPlannerView:'review'};c.currentUser={id:'synthetic-install'};
  c.weeklyPlannerSelected='installation_stone';c.weeklyPlanner.sections[0].section_key='installation_stone';
  c.weeklyPlannerInstallEmployeesReady=false;c.weeklyPlannerInstallEmployeesPromise=null;c.weeklyPlannerInstallEmployeesError='';
  c.console={error:()=>{}};
@@ -39,12 +39,12 @@ function installationSetup(){
 }
 test('Installation deferred success refreshes choices only and returns success without replacing drafts',async()=>{
  const {c,elements,resolve,counts}=installationSetup();elements.plannerCrewLeader.value='Unsaved leader';elements.plannerCrewPeopleNew.value='Unsaved employee';
- const pending=c.loadWeeklyPlannerInstallEmployees();resolve({data:[{resource_name:'New Synthetic'}]});assert.equal(await pending,true);
+ const pending=c.loadWeeklyPlannerInstallEmployees();await tick();resolve({data:[{resource_name:'New Synthetic'}]});assert.equal(await pending,true);
  assert.equal(elements.plannerCrewLeader.value,'Unsaved leader');assert.equal(elements.plannerCrewPeopleNew.value,'Unsaved employee');assert.deepEqual(counts(),{calls:1,refreshes:1});
  assert.equal(await c.loadWeeklyPlannerInstallEmployees(),true);assert.match(elements.plannerInstallationEmployeeHint.textContent,/names are loaded/);
 });
 test('Installation failure stays false on cached read and explicit retry recovers',async()=>{
- const {c,resolve,counts}=installationSetup();let pending=c.loadWeeklyPlannerInstallEmployees();resolve({error:{message:'Synthetic unavailable'}});assert.equal(await pending,false);assert.equal(await c.loadWeeklyPlannerInstallEmployees(),false);assert.equal(counts().calls,1);
- pending=c.loadWeeklyPlannerInstallEmployees(true);resolve({data:[]});assert.equal(await pending,true);assert.equal(counts().calls,2);
+ const {c,resolve,counts}=installationSetup();let pending=c.loadWeeklyPlannerInstallEmployees();await tick();resolve({error:{message:'Synthetic unavailable'}});assert.equal(await pending,false);assert.equal(await c.loadWeeklyPlannerInstallEmployees(),false);assert.equal(counts().calls,1);
+ pending=c.loadWeeklyPlannerInstallEmployees(true);await tick();resolve({data:[]});assert.equal(await pending,true);assert.equal(counts().calls,2);
 });
 test('changed suggestions retain checked draft-only names and escape them',()=>{const {c}=setup();assert.match(c.plannerEmployeeOptions('a','installation_stone',['<Draft Synthetic>']),/&lt;Draft Synthetic>/)});

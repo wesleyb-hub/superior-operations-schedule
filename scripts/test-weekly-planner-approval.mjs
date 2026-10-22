@@ -8,8 +8,9 @@ function setup(){
  const calls=[],messages=[],buttons=['generate','save-section','approve-section','publish'].map(action=>({dataset:{plannerAction:action}}));
  const inputs={plannerCrewLeader:{value:'Synthetic Leader'},plannerCrewPeopleNew:{value:''},plannerSectionFeedback:{textContent:''}};
  const selected=[{value:'Synthetic Leader'}];
+ const metadata={dataset:{sectionId:'synthetic-0'},innerHTML:'Version 1 · APPROVED'},statusLabel={dataset:{plannerSectionStatus:'synthetic-0'},textContent:'approved'};inputs.plannerSectionMetadata=metadata;
  const db={sections:Array.from({length:8},(_,i)=>({section_id:`synthetic-${i}`,section_key:`area-${i}`,schedule_version:1,status:'needs_review'})),people:[],permissions:{edit:true,approve:true,publish:true},packs:[]};
- const c={Promise,Number,Map,console,state:{week:'2026-10-26',view:'weekly-planner'},weeklyPlanner:structuredClone(db),weeklyPlannerSelected:'area-0',weeklyPlannerBusy:false,weeklyPlannerDraftError:'',refreshes:0,confirm:()=>true,saveUiPrefs:()=>{},showInventoryToast:m=>messages.push(m),document:{getElementById:id=>id==='view'?{querySelectorAll:()=>buttons}:inputs[id],querySelectorAll:q=>q.includes(':checked')?selected:[]}};
+ const c={currentUser:{id:"synthetic"},hubSessionEpoch:0,Promise,Number,Map,console,state:{week:'2026-10-26',view:'weekly-planner'},weeklyPlanner:structuredClone(db),weeklyPlannerSelected:'area-0',weeklyPlannerBusy:false,weeklyPlannerDraftError:'',refreshes:0,confirm:()=>true,saveUiPrefs:()=>{},showInventoryToast:m=>messages.push(m),document:{getElementById:id=>id==='view'?{querySelectorAll:()=>buttons}:inputs[id],querySelectorAll:q=>q.includes(':checked')?selected:q==='[data-planner-section-status]'?[statusLabel]:[]}};
  c.bindPlannerEmployeePicker=()=>{};c.plannerSectionPeople=id=>c.weeklyPlanner.people.filter(p=>p.section_id===id);
  c.plannerSection=key=>c.weeklyPlanner.sections.find(s=>s.section_key===key);
  c.loadWeeklyPlanner=async()=>{c.refreshes++;c.weeklyPlanner=structuredClone(db);return true};
@@ -22,9 +23,9 @@ function setup(){
  throw Error(`Unexpected RPC ${name}`);
  }};
  vm.createContext(c);
- for(const name of ['plannerEmployeeNames','plannerSelectedEmployeeNames'])vm.runInContext(html.split(/\r?\n/).find(line=>line.startsWith(`function ${name}(`)),c);
+ for(const name of ['htmlSafe','plannerStatus','plannerEmployeeNames','plannerSelectedEmployeeNames'])vm.runInContext(html.split(/\r?\n/).find(line=>line.startsWith(`function ${name}(`)),c);
  for(const [start,end] of [['async function weeklyPlannerRpc(','function plannerCaptureInputs('],['function plannerCaptureSection(','function plannerAddAssignment('],['function bindWeeklyPlanner(','function render(){']])vm.runInContext(html.slice(html.indexOf(start),html.indexOf(end)),c);
- c.bindWeeklyPlanner();return {c,calls,messages,inputs,selected,db,click:action=>buttons.find(b=>b.dataset.plannerAction===action).onclick()};
+ c.bindWeeklyPlanner();return {c,calls,messages,inputs,selected,db,metadata,statusLabel,click:action=>buttons.find(b=>b.dataset.plannerAction===action).onclick()};
 }
 test('actual buttons generate Oct26, edit/select staff, save, approve eight sections, publish and reload',async()=>{
  const {c,click,db,calls,inputs}=setup();await click('generate');assert.equal(calls[0].args.p_week_start,'2026-10-26');
@@ -44,3 +45,14 @@ test('missing crew prerequisites explain what to enter before submitting any req
  for(const missing of ['leader','people']){const {click,inputs,selected,calls}=setup();if(missing==='leader')inputs.plannerCrewLeader.value='';else selected.length=0;await click('approve-section');assert.equal(calls.length,0);assert.match(inputs.plannerSectionFeedback.textContent,/enter a crew leader and select at least one employee/);}
 });
 test('busy double-click cannot duplicate a save or approve',async()=>{const {c,click,calls}=setup();c.weeklyPlannerBusy=true;await click('approve-section');await click('save-section');assert.equal(calls.length,0)});
+
+test('confirmed save clears stale approved metadata while preserving the real form on rejected approval',async()=>{
+ const {c,click,inputs,metadata,statusLabel}=setup();c.plannerSection('area-0').status='approved';inputs.plannerCrewPeopleNew.value='Retained typed worker';c.fail='approve_weekly_planner_section';
+ await click('approve-section');assert.equal(c.refreshes,0);assert.equal(inputs.plannerCrewPeopleNew.value,'Retained typed worker');assert.match(metadata.innerHTML,/Version 2/);assert.match(metadata.innerHTML,/planner-status needs_review/);assert.doesNotMatch(metadata.innerHTML,/planner-status approved/);assert.equal(statusLabel.textContent,'needs review');
+});
+test('confirmed approval metadata remains correct when the subsequent snapshot refresh fails',async()=>{
+ const {c,click,metadata,statusLabel}=setup();c.loadWeeklyPlanner=async()=>false;await click('approve-section');assert.match(metadata.innerHTML,/Version 2/);assert.match(metadata.innerHTML,/planner-status approved/);assert.equal(statusLabel.textContent,'approved');
+});
+test('section metadata completion does not replace a different section header or any typed inputs',async()=>{
+ const {c,click,inputs,metadata,statusLabel}=setup();metadata.dataset.sectionId='different-section';metadata.innerHTML='Other section header';inputs.plannerCrewPeopleNew.value='Unsaved typed worker';c.fail='approve_weekly_planner_section';await click('approve-section');assert.equal(metadata.innerHTML,'Other section header');assert.equal(inputs.plannerCrewPeopleNew.value,'Unsaved typed worker');assert.equal(statusLabel.textContent,'needs review');
+});
