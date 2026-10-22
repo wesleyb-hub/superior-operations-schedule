@@ -17,10 +17,10 @@ Deno.serve(async (request) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  const resendKey = Deno.env.get("RESEND_API_KEY") ?? "";
+  const gmailEndpoint = Deno.env.get("GMAIL_APPS_SCRIPT_URL") ?? "";
+  const gmailSecret = Deno.env.get("GMAIL_APPS_SCRIPT_SECRET") ?? "";
   const recipients = (Deno.env.get("INVENTORY_ALERT_RECIPIENTS") ?? "").split(",").map((value) => value.trim()).filter(Boolean);
-  const from = Deno.env.get("INVENTORY_ALERT_FROM") ?? "";
-  if (!supabaseUrl || !serviceKey || !resendKey || recipients.length === 0 || !from) return json({ error: "Server configuration incomplete" }, 500);
+  if (!supabaseUrl || !serviceKey || !gmailEndpoint || !gmailSecret || recipients.length === 0) return json({ error: "Server configuration incomplete" }, 500);
 
   const incoming = await request.json().catch(() => ({}));
   const requestedAlertId = Number(incoming?.record?.alert_id ?? incoming?.alert_id);
@@ -30,7 +30,7 @@ Deno.serve(async (request) => {
     const { data: alerts, error: claimError } = await admin.rpc("claim_inventory_alerts", { p_alert_id: alertId, p_limit: alertId ? 1 : 10 });
     if (claimError) return json({ error: "Could not claim alerts" }, 503);
     if (!alerts?.length) return json({ ok: true, processed: 0 });
-    const results = await processClaimedAlerts(admin, alerts, { apiKey: resendKey, from, recipients });
+    const results = await processClaimedAlerts(admin, alerts, { endpoint: gmailEndpoint, secret: gmailSecret, recipients });
     const ok = results.every((result) => result.status === "sent");
     return json({ ok, processed: results.length, results }, ok ? 200 : 503);
   } catch {

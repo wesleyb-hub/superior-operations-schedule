@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDeliveryRequest, processAlert, processClaimedAlerts, sendToProvider, LEASE_MS, SAFE_RETRY_MS } from '../supabase/functions/inventory-reorder-notify/worker.mjs';
+import { buildDeliveryRequest, processAlert, processClaimedAlerts, sendToProvider, LEASE_MS } from '../supabase/functions/inventory-reorder-notify/worker.mjs';
 
 const start = Date.parse('2026-10-22T00:00:00Z');
-const config = { from: 'synthetic@example.invalid', recipients: ['synthetic-recipient@example.invalid'], apiKey: 'stub-not-a-key' };
-const fixture = (id = 1) => ({ alert_id: id, delivery_status: 'sending', attempts: 1, claimed_at: new Date(start).toISOString(), delivery_key: `inventory-reorder/synthetic-${id}`, payload: { description: 'Synthetic <material>', updated_at: '2026-10-21T12:00:00Z' } });
+const config = { endpoint: 'https://synthetic.example.invalid/gateway', secret: 'synthetic-not-a-secret', recipients: ['synthetic@example.invalid'] };
+const fixture = (id = 1) => ({ alert_id: id, delivery_status: 'sending', attempts: 1, claimed_at: new Date(start).toISOString(), delivery_protocol: 1, delivery_started_at: null, delivery_request: null, payload: { description: 'Synthetic <material>', updated_at: '2026-10-21T12:00:00Z' } });
 function clock() {
   let now = start;
   const timers = new Map(); let next = 0;
@@ -18,148 +18,162 @@ function database(rows, fault = () => false) {
     assert.equal(name, 'inventory_alert_outbox');
     return { update(patch) {
       const filters = [];
-      const builder = { eq: (key, value) => { filters.push([key, value]); return builder; }, async select(columns) {
-        assert.equal(columns, 'alert_id'); writes.push({ patch, filters });
-        const action = fault(patch, writes.length, filters);
-        if (action === 'throw') throw new Error('synthetic transport outage');
-        if (action === 'error') return { data: null, error: { message: 'synthetic write outage' } };
-        const data = [];
-        for (const row of stored.values()) if (filters.every(([key, value]) => row[key] === value)) {
-          Object.assign(row, structuredClone(patch)); data.push({ alert_id: row.alert_id });
-        }
-        if (action === 'lost_ack') throw new Error('write committed but response lost');
-        return { data, error: null };
-      } };
+      const builder = {
+        eq: (key, value) => { filters.push([key, value]); return builder; },
+        is: (key, value) => { filters.push([key, value, 'is']); return builder; },
+        async select(columns) {
+          assert.equal(columns, 'alert_id'); writes.push({ patch, filters });
+          const action = fault(patch, writes.length, filters);
+          if (action === 'throw') throw new Error('synthetic transport outage');
+          if (action === 'error') return { data: null, error: { message: 'synthetic write outage' } };
+          const data = [];
+          for (const row of stored.values()) if (filters.every(([key, value, op]) => op === 'is' && value === null ? row[key] == null : row[key] === value)) {
+            Object.assign(row, structuredClone(patch)); data.push({ alert_id: row.alert_id });
+          }
+          if (action === 'lost_ack') throw new Error('write committed but response lost');
+          return { data, error: null };
+        },
+      };
       return builder;
     } };
   } };
 }
-function provider({ firstUnknown = false, rejectStatus = null, rejectName = null } = {}) {
-  const accepted = new Map(); const calls = [];
-  const fetch = async (_url, options) => {
-    const key = options.headers['Idempotency-Key']; const body = options.body;
-    calls.push({ key, body });
-    if (rejectStatus) return new Response(JSON.stringify({ name: rejectName ?? 'synthetic_provider_error' }), { status: rejectStatus });
-    if (accepted.has(key)) assert.equal(body, accepted.get(key).body, 'Retries must have identical payloads');
-    else accepted.set(key, { body, id: `synthetic-email-${accepted.size + 1}` });
-    if (firstUnknown && calls.length === 1) throw new Error('accepted then connection lost');
-    return new Response(JSON.stringify({ id: accepted.get(key).id }), { status: 200 });
-  };
-  return { fetch, calls, accepted };
+function provider({ unknown = false, status = 200, body = { ok: true, id: 'synthetic-email-1' } } = {}) {
+  const calls = []; let accepted = 0;
+  return { calls, get accepted() { return accepted; }, fetch: async (url, options) => {
+    assert.equal(url, config.endpoint);
+    const request = JSON.parse(options.body); assert.equal(request.secret, config.secret); calls.push(request);
+    // Intentionally NOT idempotent: any accidental replay sends a duplicate.
+    if (unknown || body.ok === true) accepted += 1;
+    if (unknown) throw new Error('accepted then response lost');
+    return new Response(JSON.stringify(body), { status });
+  } };
 }
 
-test('success freezes content before send and checks a fenced status write', async () => {
+test('Gmail protocol is preserved; durable intent precedes send and secrets are never stored', async () => {
   const alert = fixture(); const db = database([alert]); const mail = provider();
   const result = await processAlert(db, alert, config, { ...clock(), fetch: mail.fetch });
-  assert.equal(result.status, 'sent'); assert.equal(mail.accepted.size, 1);
+  assert.equal(result.status, 'sent'); assert.equal(mail.accepted, 1); assert.equal(mail.calls[0].alert_id, alert.alert_id);
   const row = db.stored.get(1); assert.equal(row.delivery_status, 'sent'); assert.equal(row.provider_message_id, 'synthetic-email-1');
   assert.deepEqual(row.delivery_request, buildDeliveryRequest(alert, config));
   assert.ok(row.delivery_request.html.includes('&lt;material&gt;'));
+  assert.ok(!JSON.stringify(row).includes(config.secret)); assert.ok(!JSON.stringify(row).includes(config.endpoint));
+  assert.ok(db.writes[0].filters.some(([key, value, op]) => key === 'delivery_started_at' && value === null && op === 'is'));
   assert.ok(db.writes.every(({ filters }) => filters.some(([key]) => key === 'attempts') && filters.some(([key]) => key === 'claimed_at')));
 });
 
-test('provider acceptance followed by unknown network outcome retries without duplicate', async () => {
-  const alert = fixture(); const db = database([alert]); const mail = provider({ firstUnknown: true });
-  const result = await processAlert(db, alert, config, { ...clock(), fetch: mail.fetch });
-  assert.equal(result.status, 'sent'); assert.equal(mail.calls.length, 2); assert.equal(mail.accepted.size, 1);
-  assert.equal(mail.calls[0].key, mail.calls[1].key);
+test('controlled_test content from hosted worker remains distinct without changing operational content', () => {
+  const alert = fixture(); alert.payload.notification_type = 'controlled_test';
+  const request = buildDeliveryRequest(alert, config);
+  assert.equal(request.subject, 'TEST — Superior Operations inventory notification');
+  assert.match(request.text, /No inventory count, reorder threshold, purchase status, or operational record was changed/);
+  assert.match(request.html, /Controlled Test/); assert.equal(request.alert_id, alert.alert_id);
 });
 
-test('deadline aborts hung provider and stalled body, preserving unknown outcome', async () => {
+test('accepted mail plus unknown network outcome is quarantined after exactly one call', async () => {
+  const alert = fixture(); const db = database([alert]); const mail = provider({ unknown: true });
+  const result = await processAlert(db, alert, config, { ...clock(), fetch: mail.fetch });
+  assert.equal(result.status, 'failed'); assert.equal(result.retry_scheduled, false); assert.equal(mail.calls.length, 1); assert.equal(mail.accepted, 1);
+  assert.equal(db.stored.get(1).next_attempt_at, 'infinity'); assert.match(db.stored.get(1).last_error, /outcome unknown/);
+});
+
+test('deadline bounds hung headers and body; timeout never authorizes retry', async () => {
   for (const stalledBody of [false, true]) {
     const time = clock(); let signal;
-    const pending = sendToProvider({}, 'synthetic-key', 'stub', { ...time, fetch: async (_url, opts) => {
+    const pending = sendToProvider({}, config, { ...time, fetch: async (_url, opts) => {
       signal = opts.signal;
       return stalledBody ? { ok: true, status: 200, json: () => new Promise(() => {}) } : await new Promise(() => {});
     } });
     await Promise.resolve(); time.fire();
     const result = await pending;
-    assert.equal(result.sent, false); assert.equal(result.retryable, true); assert.equal(signal.aborted, true); assert.equal(time.timers.size, 0);
+    assert.equal(result.sent, false); assert.notEqual(result.retryable, true); assert.equal(signal.aborted, true); assert.equal(time.timers.size, 0);
   }
 });
 
-test('provider 5xx and 429 become scheduled failure rather than stuck sending', async () => {
-  for (const status of [500, 429, 408]) {
-    const alert = fixture(); const db = database([alert]); const mail = provider({ rejectStatus: status }); const time = clock();
-    const result = await processAlert(db, alert, config, { ...time, fetch: mail.fetch });
-    assert.equal(result.status, 'failed'); assert.equal(result.retry_scheduled, true); assert.equal(mail.calls.length, 3);
-    assert.equal(db.stored.get(1).delivery_status, 'failed'); assert.ok(Date.parse(db.stored.get(1).next_attempt_at) > time.now());
-  }
-});
-
-test('permanent provider rejection and payload conflict are quarantined, not retried', async () => {
-  for (const [status, name] of [[422, 'validation_error'], [409, 'invalid_idempotent_request']]) {
-    const alert = fixture(); const db = database([alert]); const mail = provider({ rejectStatus: status, rejectName: name });
+test('5xx, rate limit and retryable hints cannot prove Gmail did not send: no replay', async () => {
+  for (const status of [200, 429, 500]) {
+    const alert = fixture(); const db = database([alert]); const mail = provider({ status, body: { ok: false, retryable: true } });
     const result = await processAlert(db, alert, config, { ...clock(), fetch: mail.fetch });
-    assert.equal(result.retry_scheduled, false); assert.equal(mail.calls.length, 1); assert.equal(db.stored.get(1).next_attempt_at, 'infinity');
+    assert.equal(result.status, 'failed'); assert.equal(result.retry_scheduled, false); assert.equal(mail.calls.length, 1);
+    assert.equal(db.stored.get(1).next_attempt_at, 'infinity'); assert.match(db.stored.get(1).last_error, /retryable_hint=true/);
   }
 });
 
-test('concurrent provider key conflict retries the same key', async () => {
-  const alert = fixture(); const db = database([alert]); const mail = provider(); let calls = 0;
-  const result = await processAlert(db, alert, config, { ...clock(), fetch: (...args) => ++calls === 1
-    ? Promise.resolve(new Response(JSON.stringify({ name: 'concurrent_idempotent_requests' }), { status: 409 })) : mail.fetch(...args) });
-  assert.equal(result.status, 'sent'); assert.equal(calls, 2); assert.equal(mail.accepted.size, 1);
+test('malformed response or nonretryable rejection is retained for manual review', async () => {
+  for (const body of [{}, { ok: false, retryable: false }]) {
+    const alert = fixture(); const db = database([alert]); const mail = provider({ body });
+    const result = await processAlert(db, alert, config, { ...clock(), fetch: mail.fetch });
+    assert.equal(result.status, 'failed'); assert.equal(mail.calls.length, 1); assert.equal(db.stored.get(1).next_attempt_at, 'infinity');
+  }
 });
 
-test('request snapshot write failure prevents any provider call', async () => {
-  const alert = fixture(); const db = database([alert], () => 'error'); const mail = provider();
+test('existing ok/duplicate response without id retains hosted Gmail fallback contract', async () => {
+  const alert = fixture(); const db = database([alert]); const mail = provider({ body: { ok: true, duplicate: true } });
   const result = await processAlert(db, alert, config, { ...clock(), fetch: mail.fetch });
-  assert.equal(result.status, 'persistence_failed'); assert.equal(mail.calls.length, 0); assert.equal(db.writes.length, 3);
+  assert.equal(result.status, 'sent'); assert.equal(result.duplicate, true); assert.equal(db.stored.get(1).provider_message_id, 'gmail-alert-1');
 });
 
-test('sent status write failure recovers stale lease using same provider key and frozen payload', async () => {
+test('dispatch-intent write failure prevents provider call and unstarted lease can recover safely', async () => {
+  const alert = fixture(); let fail = true; const db = database([alert], () => fail ? 'error' : false); const mail = provider(); const time = clock();
+  const first = await processAlert(db, alert, config, { ...time, fetch: mail.fetch });
+  assert.equal(first.status, 'persistence_failed'); assert.equal(mail.calls.length, 0); assert.equal(db.writes.length, 3);
+  assert.equal(db.stored.get(1).delivery_started_at, null);
+  fail = false; time.advance(LEASE_MS); const row = db.stored.get(1); row.attempts += 1; row.claimed_at = new Date(time.now()).toISOString();
+  const retry = await processAlert(db, structuredClone(row), config, { ...time, fetch: mail.fetch });
+  assert.equal(retry.status, 'sent'); assert.equal(mail.accepted, 1);
+});
+
+test('lost dispatch-intent acknowledgement fails closed before any provider call', async () => {
+  const alert = fixture(); const db = database([alert], (patch) => patch.delivery_started_at ? 'lost_ack' : false); const mail = provider();
+  const result = await processAlert(db, alert, config, { ...clock(), fetch: mail.fetch });
+  assert.equal(result.status, 'persistence_failed'); assert.equal(mail.calls.length, 0); assert.ok(db.stored.get(1).delivery_started_at);
+});
+
+test('sent status write failure never reports sent and no stale replay sends another email', async () => {
   const alert = fixture(); let fail = true;
-  const db = database([alert], (patch) => fail && patch.delivery_status === 'sent' ? 'error' : false);
-  const mail = provider(); const time = clock();
+  const db = database([alert], (patch) => fail && patch.delivery_status === 'sent' ? 'error' : false); const mail = provider(); const time = clock();
   const first = await processAlert(db, alert, config, { ...time, fetch: mail.fetch });
   assert.equal(first.status, 'persistence_failed'); assert.equal(db.stored.get(1).delivery_status, 'sending');
-  fail = false; time.advance(LEASE_MS);
-  const row = db.stored.get(1); row.delivery_request = Object.fromEntries(Object.entries(row.delivery_request).reverse()); // Simulate jsonb key reordering.
-  row.attempts += 1; row.claimed_at = new Date(time.now()).toISOString();
-  const retry = await processAlert(db, structuredClone(row), { ...config, from: 'changed@example.invalid', recipients: ['changed@example.invalid'] }, { ...time, fetch: mail.fetch });
-  assert.equal(retry.status, 'sent'); assert.equal(mail.accepted.size, 1); assert.equal(mail.calls.length, 2);
+  fail = false; time.advance(LEASE_MS); const row = db.stored.get(1); row.attempts += 1; row.claimed_at = new Date(time.now()).toISOString();
+  // SQL normally quarantines this row without reclaiming; guard also fails closed if given one.
+  const retry = await processAlert(db, structuredClone(row), config, { ...time, fetch: mail.fetch });
+  assert.equal(retry.status, 'failed'); assert.equal(mail.accepted, 1); assert.equal(mail.calls.length, 1);
+  assert.equal(db.stored.get(1).next_attempt_at, 'infinity');
 });
 
-test('lost acknowledgement never produces false sent report or another email', async () => {
+test('lost sent acknowledgement never reports false success or sends twice', async () => {
   const alert = fixture(); const db = database([alert], (patch) => patch.delivery_status === 'sent' ? 'lost_ack' : false); const mail = provider();
   const result = await processAlert(db, alert, config, { ...clock(), fetch: mail.fetch });
-  assert.equal(result.status, 'persistence_failed'); assert.equal(db.stored.get(1).delivery_status, 'sent'); assert.equal(mail.accepted.size, 1);
+  assert.equal(result.status, 'persistence_failed'); assert.equal(db.stored.get(1).delivery_status, 'sent'); assert.equal(mail.accepted, 1);
 });
 
-test('fenced old owner cannot send before snapshot persistence or overwrite a newer claim', async () => {
+test('concurrent duplicate processing of the same claimed row gets only one dispatch intent', async () => {
+  const alert = fixture(); const db = database([alert]); const mail = provider(); const time = clock();
+  const results = await Promise.all([processAlert(db, alert, config, { ...time, fetch: mail.fetch }), processAlert(db, alert, config, { ...time, fetch: mail.fetch })]);
+  assert.equal(mail.calls.length, 1); assert.equal(results.filter((r) => r.status === 'sent').length, 1);
+});
+
+test('old owner cannot overwrite newer claim or send before acquiring fenced intent', async () => {
   const alert = fixture(); const newer = { ...alert, attempts: 2, claimed_at: new Date(start + LEASE_MS).toISOString() };
   const db = database([newer]); const mail = provider();
   const result = await processAlert(db, alert, config, { ...clock(), fetch: mail.fetch });
   assert.equal(result.status, 'persistence_failed'); assert.equal(mail.calls.length, 0); assert.equal(db.stored.get(1).attempts, 2);
 });
 
-test('expired lease and expired idempotency window never send', async () => {
-  for (const expiredWindow of [false, true]) {
-    const time = clock(); time.advance(expiredWindow ? SAFE_RETRY_MS : LEASE_MS);
-    const alert = { ...fixture(), delivery_request: buildDeliveryRequest(fixture(), config), delivery_started_at: new Date(start).toISOString() };
-    if (expiredWindow) alert.claimed_at = new Date(time.now()).toISOString();
-    const db = database([alert]); const mail = provider();
-    const result = await processAlert(db, alert, config, { ...time, fetch: mail.fetch });
-    assert.equal(result.status, expiredWindow ? 'failed' : 'lease_expired'); assert.equal(mail.calls.length, 0);
-    if (expiredWindow) assert.equal(db.stored.get(1).next_attempt_at, 'infinity');
-  }
+test('expired lease never records dispatch intent or calls provider', async () => {
+  const time = clock(); time.advance(LEASE_MS); const alert = fixture(); const db = database([alert]); const mail = provider();
+  const result = await processAlert(db, alert, config, { ...time, fetch: mail.fetch });
+  assert.equal(result.status, 'lease_expired'); assert.equal(mail.calls.length, 0); assert.equal(db.writes.length, 0);
 });
 
-test('sixth failed claim is terminal; provider success without ID remains unconfirmed', async () => {
-  const alert = { ...fixture(), attempts: 6 }; const db = database([alert]);
-  const result = await processAlert(db, alert, config, { ...clock(), fetch: async () => new Response('{}', { status: 200 }) });
-  assert.equal(result.status, 'failed'); assert.equal(result.retry_scheduled, false); assert.equal(db.stored.get(1).next_attempt_at, 'infinity');
-});
-
-test('one persistence failure does not abandon the rest of a claimed batch', async () => {
+test('one persistence failure does not abandon the remaining batch', async () => {
   const bad = fixture(1); const good = fixture(2); const db = database([bad, good], (_patch, _count, filters) => filters.some(([key, value]) => key === 'alert_id' && value === 1) ? 'error' : false); const mail = provider();
   const results = await processClaimedAlerts(db, [bad, good], config, { ...clock(), fetch: mail.fetch });
-  assert.deepEqual(results.map((r) => r.status), ['persistence_failed', 'sent']); assert.equal(mail.accepted.size, 1);
+  assert.deepEqual(results.map((r) => r.status), ['persistence_failed', 'sent']); assert.equal(mail.accepted, 1);
 });
 
-test('missing migration key fails closed without provider activity', async () => {
-  const alert = fixture(); delete alert.delivery_key; const db = database([alert]); const mail = provider();
+test('missing recovery protocol fails closed without provider activity', async () => {
+  const alert = fixture(); delete alert.delivery_protocol; const db = database([alert]); const mail = provider();
   const result = await processAlert(db, alert, config, { ...clock(), fetch: mail.fetch });
   assert.equal(result.status, 'migration_required'); assert.equal(mail.calls.length, 0);
 });

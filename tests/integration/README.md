@@ -52,3 +52,41 @@ Actual hosted Auth/JWT verification, Realtime delivery, email delivery and the
 external model provider remain outside this disposable test.
 
 The combined candidate incorporates the reviewed shared-modal and employee-lookup fixes. CI requires both `EXPECT_PLANNER_DRAFT_PRESERVED=1` and `EXPECT_MODAL_SAVE_RESET=1`: unsaved drafts must survive async names and delivery-to-installation Save must work without a reload workaround. The historical diagnostic workaround is forbidden by those flags.
+
+## Mandatory-version and confirmation regressions
+
+`probes/mandatory-version-tokens.mjs` executes eight existing write APIs as the
+synthetic authenticated user: production reschedule, both inventory corrections,
+planner save/approve, and installation activity/scope/resource writes. NULL,
+stale, and (where defaulted) omitted tokens fail without changing rows, children,
+or audit events; exact versions save once. Reader access remains denied. New-row
+creation and APIs whose tokens were explicitly optional retain their semantics.
+
+`probes/agent-confirmation-guards.mjs` exercises explicit confirmation, authenticated
+requester ownership, valid inventory/production actions, stale/expired previews,
+duplicate confirms, and a fixture-only incomplete pending preview. Tests never
+replace permission checks or send email. `probes/billing-history-roundtrip.sql`
+verifies the actual snapshot RPC retains four synthetic invoice-bearing rows after
+source completion is cleared and after the source disappears; the frontend remains
+responsible for retaining those rows before sending its snapshot.
+
+All new fixtures roll back. Run after the SQL lifecycle fixture, against the same
+loopback-only `superior_workflow_test` database:
+
+```sh
+node scripts/validate-integrity-guard-migrations.mjs
+node tests/integration/probes/migration-prerequisite.mjs
+node --test --test-concurrency=1 tests/integration/probes/mandatory-version-tokens.mjs tests/integration/probes/agent-confirmation-guards.mjs
+psql -X --set ON_ERROR_STOP=1 -f tests/integration/probes/billing-history-roundtrip.sql
+```
+
+The guard validator checks each replacement against its effective preceding
+migration: only the reviewed comparisons/authentication guard differ. It also
+rejects unrelated top-level SQL, including data and permission changes. These are
+prepared repository repairs, not proof of hosted deployment or hosted ACL parity.
+
+The version migration refuses to apply until both allocation-mutex function
+definitions are present. `migration-prerequisite.mjs` verifies both missing-
+prerequisite cases in local rollback fixtures, restoring every function definition
+and ACL after each test. Apply existing migrations in order; do not use this
+follow-on migration as an alternative deployment of a prerequisite.

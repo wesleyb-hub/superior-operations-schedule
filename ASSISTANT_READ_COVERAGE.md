@@ -117,9 +117,53 @@ denied, malformed or size-omitted summaries cannot become zero or a partial
 production-based substitute.
 
 A narrow deterministic route answers simple current-month LF-completed questions
-without model arithmetic. It reports the Hub KPI and date limitations. Other
-months, job filters, comparisons and action requests do not match this route;
-the system prompt prohibits substituting weekly pours or partial records for a
-missing monthly aggregate. This change adds no RPC calls, database objects,
+without model arithmetic. It reports the Hub KPI and date limitations and requires
+that the summary month still matches the reporting month. Recognized LF-completed
+questions for other months, job/customer filters or comparisons get a deterministic
+unavailable-scope answer, never a current-month substitute. Other wording remains
+covered by the system prompt; no parser or model behavior is claimed to support
+arbitrary historical analytics. Action requests do not match the read-only route. This change adds no RPC calls, database objects,
 grants, or production writes. Historical/daily actual-pour analytics remain a
 separate enhancement. Synthetic regressions run in the existing agent test job.
+
+
+## Provider reliability boundary
+
+The Edge function makes one Responses API attempt with a 45-second deadline
+covering connection and body reads, `max_output_tokens: 4096`, a 256 KiB UTF-8
+response-body cap, and `store: false`. A completed, well-formed response is required;
+incomplete output (including token exhaustion), failed statuses, malformed bodies,
+missing identities and multiple action calls cannot create a preview. Provider
+errors are sanitized, including logs, rather than echoing upstream messages. No
+automatic retries are made. Timeouts produce a structured 504 response; service
+failures are 502 and rate limiting is 503.
+
+A lost preview RPC response (thrown transport error or Supabase status 0) is
+reported as an uncertain preview outcome, not proof that nothing was saved. It is
+not automatically replayed. No operational mutation can run through the Edge
+function; the existing separate human-confirmation RPC remains authoritative.
+Missing/malformed inventory and production sections are unavailable, not empty
+workloads. Record strings remain untrusted data and never become system
+instructions or a new tool. This is a deterministic boundary test, not a claim
+that a live model has been proven immune to all prompt injection.
+
+Offline verification: `node --test scripts/test-operations-agent-context.mjs
+scripts/test-operations-agent-provider.mjs`. The provider suite executes the Edge
+handler with synthetic caller RPCs and provider transports, including stalled
+headers/body, outages, malformed and bulk output, omission/permission scope,
+record-injection strings, historical/filtered completion questions, and uncertain
+preview outcomes. It never calls live Supabase, OpenAI or a deployed Edge function.
+The existing pinned Deno CI job remains the deployment typecheck gate.
+
+
+API contract reviewed against official documentation on 2026-10-22:
+[Responses create](https://developers.openai.com/api/reference/resources/responses/methods/create)
+(output-token ceiling, completion statuses),
+[Responses migration](https://developers.openai.com/api/docs/guides/migrate-to-responses)
+(`store: false`), and the
+[GPT-5.4 model page](https://developers.openai.com/api/docs/models/gpt-5.4)
+(the configured default supports Responses/function calling). `store: false`
+disables response retrieval storage; it does not itself enable Zero Data Retention.
+The 45-second provider budget is below Supabase's documented
+[150-second request idle timeout](https://supabase.com/docs/guides/functions/limits);
+it is not an end-to-end timeout for the existing context/proposal RPCs.

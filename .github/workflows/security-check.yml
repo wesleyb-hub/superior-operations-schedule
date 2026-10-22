@@ -19,7 +19,7 @@ jobs:
       - name: Verify public bundle safety
         run: node scripts/validate-public-bundle.mjs
       - name: Test Operations Assistant read context
-        run: node --test scripts/test-operations-agent-context.mjs
+        run: node --test scripts/test-operations-agent-context.mjs scripts/test-operations-agent-provider.mjs
       - name: Verify database migrations
         run: node scripts/validate-migrations.mjs
       - name: Verify privileged RPC grants
