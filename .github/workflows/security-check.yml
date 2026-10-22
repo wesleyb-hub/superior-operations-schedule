@@ -35,7 +35,7 @@ jobs:
       - name: Test employee picker and persistence contract
         run: node --test scripts/test-planner-employee-picker.mjs
       - name: Test production request ordering and recovery
-        run: node --test scripts/test-production-load-safety.mjs scripts/test-operational-realtime.mjs
+        run: node --test scripts/test-production-load-safety.mjs scripts/test-production-release-labels.mjs scripts/test-operational-realtime.mjs
       - name: Test billing preservation and rendering boundaries
         run: node --test scripts/test-billing-render-safety.mjs scripts/test-rendered-records.mjs scripts/test-record-id-attributes.mjs
       - name: Verify partial installation release safeguards

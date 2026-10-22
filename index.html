@@ -2449,13 +2449,19 @@ const PRODUCTION_STAGE_LABELS={planned:'Planned / Queued',setup_in_progress:'Set
 function productionDatePart(value){return value?String(value).slice(0,10):''}
 function productionTime(value){if(!value)return'—';const text=String(value),time=text.includes('T')?text.slice(11,16):text.slice(11,16);if(!/^\d{2}:\d{2}$/.test(time))return'—';const [h,m]=time.split(':').map(Number);return new Date(2000,0,1,h,m).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}
 function productionDateTimeLocal(value){return value?String(value).slice(0,16):''}
-function productionJob(id){return (wallsProduction.jobs||[]).find(j=>String(j.id)===String(id))||state.walls.find(w=>String(w.id)===String(id))||{id,job:'Unknown job',totalLf:0,assignedLf:0,releaseStatus:'Not Released for Production',documentLinks:[]}}
+function productionJob(id){
+  const snapshot=(wallsProduction.jobs||[]).find(j=>String(j.id)===String(id));if(snapshot)return snapshot;
+  // Completed jobs leave the active production snapshot while their assignments remain.
+  // The schedule fallback uses the same approval milestone, never the physical strip stage.
+  const wall=(state.walls||[]).find(w=>String(w.id)===String(id)),status=wall?.planReview?.stages?.approvedProduction?.status;
+  return wall?{...wall,releaseStatus:status==='Complete'?'Released for Production':typeof status==='string'&&status?'Not Released for Production':null}:{id,job:'Unknown job',totalLf:0,assignedLf:0,releaseStatus:null,documentLinks:[]}
+}
 function productionTable(id){return (wallsProduction.tables||[]).find(t=>String(t.table_id)===String(id))||{table_id:id,label:'Table '+id,capacity_lf:null}}
 function productionOpenIssues(a){return (wallsProduction.issues||[]).filter(i=>i.status==='open'&&(i.assignment_id===a.assignment_id||(!i.assignment_id&&i.wall_record_id===a.wall_record_id)))}
 function productionHeightLabel(value){return Number(value)+"′ walls"}
 function productionLfBreakdown(job){const h=job.lfByHeight||{};return [['h4','4′'],['h5','5′'],['h8','8′'],['h9','9′'],['h10','10′'],['h12','12′']].filter(([k])=>Number(h[k]||0)>0).map(([k,l])=>`${l}: ${Number(h[k]).toLocaleString()} LF`).join(' · ')||'Wall-height LF not entered'}
 function productionStageRank(stage){return ['planned','setup_in_progress','setup_complete','ready_for_pour','poured','curing','stripped'].indexOf(stage)}
-function productionReleasePill(job){return job.releaseStatus==='Released for Production'?'<span class="production-pill release">Released for Production</span>':'<span class="production-pill blocked">Not Released for Production</span>'}
+function productionReleasePill(job){return job.releaseStatus==='Released for Production'?'<span class="production-pill release">Released for Production</span>':job.releaseStatus==='Not Released for Production'?'<span class="production-pill blocked">Not Released for Production</span>':'<span class="production-pill blocked">Production release unavailable</span>'}
 function productionDocumentLink(job){const link=Array.isArray(job.documentLinks)&&job.documentLinks[0];if(!link)return '';const url=safeDocumentUrl(link);return url?`<a class="mini" href="${htmlSafe(url)}" target="_blank" rel="noopener noreferrer">Open released job documents</a>`:'<span class="muted">Invalid document link — use an HTTP or HTTPS address</span>'}
 function productionAssignmentActions(a){
   const p=wallsProduction.permissions||{},job=productionJob(a.wall_record_id),released=job.releaseStatus==='Released for Production',buttons=[];
