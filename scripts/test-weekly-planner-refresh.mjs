@@ -10,7 +10,7 @@ function setup(){
   const context={hubSessionEpoch:0,Promise,console:{error:(...args)=>errors.push(args)},state:{week:'2026-10-19',view:'weekly-planner'},currentUser:{id:'synthetic-admin'},currentUserIsAdmin:true,weeklyPlanner:{marker:'initial'},weeklyPlannerReady:false,weeklyPlannerError:'',weeklyPlannerDraftError:'',weeklyPlannerErrorWeek:'',weeklyPlannerRealtimePromise:null,weeklyPlannerRealtimeDirty:false,weeklyPlannerLoadPromise:null,weeklyPlannerLoadToken:null,weeklyPlannerLoadWeek:'',weeklyPlannerLoadedWeek:'',renders:0};
   context.renderWeeklyPlanner=()=>context.renders++;
   context.sb={rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))};
-  context.weeklyPlannerBusy=false;context.showInventoryToast=()=>{};context.plannerSectionFeedback=message=>context.weeklyPlannerDraftError=message;
+  context.weeklyPlannerBusy=false;context.weeklyPlannerProgress=null;context.weeklyPlannerManualRefreshRequest=null;context.showInventoryToast=()=>{};context.plannerSectionFeedback=message=>context.weeklyPlannerDraftError=message;
   vm.createContext(context);vm.runInContext(loader,context);
   vm.runInContext(html.slice(html.indexOf('async function weeklyPlannerRpc('),html.indexOf('function plannerCaptureInputs(')),context);
   return {context,calls,errors,load:force=>context.loadWeeklyPlanner(force)};
@@ -168,7 +168,7 @@ test('preexisting snapshot rejection cannot replace a failed-save draft with an 
 });
 
 test('pending section-save fences earlier reads before a failure can rerender typed draft',{timeout:2000},async()=>{
- const {context:c,calls,load}=setup();c.plannerSection=()=>({section_id:'synthetic',schedule_version:1});c.plannerCaptureSection=()=>({p_section_id:'synthetic',p_expected_version:1,p_crew_leader:'typed draft',p_people:[]});c.weeklyPlannerSelected='synthetic';vm.runInContext(html.slice(html.indexOf('async function plannerSaveSection('),html.indexOf('function plannerAddAssignment(')),c);
+ const {context:c,calls,load}=setup();c.plannerSection=()=>({section_id:'synthetic',schedule_version:1});c.plannerCaptureSection=()=>({p_section_id:'synthetic',p_expected_version:1,p_crew_leader:'typed draft',p_people:[]});c.weeklyPlannerSelected='synthetic';c.document={querySelectorAll:()=>[],getElementById:()=>null};vm.runInContext(html.slice(html.indexOf('function plannerUpdatePendingUI('),html.indexOf('function plannerAddAssignment(')),c);
  const old=load();await tick();const save=c.plannerSaveSection();assert.equal(await load(true),false);assert.equal(calls.length,2);calls[0].resolve(result('older server form'));assert.equal(await old,false);assert.equal(c.renders,0);assert.equal(c.weeklyPlanner.marker,'initial');calls[1].reject(Error('Synthetic network loss'));assert.equal(await save,false);assert.match(c.weeklyPlannerDraftError,/on-screen edits are retained/);assert.equal(c.renders,0);
 });
 test('generic planner input failures preserve draft and block realtime until deliberate refresh',{timeout:2000},async()=>{

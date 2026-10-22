@@ -93,8 +93,8 @@ test('pending inventory read cannot unlock unknown-outcome save',async()=>{
  const f=fixture(),read=f.c.loadInventory(),save=f.c.inventoryRpc('test',{},'Saved');f.pending[1].reject(Error('unknown outcome'));await save;f.pending[0].resolve(scopes);assert.equal(await read,false);assert.equal(f.c.inventoryReady,false);assert.match(f.c.inventoryLoadError,/unknown/);
 });
 function plannerFixture(){
- const f=fixture();Object.assign(f.c,{weeklyPlannerSelected:'synthetic',weeklyPlannerBusy:false,weeklyPlannerDraftError:'',plannerSection:()=>f.section,plannerCaptureSection:()=>({p_crew_leader:'Synthetic',p_people:[{name:'Synthetic'}]}),plannerSectionFeedback:m=>f.messages.push(m),loadWeeklyPlanner:async()=>{f.refreshes++;return true}});f.refreshes=0;f.section={section_id:'synthetic',schedule_version:1};
- vm.runInContext(part('function plannerRefreshSectionMetadata(', 'function plannerAddAssignment('),f.c);
+ const f=fixture();Object.assign(f.c,{weeklyPlannerSelected:'synthetic',weeklyPlannerProgress:null,weeklyPlannerManualRefreshRequest:null,weeklyPlannerBusy:false,weeklyPlannerDraftError:'',plannerSection:()=>f.section,plannerCaptureSection:()=>({p_crew_leader:'Synthetic',p_people:[{name:'Synthetic'}]}),plannerSectionFeedback:m=>f.messages.push(m),loadWeeklyPlanner:async()=>{f.refreshes++;return true}});f.refreshes=0;f.section={section_id:'synthetic',schedule_version:1};
+ vm.runInContext(part('function plannerUpdatePendingUI(', 'function plannerAddAssignment('),f.c);
  vm.runInContext(part('async function weeklyPlannerRpc(', 'function plannerCaptureInputs('),f.c);return f;
 }
 test('planner delayed save cannot trigger approval under replacement session',async()=>{
