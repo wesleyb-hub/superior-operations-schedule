@@ -76,7 +76,7 @@ try{
   const beta=page.getByRole('checkbox',{name:'Test Beta',exact:true});await beta.focus();await page.keyboard.press('Space');assert.equal(await beta.isChecked(),true);
   assert.match(await page.locator('#plannerCrewPeopleWarnings').textContent(),/Synthetic field/);
   await search.fill('not-present');assert.equal(await page.locator('#plannerCrewPeopleEmpty').isVisible(),true);
-  assert.equal(await page.locator('#plannerCrewPeopleCount').textContent(),'2 selected · 0 matching saved names');
+  assert.equal(await page.locator('#plannerCrewPeopleCount').textContent(),'2 selected · 0 matching names');
   await search.press('Escape');assert.equal(await search.inputValue(),'');assert.equal(await page.locator('.planner-person-choice:visible').count(),3);
   await page.locator('#plannerCrewPeopleNew').fill('Custom Synthetic, TEST ALPHA');
   await search.fill('gamma'); // Selected Alpha/Beta stay captured while hidden by search.
@@ -96,11 +96,42 @@ try{
   assert.equal(await page.locator('#plannerCrewPeopleNew').inputValue(),'Unsaved Synthetic Employee');
   assert.equal(await page.getByRole('checkbox',{name:'Previously Used Synthetic',exact:true}).isChecked(),false);
   assert.equal((await page.evaluate(()=>plannerSelectedEmployeeNames())).includes('Test Alpha'),true);
-  assert.match(await page.locator('#plannerEmployeeHistoryHint').textContent(),/not a verified current staff roster/);
+  assert.match(await page.locator('#plannerEmployeeHistoryHint').textContent(),/not proof of current employment/);
   await search.fill('');
   const pickerOverflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2);assert.equal(pickerOverflow,false);
   if(output)await page.screenshot({path:resolve(output,`${width}-planner-employee-picker.png`),fullPage:true});
   results.push({width,view:'planner-employee-picker',passed:true});
+  // Deferred private roster load updates options only: no automatic assignments or lost draft fields.
+  await page.evaluate(()=>{
+   currentUser={id:'qa-company-roster'};
+   sb={from:table=>{if(table!=='schedule_settings')throw new Error('Unexpected roster table');const chain={select:columns=>{if(columns!=='value')throw new Error('Unexpected roster columns');return chain},eq:(key,value)=>{if(key!=='setting_key'||value!=='companyEmployeeRoster')throw new Error('Unexpected roster key');return chain},maybeSingle:()=>new Promise(resolve=>window.qaResolveRoster=resolve)};return chain}};
+   plannerEmployeeHistoryCache().ready=true;
+   window.qaRosterPending=loadPlannerCompanyRoster();
+  });
+  await page.locator('#plannerCrewLeader').fill('Unsaved Roster Leader');
+  await page.locator('#plannerCrewPeopleNew').fill('Unsaved Roster Custom');
+  await search.fill('roster');
+  await page.evaluate(()=>window.qaResolveRoster({data:{value:{schema_version:1,source_verified_on:'2026-07-22',snapshot_prepared_on:'2026-10-22',employees:[{name:'Roster Synthetic',current_title:'Synthetic technician'},{name:'Test Alpha',current_title:'Source title only'}]}}}));
+  assert.equal(await page.evaluate(()=>window.qaRosterPending),true);
+  assert.equal(await page.locator('#plannerCrewLeader').inputValue(),'Unsaved Roster Leader');
+  assert.equal(await page.locator('#plannerCrewPeopleNew').inputValue(),'Unsaved Roster Custom');
+  assert.equal(await search.inputValue(),'roster');
+  const rosterChoice=page.getByRole('checkbox',{name:'Roster Synthetic',exact:true});
+  assert.equal(await rosterChoice.isChecked(),false);
+  assert.match(await page.locator('#plannerCompanyRosterHint').textContent(),/2 employees · source verified 2026-07-22 · snapshot 2026-10-22/);
+  await rosterChoice.focus();await page.keyboard.press('Space');
+  assert.equal(await rosterChoice.isChecked(),true);
+  const rosterPayload=await page.evaluate(()=>plannerCaptureSection(plannerSection('production')));
+  assert.equal(rosterPayload.p_people.find(p=>p.name==='Roster Synthetic').role,'');
+  assert.equal(rosterPayload.p_people.find(p=>p.name==='Test Alpha').role,'Synthetic role');
+  await search.fill('');
+  assert.equal(await page.getByRole('checkbox',{name:'Test Alpha',exact:true}).count(),1);
+  assert.equal(await page.getByRole('checkbox',{name:'Test Beta',exact:true}).isChecked(),false);
+  if(output)await page.screenshot({path:resolve(output,`${width}-planner-company-roster.png`),fullPage:true});
+  const rosterMeasure=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));
+  assert.ok(rosterMeasure.scroll<=rosterMeasure.width+2);
+  results.push({width,view:'planner-company-roster',passed:true});
+
   // Actual browser clicks exercise failed save -> retained controls -> successful approval.
   // All service calls below terminate in this synthetic in-memory adapter.
   await page.evaluate(()=>{
