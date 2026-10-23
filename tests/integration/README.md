@@ -51,6 +51,25 @@ This is not a hosted privilege export or a certification of hosted ACL parity.
 Actual hosted Auth/JWT verification, Realtime delivery, email delivery and the
 external model provider remain outside this disposable test.
 
+## Internal planner-helper authorization
+
+`probes/planner-helper-permissions.sql` runs after `walls-workflow-cases.sql`.
+It adds only synthetic identities/grants in a transaction that rolls back. It
+verifies that direct conflict recomputation is denied to every client role while
+guarded SECURITY DEFINER generation, input/section save and approval still work.
+The matrix includes a viewer, scoped editor, approve-only scoped user, dedicated
+publisher, unassigned/disabled users, and the existing synthetic manager. It also
+checks that denied viewer calls leave the planner snapshot/audit unchanged.
+
+```sh
+node scripts/validate-planner-rebuild-privileges.mjs
+psql -X --set ON_ERROR_STOP=1 -f tests/integration/probes/planner-helper-permissions.sql
+```
+
+This is not an assigned-only employee implementation or hosted account rollout.
+See `EMPLOYEE-ACCESS-ROLLOUT.md` for the separate future identity/mapping contract,
+deployment preflight and explicit production-authorization boundary.
+
 The combined candidate incorporates the reviewed shared-modal and employee-lookup fixes. CI requires both `EXPECT_PLANNER_DRAFT_PRESERVED=1` and `EXPECT_MODAL_SAVE_RESET=1`: unsaved drafts must survive async names and delivery-to-installation Save must work without a reload workaround. The historical diagnostic workaround is forbidden by those flags.
 
 ## Mandatory-version and confirmation regressions
