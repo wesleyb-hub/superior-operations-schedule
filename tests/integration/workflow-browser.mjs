@@ -129,7 +129,12 @@ try{
  await page.locator('[data-planner-action="tab"][data-value="review"]').click();
  await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:output+'/mobile-approved-crew.png',fullPage:true});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2));
+ // Mobile management actions stay available behind the compact tools disclosure.
+ assert.equal(await page.locator('#mobileToolsToggle').isVisible(),true);
+ await page.locator('#mobileToolsToggle').click();
+ assert.equal(await page.locator('#mobileToolsToggle').getAttribute('aria-expanded'),'true');
  await page.locator('.header-more > summary').click();
+ assert.equal(await page.locator('#signOutBtn').isVisible(),true);
  await page.locator('#signOutBtn').click();
  assert.equal(await page.evaluate(()=>currentUser===null),true);
  const denied=await page.evaluate(()=>sb.rpc('generate_weekly_planner',{p_week_start:'2026-11-02'}));assert.ok(denied.error);
