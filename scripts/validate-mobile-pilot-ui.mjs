@@ -72,10 +72,17 @@ try{
    const buttons=page.locator('#view [data-mobile-route]'),targets=await buttons.evaluateAll(nodes=>nodes.map(n=>({route:n.dataset.mobileRoute,width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height,left:n.getBoundingClientRect().left,right:n.getBoundingClientRect().right})));
    for(const target of targets){assert.ok(target.width>=43.5&&target.height>=43.5,`${target.route} has a small action target`);assert.ok(target.left>=-1&&target.right<=width+1,`${target.route} action is horizontally clipped`)}
    await buttons.first().focus();for(let i=0;i<targets.length;i++){assert.equal(await buttons.nth(i).evaluate(n=>document.activeElement===n),true,`${targets[i].route} not reachable in normal Tab order`);if(i<targets.length-1)await page.keyboard.press('Tab')}
-   await page.evaluate(()=>scrollTo(0,0));
+   const focusProofs=[];
+   for(const division of divisions){const button=page.locator(`[data-mobile-division="${division}"] > [data-mobile-route="${division}"]`);await button.focus();const proof=await button.evaluate(n=>{
+    const s=getComputedStyle(n),r=n.getBoundingClientRect(),pad=Math.max(0,parseFloat(s.outlineOffset)||0)+(parseFloat(s.outlineWidth)||0),clipped=[];
+    for(let a=n.parentElement;a&&a!==document.body;a=a.parentElement){const c=getComputedStyle(a),b=a.getBoundingClientRect();if((/hidden|clip|auto|scroll/.test(c.overflowX)&&(r.left-pad<b.left-1||r.right+pad>b.right+1))||(/hidden|clip|auto|scroll/.test(c.overflowY)&&(r.top-pad<b.top-1||r.bottom+pad>b.bottom+1)))clipped.push(a.className||a.tagName)}
+    return {route:n.dataset.mobileRoute,focusVisible:n.matches(':focus-visible'),outlineWidth:parseFloat(s.outlineWidth)||0,outlineStyle:s.outlineStyle,clipped};
+   });assert.equal(proof.focusVisible,true,`${division} lacks a keyboard focus indication`);assert.ok(proof.outlineWidth>=2&&proof.outlineStyle!=='none',`${division} focus ring not rendered`);assert.deepEqual(proof.clipped,[],`${division} focus ring clipped by an ancestor`);focusProofs.push(proof)}
+   await buttons.first().focus();await page.evaluate(()=>scrollTo(0,0));await shot('today-focused-division');
+   await page.evaluate(()=>{document.activeElement?.blur?.();scrollTo(0,0)});
    assert.equal(await page.locator('#view .stat,#view .production-kpi,#view .inventory-stat').count(),0,'Landing cards must not invent operational totals');
    assert.doesNotMatch(await page.locator('[data-mobile-division]').allTextContents().then(x=>x.join(' ')),/assigned to you|your assigned|\d+\s+(jobs|tasks|assignments)/i,'Division navigation must not claim personal assignments or counts');
-   assert.equal(await page.evaluate(()=>qaCalls.length),0,'Today issued a business RPC');await shot('today-five-divisions-management');return {cards,targets};
+   assert.equal(await page.evaluate(()=>qaCalls.length),0,'Today issued a business RPC');await shot('today-five-divisions-management');return {cards,targets,focusProofs};
   });
   await check('today-division-main-routes-preserve-management',async()=>{
    for(const division of divisions){await todayAs();await nav('today');await page.locator(`[data-mobile-division="${division}"] [data-mobile-route="${division}"]`).click();
