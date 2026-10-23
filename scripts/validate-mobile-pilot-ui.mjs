@@ -81,6 +81,17 @@ try{
    await shot('management-tools-expanded');await page.locator('.header-more > summary').click();await page.locator('#mobileToolsToggle').click();
    assert.equal(await page.locator('#roleSelect').isVisible(),false,'Secondary tools did not collapse');
   });
+  await check('walls-subtabs-all-visible-and-keyboard-reachable',async()=>{
+   await nav('walls');
+   const tabs=page.locator('#view .walls-subtabs button[data-sub]');
+   assert.equal(await tabs.count(),8,'Full-management Walls subviews must remain available');
+   const layout=await tabs.evaluateAll(nodes=>nodes.map(n=>({sub:n.dataset.sub,text:n.textContent.trim(),tabIndex:n.tabIndex,disabled:n.disabled,left:n.getBoundingClientRect().left,right:n.getBoundingClientRect().right,width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height,display:getComputedStyle(n).display})));
+   for(const tab of layout){assert.ok(tab.display!=='none'&&tab.height>=43.5&&tab.width>=43.5,`${tab.text} lost its visible touch target`);assert.ok(tab.left>=-1&&tab.right<=width+1,`${tab.text} requires horizontal swipe to discover`);assert.equal(tab.disabled,false,`${tab.text} disabled`);assert.ok(tab.tabIndex>=0,`${tab.text} removed from keyboard order`)}
+   await tabs.first().focus();
+   for(let i=0;i<layout.length;i++){assert.equal(await tabs.nth(i).evaluate(n=>document.activeElement===n),true,`${layout[i].text} cannot be reached in normal Tab order`);if(i<layout.length-1)await page.keyboard.press('Tab')}
+   await page.evaluate(()=>scrollTo(0,0));await shot('walls-subtabs-visible');
+   return {tabs:layout};
+  });
   await check('today-task-routes-preserve-management',async()=>{
    for(const route of ['production','installation','inventory','schedule','report']){
     await nav('today');await page.locator(`[data-mobile-route="${route}"]`).click();
