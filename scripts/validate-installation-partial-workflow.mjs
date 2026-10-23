@@ -161,10 +161,11 @@ const editEnd=html.indexOf('\nfunction ',editStart+1);
 if(editStart<0||editEnd<0){console.log('FAIL: field-activity editor is present for regression checks');process.exitCode=1}else{
   const editFn=html.slice(editStart,editEnd);
   const saveStart=editFn.indexOf("'Save activity',async()=>{");
-  const closeAt=editFn.indexOf('closeProductionModal()',saveStart);
+  const saveAt=editFn.indexOf("return saveOperationalModal('installation','save_walls_installation_activity'",saveStart);
+  const capturedBeforeSave=snippet=>{const at=editFn.indexOf(snippet,saveStart);return at>saveStart&&at<saveAt};
   const editChecks=[
     ['editor uses Installation management permission',editFn.includes('installationCanManage()')&&!editFn.includes('if(!currentUserIsAdmin)return;')],
-    ['date, times, and notes are captured before modal close',closeAt>saveStart&&editFn.indexOf("const date=document.getElementById('installEditDate').value",saveStart)<closeAt&&editFn.indexOf("const start=document.getElementById('installEditStart').value",saveStart)<closeAt&&editFn.indexOf("notes=document.getElementById('installEditNotes').value",saveStart)<closeAt],
+    ['date, times, and notes are captured before guarded save without premature dismissal',saveAt>saveStart&&capturedBeforeSave("const date=document.getElementById('installEditDate').value")&&capturedBeforeSave("const start=document.getElementById('installEditStart').value")&&capturedBeforeSave("notes=document.getElementById('installEditNotes').value")&&!editFn.slice(saveStart).includes('closeProductionModal()')],
     ['edit save retains optimistic version and current status',editFn.includes('p_expected_version:a.version')&&editFn.includes('p_status:a.status')],
     ['field edit retains final QC gate',editFn.includes('!installationQcReady(job)')],
     ['edit rejects a non-positive activity time window',editFn.includes('start>=end')],

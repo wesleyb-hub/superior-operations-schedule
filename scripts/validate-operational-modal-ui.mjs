@@ -53,7 +53,8 @@ try{
   // Dismiss through the real backdrop listener, then reopen without inherited display:none.
   for(const s of [scenarios[2],scenarios[4]]){
    const prefix=s.kind+'Modal';await open(s);
-   await page.locator('#'+prefix).dispatchEvent('click');assert.equal(await page.locator('#'+prefix).isVisible(),false);
+   await page.locator('#'+prefix).dispatchEvent('click');assert.equal(await page.locator('#'+prefix).isVisible(),true,'dirty form is not dismissed by a backdrop tap');
+   await page.evaluate(prefix=>closeModal(prefix),prefix);assert.equal(await page.locator('#'+prefix).isVisible(),false);
    await page.evaluate(s=>window.qaOpen(s.open),s);assert.equal(await page.locator('#'+prefix).isVisible(),true);
    await page.evaluate(prefix=>closeModal(prefix),prefix);assert.equal(await page.locator('#'+prefix).isVisible(),false);
    await page.evaluate(({s,prefix})=>{document.getElementById(prefix).style.display='none';window.qaOpen(s.open)},{s,prefix});assert.equal(await page.locator('#'+prefix).isVisible(),true);
