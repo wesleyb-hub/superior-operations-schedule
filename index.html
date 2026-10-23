@@ -574,6 +574,7 @@ button:disabled{cursor:not-allowed}
 .mobile-tools-toggle{display:none}.inventory-mobile-label{display:none}
 .mobile-home{display:grid;gap:16px}.mobile-home-heading h2{margin:0 0 6px;color:var(--navy);font-size:26px}.mobile-home-heading p{margin:0;color:#526170;line-height:1.5}
 .mobile-home-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.mobile-home-link{min-height:100px;display:flex;flex-direction:column;gap:7px;align-items:flex-start;text-align:left;border:1px solid #cad7e1;border-radius:12px;padding:18px;background:#fff;color:var(--navy)}.mobile-home-link strong{font-size:19px}.mobile-home-link span{font-size:14px;line-height:1.45;color:#526170}
+.mobile-home-section-title{margin:0 0 10px;font-size:16px;color:var(--navy)}.mobile-home-division{min-width:0;background:#fff;border:1px solid #cad7e1;border-radius:12px;overflow:hidden}.mobile-home-division>.mobile-home-link{width:100%;border:0;border-radius:0}.mobile-home-shortcuts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 12px 12px}.mobile-home-shortcuts button{min-width:0;min-height:46px;border:1px solid #c6d3de;border-radius:8px;background:#f4f7f9;color:var(--navy);font-weight:800;font-size:14px;padding:10px;text-align:left}
 .mobile-home-note,.phone-schedule-note{padding:12px 14px;border-radius:9px;border:1px solid #d9e4ec;background:#f3f7fa;font-size:14px;line-height:1.5}.phone-schedule-section{margin:0 0 20px}.phone-schedule-section h3{margin:0 0 8px;color:var(--navy)}.phone-schedule-card{padding:14px;margin:10px 0;border:1px solid #d7e1e8;border-radius:10px;background:#fff;overflow-wrap:anywhere}.phone-schedule-card h4{font-size:17px;margin:0 0 8px;color:var(--navy)}.phone-schedule-card p{font-size:16px;line-height:1.5;margin:7px 0}.phone-schedule-card dl{margin:0;display:grid;gap:8px}.phone-schedule-card dt{font-size:12px;font-weight:850;color:#526170}.phone-schedule-card dd{margin:2px 0 0;font-size:16px;line-height:1.45}.field-error{color:#9e3434;background:#fff0f0;border-left:4px solid #b94141;border-radius:6px;padding:10px;font-size:14px;line-height:1.45;margin-top:8px}
 button:disabled{opacity:.58;filter:saturate(.35);box-shadow:none!important}.modal button:disabled,.inventory-modal button:disabled{background:#e5eaee!important;color:#526170!important;border:1px solid #b9c5ce!important;opacity:1}
 #view:focus{outline:none}.modal,.inventory-modal{overscroll-behavior:contain}.modal-body,.inventory-modal-body{overscroll-behavior:contain}.modal,.inventory-modal{max-height:calc(var(--hub-visible-height,100dvh) - 8px)}.auth-gate{overflow-y:auto}.auth-card{margin:auto;max-height:calc(100dvh - 32px);overflow-y:auto}
@@ -2372,22 +2373,32 @@ function resetSectionPosition(){
   if(typeof window.scrollTo==='function')window.scrollTo({top:0,left:0,behavior:'instant'});
   const view=document.getElementById('view');view?.focus?.({preventScroll:true});
 }
-function renderToday(){
-  const production=viewAllowed('walls')&&wallSubviewAllowed('production'),installation=viewAllowed('walls')&&wallSubviewAllowed('installation'),inventory=viewAllowed('inventory'),schedule=viewAllowed('weekly-planner');
+function todayWorkAreas(){
+  const wallView=['current','production','installation','overall','active','plans','monthly','year'].find(wallSubviewAllowed);
+  const divisions=[['walls','Superior Walls','Wall schedules, production and field work.'],['boxes','Box Culverts','Box culvert schedules and production.'],['manholes','Manholes','Manhole schedules and production.'],['fence','Fence','Fence schedules and production.'],['block','Block','Block schedules and production.']].filter(([key])=>viewAllowed(key)&&(key!=='walls'||wallView));
+  const production=viewAllowed('walls')&&wallSubviewAllowed('production'),installation=viewAllowed('walls')&&wallSubviewAllowed('installation');
   const reportProduction=production&&Boolean(currentUserIsAdmin||wallsProduction.permissions?.issue),reportInstallation=installation&&Boolean(installationCanManage()||wallsInstallation.permissions?.field_progress);
-  const choices=[production&&['production',"Today's production",'See jobs, tables and the next production step.'],installation&&['installation',"Today's field work",'See sites, crew details and field holds.'],inventory&&['inventory','Inventory','Find material and check its current count.'],schedule&&['schedule','Crew schedules','Read an approved weekly packet on your phone.'],(reportProduction||reportInstallation)&&['report','Report an issue','Choose the job, then describe what needs attention.']].filter(Boolean);
-  const date=new Date().toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});
+  const shortcuts=[production&&['production','Walls production'],installation&&['installation','Walls field work']].filter(Boolean);
+  const shared=[viewAllowed('inventory')&&['inventory','Inventory','Find material and check its current count.'],viewAllowed('weekly-planner')&&['schedule','Crew schedules','Read a frozen approved weekly packet.'],(reportProduction||reportInstallation)&&['report','Report a Walls issue','Choose a wall job or table, then describe what needs attention.']].filter(Boolean);
+  return {divisions,shortcuts,shared,wallView,reportProduction,reportInstallation};
+}
+function openTodayRoute(route){
+  const areas=todayWorkAreas();if(![...areas.divisions,...areas.shortcuts,...areas.shared].some(([key])=>key===route))return false;
+  if(areas.divisions.some(([key])=>key===route)){state.subview[route]=route==='walls'?areas.wallView:'current';setView(route);return true}
+  if(route==='inventory'){setView('inventory');return true}
+  if(route==='schedule'){state.weeklyPlannerView='approved';setView('weekly-planner');return true}
+  const field=route==='installation'||(route==='report'&&!areas.reportProduction&&areas.reportInstallation);
+  state.subview.walls=field?'installation':'production';if(field){state.installationDay=todayISO();state.installationView='today'}else{state.productionDay=todayISO();state.productionView='today'}
+  setView('walls');if(field)ensureWallsInstallationLoaded(true);else loadWallsProduction();
+  if(route==='report')showInventoryToast('Choose the wall job or table, then tap Report issue. No issue is saved until you confirm.');
+  return true;
+}
+function renderToday(){
+  const {divisions,shortcuts,shared}=todayWorkAreas(),date=new Date().toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});
+  const card=([key,title,detail])=>`<button type="button" class="mobile-home-link" data-mobile-route="${key}"><strong>${htmlSafe(title)}</strong><span>${htmlSafe(detail)}</span></button>`;
   document.body.classList.remove('inventory-active');
-  document.getElementById('view').innerHTML=`<section class="mobile-home"><header class="mobile-home-heading"><h2>Today</h2><p>${htmlSafe(date)} · Choose your work area</p></header><div class="mobile-home-grid">${choices.map(([key,title,detail])=>`<button type="button" class="mobile-home-link" data-mobile-route="${key}"><strong>${htmlSafe(title)}</strong><span>${htmlSafe(detail)}</span></button>`).join('')}</div><div class="mobile-home-note">${currentUserIsAdmin?'You still have full management access. Open the menu for every screen; More tools shows planning, search and other controls.':'Only your authorized work areas are shown. Crew schedules are not personal assignments; confirm your job with your supervisor.'}</div>${!choices.length?'<div class="production-empty">No daily work areas are assigned yet. Open the menu for the views available to your account.</div>':''}</section>`;
-  document.querySelectorAll('[data-mobile-route]').forEach(button=>button.onclick=()=>{
-    const route=button.dataset.mobileRoute;
-    if(route==='inventory'){setView('inventory');return}
-    if(route==='schedule'){state.weeklyPlannerView='approved';setView('weekly-planner');return}
-    const field=route==='installation'||(route==='report'&&!reportProduction&&reportInstallation);
-    state.subview.walls=field?'installation':'production';if(field){state.installationDay=todayISO();state.installationView='today'}else{state.productionDay=todayISO();state.productionView='today'}
-    setView('walls');if(field)ensureWallsInstallationLoaded(true);else loadWallsProduction();
-    if(route==='report')showInventoryToast('Choose the job or table, then tap Report issue. No issue is saved until you confirm.');
-  });
+  document.getElementById('view').innerHTML=`<section class="mobile-home"><header class="mobile-home-heading"><h2>Today</h2><p>${htmlSafe(date)} · Choose a division or shared tool</p></header>${divisions.length?`<section aria-labelledby="todayDivisionsTitle"><h3 class="mobile-home-section-title" id="todayDivisionsTitle">Divisions</h3><div class="mobile-home-grid">${divisions.map(division=>`<article class="mobile-home-division" data-mobile-division="${division[0]}">${card(division)}${division[0]==='walls'&&shortcuts.length?`<div class="mobile-home-shortcuts">${shortcuts.map(([key,label])=>`<button type="button" data-mobile-route="${key}">${htmlSafe(label)}</button>`).join('')}</div>`:''}</article>`).join('')}</div></section>`:''}${shared.length?`<section aria-labelledby="todaySharedTitle"><h3 class="mobile-home-section-title" id="todaySharedTitle">Shared tools</h3><div class="mobile-home-grid">${shared.map(card).join('')}</div></section>`:''}<div class="mobile-home-note">${currentUserIsAdmin?'You still have full management access. Open the menu for every screen; More tools shows planning, search and other controls.':'Only your authorized work areas are shown. Crew schedules are not personal assignments; confirm your job with your supervisor.'}</div>${!divisions.length&&!shared.length?'<div class="production-empty">No division or shared tool is available here. Open the menu for the views available to your account.</div>':''}</section>`;
+  document.querySelectorAll('[data-mobile-route]').forEach(button=>button.onclick=()=>openTodayRoute(button.dataset.mobileRoute));
 }
 function plannerReadPack(pack){
   if(!pack)return;const activationUnverified=(pack.week_start===state.week&&(weeklyPlanner.sections||[]).some(section=>section.status==='approval_unverified'))||plannerPublishVerificationRequired(currentUser,pack.week_start);const snap=pack.snapshot||{},sections=[...(snap.sections||[])].sort((a,b)=>Number(a.section?.sort_order||0)-Number(b.section?.sort_order||0));

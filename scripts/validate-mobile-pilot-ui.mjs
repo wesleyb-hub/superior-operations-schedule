@@ -10,12 +10,12 @@ const html=source.replace(/<script src="[^"]+"><\/script>/g,'').replace('const s
 const output=process.argv[2];if(output)await mkdir(output,{recursive:true});
 const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{}),args:['--no-sandbox']});
 const results=[],failures=[],pageErrors=[],blockedRequests=[];
-const viewports=[{width:360,height:800},{width:390,height:800},{width:430,height:800},{width:844,height:390}];
+const viewports=[{width:360,height:800},{width:390,height:800},{width:430,height:800},{width:844,height:390},{width:1440,height:1000}];
 const requiredManagementViews=['overview','walls','boxes','manholes','fence','block','qc','delivery','inventory','weekly-planner','billing','exceptions','import','audit','history'];
 try{
  for(const viewport of viewports){
   const {width,height}=viewport,label=`${width}x${height}`;
-  const page=await browser.newPage({viewport,hasTouch:true});page.setDefaultTimeout(7000);
+  const page=await browser.newPage({viewport,hasTouch:width<=1000});page.setDefaultTimeout(7000);
   page.on('pageerror',error=>pageErrors.push({viewport:label,message:error.message}));
   page.on('dialog',dialog=>dialog.dismiss());
   await page.route('**/*',route=>{if(route.request().url()==='http://offline.test/')return route.fulfill({contentType:'text/html',body:html});blockedRequests.push(route.request().url());return route.abort()});
@@ -48,11 +48,80 @@ try{
   async function check(name,run){try{const detail=await run();results.push({viewport:label,name,passed:true,...(detail||{})})}catch(error){failures.push({viewport:label,name,message:error.stack||String(error)});await shot(`FAILED-${name.replace(/[^a-z0-9-]/gi,'-')}`,{fullPage:false}).catch(()=>{})}}
   async function nav(view){
    await page.evaluate(()=>{closeProductionModal();closeInventoryModal();document.body.classList.remove('mobile-tools-open')});
-   if(!await page.locator('#operationsSidebar').evaluate(el=>el.classList.contains('open')))await page.locator('#operationsNavMenu').click();
+   if(width<=1000&&!await page.locator('#operationsSidebar').evaluate(el=>el.classList.contains('open')))await page.locator('#operationsNavMenu').click();
    await page.locator(`#operationsSidebar [data-view="${view}"]`).click();
    await page.waitForFunction(view=>state.view===view,view);
    await page.waitForFunction(()=>scrollY<=2,null,{timeout:2000});
   }
+  const divisions=['walls','boxes','manholes','fence','block'];
+  async function todayAs(access=null){
+   await page.evaluate(access=>{
+    closeProductionModal();closeInventoryModal();document.body.classList.remove('mobile-tools-open');qaInstallFixture();qaCalls=[];
+    if(access){currentUserIsAdmin=false;currentUserCanWrite=false;currentUserRole='synthetic-restricted';currentAllowedViews=access.views;currentAllowedWallSubviews=access.wallSubviews||[];wallsProduction.permissions={issue:Boolean(access.issue)};wallsInstallation.permissions={manage:false,resources:false,field_progress:Boolean(access.fieldIssue)};applyAccessNavigation();updateAccessStatus()}
+    state.view='today';render();closeOperationsNav();scrollTo(0,0);
+   },access);
+  }
+  await check('today-single-entry-five-manager-divisions',async()=>{
+   await todayAs();
+   assert.equal(await page.locator('#operationsSidebar [data-view="today"]').count(),1,'Today must remain one navigation entry');
+   assert.equal(await page.locator('#view h2').filter({hasText:/^Today$/}).count(),1,'Today landing heading duplicated');
+   const cards=await page.locator('[data-mobile-division]').evaluateAll(nodes=>nodes.map(n=>({division:n.dataset.mobileDivision,text:n.textContent,left:n.getBoundingClientRect().left,right:n.getBoundingClientRect().right,width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height})));
+   assert.deepEqual(cards.map(x=>x.division).sort(),[...divisions].sort(),'Manager must see all five division cards');
+   const titles={walls:/Superior Walls/,boxes:/Box Culverts/,manholes:/Manholes/,fence:/Fence/,block:/Block/};
+   for(const card of cards){assert.match(card.text,titles[card.division]);assert.ok(card.left>=-1&&card.right<=width+1,`${card.division} card overflows screen`);assert.ok(card.width>=44&&card.height>=44)}
+   const buttons=page.locator('#view [data-mobile-route]'),targets=await buttons.evaluateAll(nodes=>nodes.map(n=>({route:n.dataset.mobileRoute,width:n.getBoundingClientRect().width,height:n.getBoundingClientRect().height,left:n.getBoundingClientRect().left,right:n.getBoundingClientRect().right})));
+   for(const target of targets){assert.ok(target.width>=43.5&&target.height>=43.5,`${target.route} has a small action target`);assert.ok(target.left>=-1&&target.right<=width+1,`${target.route} action is horizontally clipped`)}
+   await buttons.first().focus();for(let i=0;i<targets.length;i++){assert.equal(await buttons.nth(i).evaluate(n=>document.activeElement===n),true,`${targets[i].route} not reachable in normal Tab order`);if(i<targets.length-1)await page.keyboard.press('Tab')}
+   await page.evaluate(()=>scrollTo(0,0));
+   assert.equal(await page.locator('#view .stat,#view .production-kpi,#view .inventory-stat').count(),0,'Landing cards must not invent operational totals');
+   assert.doesNotMatch(await page.locator('[data-mobile-division]').allTextContents().then(x=>x.join(' ')),/assigned to you|your assigned|\d+\s+(jobs|tasks|assignments)/i,'Division navigation must not claim personal assignments or counts');
+   assert.equal(await page.evaluate(()=>qaCalls.length),0,'Today issued a business RPC');await shot('today-five-divisions-management');return {cards,targets};
+  });
+  await check('today-division-main-routes-preserve-management',async()=>{
+   for(const division of divisions){await todayAs();await nav('today');await page.locator(`[data-mobile-division="${division}"] [data-mobile-route="${division}"]`).click();
+    const actual=await page.evaluate(division=>({view:state.view,subview:state.subview[division],admin:currentUserIsAdmin,write:currentUserCanWrite,calls:qaCalls.length}),division);
+    assert.equal(actual.view,division);assert.equal(actual.subview,'current');assert.equal(actual.admin,true);assert.equal(actual.write,true);assert.equal(actual.calls,0);assert.ok(await page.locator('#view').innerText());
+   }
+  });
+  await check('today-walls-explicit-and-shared-routes',async()=>{
+   for(const route of ['production','installation','inventory','schedule','report']){await todayAs();const button=page.locator(`[data-mobile-route="${route}"]`);assert.equal(await button.count(),1);
+    if(['production','installation','report'].includes(route))assert.match(await button.innerText(),/Walls/i,'Walls-only activity must not imply all divisions');
+    await button.click();const actual=await page.evaluate(()=>({view:state.view,wall:state.subview.walls,planner:state.weeklyPlannerView,admin:currentUserIsAdmin,calls:qaCalls.length}));
+    assert.equal(actual.view,route==='inventory'?'inventory':route==='schedule'?'weekly-planner':'walls');if(['production','installation'].includes(route))assert.equal(actual.wall,route);if(route==='schedule')assert.equal(actual.planner,'approved');assert.equal(actual.admin,true);assert.equal(actual.calls,0);
+   }
+  });
+  await check('today-authorized-card-filtering-and-routes',async()=>{
+   const profiles=[...['boxes','manholes','fence','block'].map(division=>({name:division+' only',views:[division],cards:[division],routes:[division]})),
+    {name:'all non-Walls',views:['boxes','manholes','fence','block'],cards:['boxes','manholes','fence','block'],routes:['boxes','manholes','fence','block']},
+    {name:'non-Walls with stale Walls capabilities',views:['boxes'],wallSubviews:['production','installation'],issue:true,fieldIssue:true,cards:['boxes'],routes:['boxes']},
+    {name:'Walls missing subviews',views:['walls'],wallSubviews:[],cards:[],routes:[]},
+    {name:'Walls unknown subview',views:['walls'],wallSubviews:['not-a-real-subview'],cards:[],routes:[]},
+    {name:'Walls current only',views:['walls'],wallSubviews:['current'],cards:['walls'],routes:['walls']},
+    {name:'Walls production read',views:['walls'],wallSubviews:['production'],cards:['walls'],routes:['walls','production']},
+    {name:'Walls production issue',views:['walls'],wallSubviews:['production'],issue:true,cards:['walls'],routes:['walls','production','report']},
+    {name:'Walls installation read',views:['walls'],wallSubviews:['installation'],cards:['walls'],routes:['walls','installation']},
+    {name:'Walls field issue',views:['walls'],wallSubviews:['installation'],fieldIssue:true,cards:['walls'],routes:['walls','installation','report']},
+    {name:'shared tasks only',views:['inventory','weekly-planner'],cards:[],routes:['inventory','schedule']},
+    {name:'no daily work areas',views:[],cards:[],routes:[]}];
+   for(const profile of profiles){await todayAs(profile);
+    const cards=await page.locator('[data-mobile-division]').evaluateAll(nodes=>nodes.map(n=>n.dataset.mobileDivision));const routes=await page.locator('[data-mobile-route]').evaluateAll(nodes=>nodes.map(n=>n.dataset.mobileRoute));
+    assert.deepEqual(cards.sort(),[...profile.cards].sort(),profile.name+' division filtering');assert.deepEqual(routes.sort(),[...profile.routes].sort(),profile.name+' task capability filtering');
+    assert.equal(await page.locator('#operationsSidebar [data-view="today"]:not([hidden])').count(),1);assert.doesNotMatch(await page.locator('.mobile-home-note').innerText(),/full management access/i);
+    if(profile.name==='Walls field issue')await shot('today-restricted-walls-field');if(profile.name==='boxes only')await shot('today-restricted-boxes');
+    const target=profile.cards[0]||profile.routes[0];if(target){await page.locator(`[data-mobile-route="${target}"]`).click();assert.equal(await page.evaluate(()=>state.view),target==='schedule'?'weekly-planner':target);if(target==='walls')assert.ok(profile.wallSubviews.includes(await page.evaluate(()=>state.subview.walls)),'Main Walls card opened an unauthorized subview')}
+    const after=await page.evaluate(()=>({admin:currentUserIsAdmin,write:currentUserCanWrite,allowed:currentAllowedViews,wall:currentAllowedWallSubviews,calls:qaCalls.length}));assert.equal(after.admin,false);assert.equal(after.write,false);assert.deepEqual(after.allowed,profile.views);assert.deepEqual(after.wall,profile.wallSubviews||[]);assert.equal(after.calls,0,'Read-only navigation called a mutation');
+   }
+   return {profiles:profiles.map(x=>x.name)};
+  });
+  await check('today-stale-cards-denied-after-access-change',async()=>{
+   for(const scenario of [{route:'boxes',access:{views:['boxes']},revoke:()=>{currentAllowedViews=[]}},{route:'production',access:{views:['walls'],wallSubviews:['production']},revoke:()=>{currentAllowedWallSubviews=[]}},{route:'report',access:{views:['walls'],wallSubviews:['production'],issue:true},revoke:()=>{wallsProduction.permissions.issue=false}},{route:'schedule',access:{views:['weekly-planner']},revoke:()=>{currentAllowedViews=[]}}]){
+    await todayAs(scenario.access);await page.evaluate(scenario.revoke);await page.locator(`[data-mobile-route="${scenario.route}"]`).click();
+    assert.equal(await page.evaluate(()=>state.view),'today',`Stale ${scenario.route} card bypassed current capability check`);assert.equal(await page.evaluate(()=>qaCalls.length),0);assert.equal(await page.evaluate(()=>currentUserIsAdmin||currentUserCanWrite),false);
+   }
+  });
+  await todayAs();
+  // Desktop receives targeted Today coverage; the existing phone-specific suite stays unchanged.
+  if(width>1000){await page.close();continue}
   await check('full-management-routes-preserved',async()=>{
    await page.evaluate(()=>{state.view='overview';render();closeOperationsNav()});
    await page.locator('#operationsNavMenu').click();
@@ -195,7 +264,7 @@ try{
  }
 }finally{
  await browser.close();
- const report={method:'Offline synthetic Chromium with touch-capable context; not real device, live employee auth or backend authorization proof.',viewports,results,failures,pageErrors,blockedRequests};
+ const report={method:'Offline synthetic Chromium: touch-capable phone viewports plus desktop Today coverage; not real device, live employee auth or backend authorization proof.',viewports,results,failures,pageErrors,blockedRequests};
  if(output)await writeFile(resolve(output,'results.json'),JSON.stringify(report,null,2));
  console.log(JSON.stringify({checks:results.length,failures,pageErrors,blockedRequestCount:blockedRequests.length},null,2));
 }

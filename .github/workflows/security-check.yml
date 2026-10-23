@@ -22,6 +22,8 @@ jobs:
         run: node --test scripts/test-operations-agent-context.mjs scripts/test-operations-agent-provider.mjs
       - name: Test session isolation and save recovery
         run: node --test scripts/test-session-save-safety.mjs scripts/test-operational-modal-save.mjs scripts/test-installation-load-safety.mjs
+      - name: Test Today division navigation and capability filters
+        run: node --test scripts/test-today-divisions.mjs
       - name: Verify database migrations
         run: node scripts/validate-migrations.mjs
       - name: Verify privileged RPC grants
