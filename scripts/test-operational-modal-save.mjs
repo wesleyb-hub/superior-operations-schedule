@@ -8,16 +8,17 @@ const part=(a,b)=>html.slice(html.indexOf(a),html.indexOf(b));
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(){
  const nodes=new Map(),calls=[],messages=[];
- function node(id){if(nodes.has(id))return nodes.get(id);const classes=new Set();const el={id,style:{display:''},value:'',disabled:false,textContent:'',children:[],controls:[],setAttribute(){},replaceChildren(){this.children=[];this.controls=[]},querySelector(){return null},classList:{add:x=>classes.add(x),remove:x=>classes.delete(x),contains:x=>classes.has(x),toggle(x,on){if(on)classes.add(x);else classes.delete(x)}},appendChild(child){this.children.push(child);nodes.set(child.id,child)},querySelectorAll(){return this.controls}};Object.defineProperty(el,'innerHTML',{set(value){for(const child of this.children)nodes.delete(child.id);this.children=[];this.controls=[];for(const m of value.matchAll(/<(input|textarea|select)\b[^>]*\bid="([^"]+)"[^>]*>/g)){nodes.delete(m[2]);const child=node(m[2]);this.controls.push(child);child.value=m[0].match(/value="([^"]*)"/)?.[1]||''}},get(){return ''}});nodes.set(id,el);return el}
- const c={console:{error(){}},Promise,currentUser:{id:'synthetic'},hubSessionEpoch:0,state:{productionDay:'2026-10-26'},inventoryModalSaveAction:null,productionModalSaveAction:null,inventoryCanAdjust:true,inventoryCanManage:true,inventoryBusy:false,productionBusy:false,inventoryLoadToken:0,inventoryReady:true,inventoryLoadError:'',htmlSafe:String,normalizeDate:x=>x,todayISO:()=>'2026-10-26',addDays:x=>x,productionDateTimeLocal:x=>x,alert:m=>messages.push(m),showInventoryToast:m=>messages.push(m),renderInventory(){},document:{getElementById:id=>nodes.get(id)||(id.endsWith('SaveStatus')?null:node(id)),createElement:()=>node('new-'+nodes.size)}};
+ function node(id){if(nodes.has(id))return nodes.get(id);const classes=new Set();const el={id,focus(){},style:{display:''},value:'',disabled:false,textContent:'',children:[],controls:[],setAttribute(){},replaceChildren(){this.children=[];this.controls=[]},querySelector(){return null},classList:{add:x=>classes.add(x),remove:x=>classes.delete(x),contains:x=>classes.has(x),toggle(x,on){if(on)classes.add(x);else classes.delete(x)}},appendChild(child){this.children.push(child);nodes.set(child.id,child)},querySelectorAll(){return this.controls}};Object.defineProperty(el,'innerHTML',{set(value){for(const child of this.children)nodes.delete(child.id);this.children=[];this.controls=[];for(const m of value.matchAll(/<(input|textarea|select)\b[^>]*\bid="([^"]+)"[^>]*>/g)){nodes.delete(m[2]);const child=node(m[2]);this.controls.push(child);child.value=m[0].match(/value="([^"]*)"/)?.[1]||''}},get(){return ''}});nodes.set(id,el);return el}
+ const c={console:{error(){}},Promise,currentUser:{id:'synthetic'},hubSessionEpoch:0,state:{productionDay:'2026-10-26'},inventoryModalSaveAction:null,productionModalSaveAction:null,inventoryCanAdjust:true,inventoryCanManage:true,inventoryBusy:false,productionBusy:false,installationBusy:false,installationCanManage:()=>true,wallsInstallation:{permissions:{manage:true,field_progress:true}},inventoryLoadToken:0,inventoryReady:true,inventoryLoadError:'',htmlSafe:String,normalizeDate:x=>x,todayISO:()=>'2026-10-26',addDays:x=>x,productionDateTimeLocal:x=>x,alert:m=>messages.push(m),showInventoryToast:m=>messages.push(m),renderInventory(){},document:{getElementById:id=>nodes.get(id)||(id.endsWith('SaveStatus')?null:node(id)),createElement:()=>node('new-'+nodes.size)}};
  c.wallsProduction={permissions:{assign:true},jobs:[{id:'wall',job:'Synthetic foundation',totalLf:120}],tables:[{table_id:'table',label:'Synthetic table',capacity_lf:120,version:2}],assignments:[{assignment_id:'assignment',wall_record_id:'wall',table_id:'table',planned_lf:120,version:3}]};
  c.productionJob=id=>c.wallsProduction.jobs.find(j=>j.id===id)||c.wallsProduction.jobs[0];c.productionTable=id=>c.wallsProduction.tables.find(t=>t.table_id===id)||c.wallsProduction.tables[0];
- c.sb={rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))};c.loadInventory=c.loadWallsProduction=async()=>true;
- vm.createContext(c);vm.runInContext(part('async function wallsProductionRpc(', 'async function loadInventory('),c);vm.runInContext(part('async function inventoryRpc(', 'function defaultWallPlanReview('),c);vm.runInContext(part('function closeInventoryModal(', 'function inventoryEmailPreview('),c);vm.runInContext(part('function openProductionAssignmentModal(', 'function bindWallsProductionControls('),c);vm.runInContext(html.split(/\r?\n/).find(line=>line.startsWith('function closeModal(')),c);
+ c.sb={rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))};c.loadInventory=c.loadWallsProduction=c.ensureWallsInstallationLoaded=async()=>true;
+ vm.createContext(c);vm.runInContext(part('async function wallsInstallationRpc(', '// Realtime has a bounded read budget:'),c);vm.runInContext(part('function openWallsInstallationIssueForm(', 'function openWallsInstallationResolveForm('),c);vm.runInContext(part('async function wallsProductionRpc(', 'async function loadInventory('),c);vm.runInContext(part('async function inventoryRpc(', 'function defaultWallPlanReview('),c);vm.runInContext(part('function closeInventoryModal(', 'function inventoryEmailPreview('),c);vm.runInContext(part('function openProductionAssignmentModal(', 'function bindWallsProductionControls('),c);vm.runInContext(html.split(/\r?\n/).find(line=>line.startsWith('function closeModal(')),c);
  return {c,calls,messages,node};
 }
 const item={id:1,code:'SYNTHETIC',description:'Synthetic stock',unit:'units',qty:20,threshold:5,version:4};
 const scenarios=[
+ {name:'installation issue',kind:'production',open(c){c.openWallsInstallationIssueForm('wall')},values:{installIssueCategory:'site',installIssueSeverity:'warning',installIssueDescription:'Retained field issue'},rpc:'report_walls_installation_issue',args:{p_wall_record_id:'wall',p_description:'Retained field issue'}},
  {name:'count-only inventory',kind:'inventory',open(c){c.inventoryCanManage=false;c.inventoryEditItem(item)},values:{inventoryQtyInput:'37'},rpc:'set_inventory_count',args:{p_quantity:37}},
  {name:'manager inventory settings',kind:'inventory',open(c){c.inventoryEditItem(item)},values:{inventoryQtyInput:'38',inventoryThresholdInput:'7',inventoryUnitInput:'boxes'},rpc:'set_inventory_item',args:{p_quantity:38,p_reorder_threshold:7,p_unit:'boxes'}},
  {name:'inventory receiving',kind:'inventory',open(c){c.inventoryReceive(item)},values:{inventoryReceivedInput:'9'},rpc:'receive_inventory_stock',args:{p_quantity:9}},
@@ -43,7 +44,7 @@ for(const s of scenarios){
  });
 }
 for(const kind of ['inventory','production']){
- const s=scenarios.find(s=>s.kind===kind);
+ const s=scenarios.find(s=>s.kind===kind&&s.name!=='installation issue');
  test(`${kind}: dismissed save cannot close or unlock replacement modal`,async()=>{
   const f=fixture(),action=open(f,s),save=action(),prefix=kind+'Modal';f.c['close'+(kind==='production'?'Production':'Inventory')+'Modal']();open(f,s);f.node(prefix+'Save').disabled=true;
   f.calls[0].resolve({data:{}});assert.equal(await save,false);assert.equal(f.node(prefix).classList.contains('open'),true);assert.equal(f.node(prefix+'Save').disabled,true);
@@ -59,7 +60,7 @@ for(const kind of ['inventory','production']){
 }
 
 for(const kind of ['inventory','production'])test(`${kind}: generic dismissal clears action and inline hidden style cannot poison reopening`,()=>{
- const f=fixture(),s=scenarios.find(s=>s.kind===kind);open(f,s);f.c.closeModal(kind+'Modal');assert.equal(f.node(kind+'Modal').classList.contains('open'),false);assert.equal(f.c[kind+'ModalSaveAction'],null);
+ const f=fixture(),s=scenarios.find(s=>s.kind===kind&&s.name!=='installation issue');open(f,s);f.c.closeModal(kind+'Modal');assert.equal(f.node(kind+'Modal').classList.contains('open'),false);assert.equal(f.c[kind+'ModalSaveAction'],null);
  f.node(kind+'Modal').style.display='none';open(f,s);assert.equal(f.node(kind+'Modal').style.display,'');assert.equal(f.node(kind+'Modal').classList.contains('open'),true);
 });
 
@@ -70,5 +71,27 @@ test('session teardown hides every inline modal before a new login',()=>{
  f.c.document.querySelectorAll=selector=>selector==='.modal-backdrop,.inventory-modal-backdrop'?ids.map(f.node):[];
  vm.runInContext(part('function resetLocalSession(', 'async function signOut('),f.c);f.c.resetLocalSession();f.c.currentUser={id:'new-login'};
  for(const id of ids){assert.equal(f.node(id).style.display,'none');assert.equal(f.node(id).classList.contains('open'),false)}
- f.c.inventoryCanAdjust=true;open(f,scenarios[0]);assert.equal(f.node('inventoryModal').style.display,'');assert.equal(f.node('wallModal').style.display,'none');
+ f.c.inventoryCanAdjust=true;open(f,scenarios.find(s=>s.kind==='inventory'));assert.equal(f.node('inventoryModal').style.display,'');assert.equal(f.node('wallModal').style.display,'none');
+});
+
+for(const s of scenarios.filter(s=>['count-only inventory','production issue','installation issue'].includes(s.name))){
+ for(const response of [{status:0,error:{message:'lost response'}},{status:504,error:{message:'gateway timeout'}},{status:400,error:{code:'08007',message:'transaction outcome unknown'}}])test(`${s.name}: SDK ${response.status}/${response.error.code||'transport'} unknown response prevents unsafe retry`,async()=>{
+  const f=fixture(),action=open(f,s),save=action();f.calls[0].resolve(response);assert.equal(await save,false);assert.equal(f.node(s.kind+'ModalSave').disabled,true);assert.match(f.node(s.kind+'ModalSaveStatus').textContent,/outcome unknown/);assert.equal(await action(),false);assert.equal(f.calls.length,1);
+ });
+ for(const code of ['57014','P0001','PGRST003'])test(`${s.name}: definite ${code} rejection retains editable draft`,async()=>{
+  const f=fixture(),action=open(f,s),save=action();f.calls[0].resolve({status:504,error:{code,message:'definite rejection'}});assert.equal(await save,false);assert.equal(f.node(s.kind+'ModalSave').disabled,false);assert.match(f.node(s.kind+'ModalSaveStatus').textContent,/Not saved/);
+ });
+}
+test('count-only blank is rejected without a call; intentional zero is accepted',async()=>{
+ const f=fixture();f.c.inventoryCanManage=false;f.c.inventoryEditItem(item);f.node('inventoryQtyInput').value='';await f.c.inventoryModalSaveAction();assert.equal(f.calls.length,0);assert.match(f.node('inventoryCountError').textContent,/enter|count/i);assert.equal(f.node('inventoryModal').classList.contains('open'),true);
+ f.node('inventoryQtyInput').value='0';const save=f.c.inventoryModalSaveAction();assert.equal(f.calls.length,1);assert.equal(f.calls[0].args.p_quantity,0);f.calls[0].resolve({data:{}});assert.equal(await save,true);
+});
+test('manager empty settings preserve established null semantics',async()=>{
+ const f=fixture();f.c.inventoryEditItem(item);f.node('inventoryQtyInput').value='';f.node('inventoryThresholdInput').value='';const save=f.c.inventoryModalSaveAction();assert.equal(f.calls[0].args.p_quantity,null);assert.equal(f.calls[0].args.p_reorder_threshold,null);f.calls[0].resolve({data:{}});assert.equal(await save,true);
+});
+test('installation old session response cannot close newer modal or unlock its save',async()=>{
+ const f=fixture(),s=scenarios.find(s=>s.name==='installation issue'),old=open(f,s)();f.c.currentUser={id:'new-field-session'};f.c.hubSessionEpoch++;f.c.installationBusy=false;const fresh=open(f,s)();f.calls[0].resolve({data:{}});assert.equal(await old,false);assert.equal(f.node('productionModalSave').disabled,true);assert.equal(f.c.installationBusy,true);f.calls[1].resolve({data:{}});assert.equal(await fresh,true);assert.equal(f.node('productionModal').classList.contains('open'),false);
+});
+test('field-progress-only capability allows issue reporting but not manage-only activity transitions',()=>{
+ const c={wallsInstallation:{permissions:{field_progress:true,manage:false}},currentUserIsAdmin:false};vm.createContext(c);for(const name of ['installationCanManage','installationCanProgress'])vm.runInContext(html.split(/\r?\n/).find(line=>line.startsWith('function '+name+'(')),c);assert.equal(c.installationCanManage(),false);assert.equal(c.installationCanProgress(),false);c.wallsInstallation.permissions.manage=true;assert.equal(c.installationCanProgress(),true);
 });

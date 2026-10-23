@@ -43,3 +43,22 @@ Lost mutation responses are not treated as confirmed rollback: SDK status 0, amb
 An uncertain packet publication also keeps a publish-only verification latch for that user and week. Cached, failed, superseded, unrelated-week, or malformed snapshot results cannot unlock another publication. A successfully accepted fresh snapshot containing packet history clears the matching latch; no second packet is published automatically. Section approvals and immutable packet history are not rewritten by this recovery state.
 
 After a gateway/network response loss, the original server request may still complete. Refresh observes current packet history; unchanged history does not prove rollback or guarantee that retrying cannot create another packet. The client latch is a verification barrier, not backend idempotency or an exactly-once publication guarantee.
+
+## Full-access phone pilot (2026-10-23)
+
+The phone presentation adds a Today task launcher, not a different identity or permission role. Management retains every prior sidebar destination and management actions under **More tools**. The launcher uses existing capabilities; crew packets are frozen read-only schedules, **not** identity-mapped personal assignments. Field Start/Complete/Hold/Resume remain management-only to match the current RPC contract; field issue reporting uses its existing separate capability. This frontend does not deploy SQL, alter user access, or implement assigned-job authorization.
+
+The isolated CI job additionally runs:
+
+```sh
+node scripts/validate-mobile-pilot-ui.mjs artifacts/workflow-ui/mobile-pilot
+node --test scripts/test-operational-modal-save.mjs
+```
+
+The touch-context harness uses 360/390/430 × 800 portrait and 844 × 390 landscape. It clicks the actual menu through all management views, checks scroll reset and initial work visibility, expands management tools, types inventory search without losing its caret, measures operational touch targets, tests count blank/zero distinction, reads escaped immutable crew packets without writes, preserves approval/publication uncertainty, and exercises failed/unknown Installation saves plus replacement sessions. All service adapters and identities are synthetic; other requests are blocked. Existing 1440/390 tests remain in the job for desktop and baseline regression coverage. Service-free tests cover returned status-0/gateway/unknown transaction responses, definite rejection versus uncertain outcome, old-session ownership, and manager blank-to-null semantics separately from physical-count validation.
+
+**Required before release:** all CI checks pass and exact-head screenshot artifacts are reviewed. Browser emulation is not an actual iPhone/Android or employee authorization test. No local Chromium was launched for this work because the known process socket restriction remains.
+
+**Wes's first-device checklist after separately approved release:** sign in normally; confirm all menu screens and More tools; choose Today → production/field/inventory; type a multi-letter inventory search; read Current count/Reorder minimum; open a form and cancel without a business change; rotate portrait/landscape; open keyboard and verify Save/Cancel remain reachable; read a frozen crew schedule and any hold/uncertainty wording; sign out and confirm the app cannot be keyboard-focused. Use synthetic or explicitly designated test records for deliberate save/failure trials. Production, QC release, dispatch, and job-completion gates remain distinct. Do not simulate poor connection during a real business mutation: an unknown response may have committed.
+
+Before a later employee pilot, separately validate deny-default Auth-to-employee/assigned-job mapping and restricted backend permissions with positive and negative tests. Offline synthetic UI checks do not establish that security boundary. Wide planning tables remain horizontally scrollable management tools; the phone crew-packet reader avoids requiring employees to edit those tables.
