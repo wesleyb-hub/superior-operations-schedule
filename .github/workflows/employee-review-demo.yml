@@ -1,0 +1,43 @@
+name: Isolated employee review demo
+
+on:
+  pull_request:
+    paths:
+      - 'employee-review/**'
+      - 'scripts/*employee-review-demo*'
+      - '.github/workflows/employee-review-demo.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'employee-review/**'
+      - 'scripts/*employee-review-demo*'
+      - '.github/workflows/employee-review-demo.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify synthetic-only generated demo contract
+        run: node --test scripts/test-employee-review-demo.mjs
+      - name: Install pinned ephemeral browser dependency
+        run: npm install --no-save --package-lock=false playwright@1.56.1
+      - name: Install matching Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Verify opaque-origin isolation and desktop/phone interactions
+        run: node scripts/validate-employee-review-demo.mjs artifacts/employee-review-demo
+      - name: Retain synthetic review screenshots and isolation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: employee-review-demo
+          path: artifacts/employee-review-demo
+          if-no-files-found: warn
+          retention-days: 7

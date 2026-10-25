@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Isolated synthetic employee UI review; not live access or release authorization",
+  "source": {
+    "commit": "ea406133b89b3109d65b28c0cda8d33eccc006bf",
+    "tree": "22abcd0362df23faa8e2fdf376ab785c220e64c2",
+    "retrievalReference": {
+      "pullRequest": "https://github.com/wesleyb-hub/superior-operations-schedule/pull/102",
+      "commit": "e1295a8f08c3d5aa39cc77761ee57b7791196f28",
+      "note": "Remote candidate reference supplied by the release worker; the builder independently requires the exact index hash below."
+    },
+    "indexSha256": "5709097ffa22b977e4348b95e12e44f8bf68cd2fb00ce13d78cf6f407b9e9dac"
+  },
+  "childSha256": "656cc94a0f10eff4d818562c7b60382c093fcf1f5c7fc504869250dbc1afc615",
+  "indexSha256": "6445d23c73a61676efe6631235a60f747bb3c211acaae964633cc01bc0ef28a1",
+  "runtimeSha256": "868b4922dfbded44cc0c07654928e08e6954074b2c95f9074a4e165a185a9963",
+  "fixturesSha256": "4ba6d6d949305d41ea2ea67a855d1a8bad8389aaa3ab3fecd846f86a88e3db98",
+  "builderSha256": "920a609cd4c12fd6b4254d38c7165ea44fdae86041893be83c44c61d6e5ddd7d",
+  "fixtureRevision": "employee-demo-20261025-v1",
+  "frameSelector": "#employeeReviewFrame",
+  "bannerSelector": "#employeeDemoBanner",
+  "resetSelector": "#employeeDemoReset",
+  "sandbox": "allow-scripts",
+  "readOnlyRpcs": [
+    "get_walls_production_snapshot",
+    "get_walls_production_weekly_forecast",
+    "get_inventory_scopes",
+    "get_inventory_snapshot",
+    "get_employee_approved_crew_packs"
+  ],
+  "sampleWeek": "2026-10-26"
+}
