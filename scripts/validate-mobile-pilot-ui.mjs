@@ -27,6 +27,8 @@ try{
    sb={rpc:(name,args)=>new Promise((resolve,reject)=>qaCalls.push({name,args,resolve,reject})),from:()=>{const chain={select:()=>chain,eq:()=>chain,not:()=>chain,order:()=>chain,limit:()=>chain,in:()=>chain,then:(yes,no)=>Promise.resolve({data:[]}).then(yes,no)};return chain},removeChannel:async()=>{},channel:()=>{const c={on:()=>c,subscribe:()=>c};return c}};
    window.qaInstallFixture=()=>{
     if(typeof resetEmployeeCrewSchedules==='function')resetEmployeeCrewSchedules();
+    // Match real sign-out cleanup when replacing synthetic identities between checks.
+    clearTimeout(inventoryToastTimer);document.getElementById('inventoryToast').textContent='';document.getElementById('inventoryToast').classList.remove('show');
     currentUser={id:'synthetic-wes-management-pilot'};currentUserAuthorized=true;currentUserIsAdmin=true;currentUserCanWrite=true;currentUserRole='admin';
     currentAllowedViews=[];currentAllowedWallSubviews=[];remoteReady=false;saveBusy=false;saveQueued=false;inventoryBusy=false;productionBusy=false;installationBusy=false;
     state.week='2026-10-26';state.productionDay='2026-10-26';state.installationDay='2026-10-26';state.installationWeek='2026-10-26';state.installationView='today';
@@ -147,7 +149,7 @@ try{
     assert.equal((await page.locator('[data-inv-action="edit"]').count())>0,adjust);if(adjust){await page.locator('[data-inv-action="edit"]').first().click();assert.equal(await page.locator('#inventoryQtyInput').count(),1);assert.equal(await page.locator('#inventoryThresholdInput,#inventoryUnitInput').count(),0);await page.locator('#inventoryModalClose').click()}
     assert.equal(await page.evaluate(()=>qaCalls.length),0);
    }
-   await shot('employee-inventory-count-only');
+   await page.evaluate(()=>scrollTo(0,0));await shot('employee-inventory-count-only');
   });
   await check('restricted-overview-uses-authorized-work-areas',async()=>{
    for(const profile of [{views:['overview','boxes'],cards:['boxes']},{views:['overview','walls','inventory'],wallSubviews:['production'],cards:['walls']}]){
