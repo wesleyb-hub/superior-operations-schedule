@@ -1,0 +1,36 @@
+/* Demo-only presentation patch. Desktop retains the original full banner and render order. */
+#employeeDemoBanner{display:block}
+#employeeDemoBannerSummary{display:none}
+#employeeDemoBanner:not([open])>#employeeDemoBannerDetails{display:none}
+.employee-mobile-details:not([open])>.employee-mobile-details-body{display:none}
+#employeeDemoBannerDetails{display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+@media(max-width:1000px){
+  body.employee-mobile-polish #employeeDemoBanner{margin-top:6px;padding:0}
+  body.employee-mobile-polish #employeeDemoBannerSummary{display:list-item;min-height:46px;padding:8px 10px;cursor:pointer;line-height:1.35;font-size:12px}
+  body.employee-mobile-polish #employeeDemoBannerSummary strong{font-size:12px}
+  body.employee-mobile-polish #employeeDemoBannerSummary .employee-demo-short{display:block;margin-left:16px;font-size:12px;font-weight:600}
+  body.employee-mobile-polish #employeeDemoBannerSummary .employee-demo-hint{float:right;font-size:12px;font-weight:700}
+  body.employee-mobile-polish #employeeDemoBannerDetails{padding:10px;border-top:1px solid #e7c88c;max-height:55vh;overflow:auto}
+  body.employee-mobile-polish #employeeDemoReset{min-height:46px;min-width:44px;font-size:14px}
+  body.employee-mobile-polish .main>.notice{display:none}
+  body.employee-mobile-polish #view .production-heading .eyebrow,
+  body.employee-mobile-polish #view .inventory-heading .eyebrow,
+  body.employee-mobile-polish #view .inventory-crumb,
+  body.employee-mobile-polish #view .inventory-review-banner{display:none}
+  body.employee-mobile-polish #view .inventory-heading,
+  body.employee-mobile-polish #view .planner-heading{margin:0;gap:8px}
+  body.employee-mobile-polish #view .inventory-heading p,
+  body.employee-mobile-polish #view .planner-heading p{font-size:14px;line-height:1.4;margin:4px 0 0}
+  body.employee-mobile-polish #view .inventory-shell{gap:12px}
+  body.employee-mobile-polish #view .inventory-shell>.subtabs{margin-bottom:0}
+  body.employee-mobile-polish #view .inventory-section-head{padding:10px 12px;gap:4px}
+  body.employee-mobile-polish #view .inventory-scope{padding:6px 8px}
+  body.employee-mobile-polish #view .planner-shell{gap:12px}
+  body.employee-mobile-polish #view .employee-mobile-details{margin:0;background:#fff;border:1px solid #d4dfe7;border-radius:9px;min-width:0}
+  body.employee-mobile-polish #view .employee-mobile-details>summary{min-height:48px;padding:12px;cursor:pointer;font-size:14px;font-weight:800;line-height:1.4;color:var(--navy)}
+  body.employee-mobile-polish #view .employee-mobile-details-body{padding:0 10px 10px}
+  body.employee-mobile-polish #view .employee-mobile-details-body>.phone-schedule-note{margin:0;font-size:14px;line-height:1.5}
+  body.employee-mobile-polish #view .employee-mobile-details-body .inventory-section{margin-top:10px}
+  body.employee-mobile-polish #employeeDemoBannerSummary:focus-visible,
+  body.employee-mobile-polish #view .employee-mobile-details>summary:focus-visible{outline:3px solid #315f93;outline-offset:2px}
+}
