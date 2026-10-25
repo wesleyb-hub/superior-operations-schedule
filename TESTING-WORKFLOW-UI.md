@@ -68,3 +68,69 @@ Before a later employee pilot, separately validate deny-default Auth-to-employee
 Today keeps one navigation entry and offers authorized division cards for Superior Walls, Box Culverts, Manholes, Fence, and Block. Cards open the existing division schedule rather than claiming a date-filtered workload or personal assignment. Walls production, Walls field work, and Report a Walls issue are explicitly scoped; Inventory and Crew schedules remain shared tools. Restricted accounts only receive their existing allowed views/subviews, and each click rechecks those capabilities without granting access.
 
 `node --test scripts/test-today-divisions.mjs` executes the actual launcher helpers against synthetic capability snapshots, including missing/unknown Walls subviews and access revoked after render. The isolated mobile-pilot harness additionally checks the five division cards, routes, shared-tool gates, one Today entry, and restricted profiles at 360/390/430 portrait, 844 landscape, and 1440 desktop widths. Existing phone checks remain intact. These tests do not establish live employee authorization or actual-device behavior.
+
+## Employee-facing navigation completion (2026-10-25)
+
+Restricted Overview reuses the authorized work-area launcher instead of showing
+companywide Walls totals as “assigned” work. Management Overview and all existing
+management destinations are retained. Search is shown only when its existing
+view is allowed, and activation rechecks that permission.
+
+Employee Production stays inside its four tabs: Today, 5-Day Production Flow,
+Table Board, and Weekly Forecast. Field Work stays inside Today, This Week and
+Resources. The parent Walls-management tabs are not mixed into those employee
+modules. Inventory exposes only permitted scopes and count/read actions; employee
+views omit purchasing preview and management activity history. Management's
+controls remain unchanged. The employee Today Report a Walls issue shortcut is
+removed for this rollout; no new issue module or write capability is added.
+
+Employee Crew schedules uses only `get_employee_approved_crew_packs` for the
+requested week and the existing explicit `weekly-planner` view opt-in. It never
+uses the companywide planner snapshot. The client accepts at most one active,
+published pack with approved permitted Walls-production sections, copies only
+allowlisted display fields, and shows no drafts, editor, review, approval,
+publication, readiness, administrative identity fields or historical packets.
+Every intentional Read freshly checks the same active pack before opening the
+read-only modal. Missing/denied/error/empty results give useful terminal states,
+not an endless loader. Repeated reads are deduplicated; replaced sessions, weeks,
+permissions and late responses cannot reopen old content. A separate reviewed
+backend migration is required before this dedicated endpoint is available. No
+view grant is added by frontend code.
+
+Closed mobile navigation is inert/hidden from assistive technology. Opening
+focuses the first available destination; Escape restores Menu focus. Navigation
+preserves destination focus; desktop navigation becomes available after resize.
+
+Production and Inventory provide visible Refresh controls. Employee inventory
+copy explicitly describes Refresh rather than promising realtime updates.
+Confirmed count writes retain the existing post-save refresh. The backend pilot
+candidate removes raw employee realtime access; no polling or raw-table fallback
+is introduced here. Field Work and approved schedules retain their own Refresh.
+
+Service-free coverage:
+
+```sh
+node --test scripts/test-*.mjs
+```
+
+The actual-helper tests cover module-only tabs, manager preservation, restricted
+Overview/Search, refresh deduplication and write-busy guards, approved packet
+projection, malformed/inactive/changed data, repeated taps, session changes and
+fresh read-on-open. The audit-render fixture freezes its synthetic date so the
+real Friday-5PM cutoff cannot invalidate an unrelated escaping test. The offline
+mobile harness adds matching rendered flows at 360/390/430 portrait, 844 landscape
+and 1440 desktop, including restricted stock-count forms and approved-pack reader.
+
+Local verification: 461 service-free tests and all 14 non-browser validators pass.
+Local Chromium launch was blocked at its process socket; the approved escalation
+failed before execution due executor infrastructure. No local browser pass is
+claimed. Fresh exact-head CI and screenshot review remain required before
+release; actual-device validation and restricted backend authorization remain
+separate gates.
+
+Employee device checklist, after separate release/access approval: open Today;
+verify only granted modules; visit all four Production tabs and permitted Field
+or Inventory tabs; refresh and check errors/empty states; cancel a physical-count
+form without changing data; open only a permitted approved pack; verify no draft,
+approval or purchasing controls; rotate/keyboard-navigate; sign out. Use only
+synthetic or explicitly designated records for deliberate write/failure tests.

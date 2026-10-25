@@ -42,7 +42,7 @@ for(const subview of ['current','production','installation','overall','active','
 for(const subviews of [[],['not-a-real-subview']])test(`Walls with unusable subviews ${JSON.stringify(subviews)} is not offered`,()=>{
  const {c,calls,areas}=fixture({views:['walls'],subviews});assert.deepEqual(areas().divisions,[]);assert.deepEqual(areas().shortcuts,[]);assert.equal(c.openTodayRoute('walls'),false);assert.deepEqual(calls,[]);assert.deepEqual(plain(c.state.subview),{});
 });
-test('shared-only account sees Inventory and Crew schedules without any division',()=>{
+test('shared-only account sees Inventory and dedicated approved Crew schedules',()=>{
  const {c,areas,calls}=fixture({views:['inventory','weekly-planner']});assert.deepEqual(areas().divisions,[]);assert.deepEqual(areas().shared.map(x=>x[0]),['inventory','schedule']);
  assert.equal(c.openTodayRoute('inventory'),true);assert.equal(c.openTodayRoute('schedule'),true);assert.equal(c.state.weeklyPlannerView,'approved');assert.deepEqual(calls,[['view','inventory'],['view','weekly-planner']]);
 });
@@ -51,8 +51,8 @@ test('no areas and unknown route fail closed without changing state',()=>{
  for(const route of [...divisions,'production','installation','inventory','schedule','report','__proto__'])assert.equal(c.openTodayRoute(route),false);
  assert.equal(c.state.view,'today');assert.deepEqual(calls,[]);
 });
-for(const profile of [{subviews:['production'],issue:true,target:'production'},{subviews:['installation'],fieldIssue:true,target:'installation'},{subviews:['installation'],manage:true,target:'installation'}])test(`Report a Walls issue uses existing ${profile.target} capability`,()=>{
- const {c,areas,calls}=fixture({views:['walls'],...profile});assert.equal(areas().shared.at(-1)[0],'report');assert.equal(c.openTodayRoute('report'),true);assert.equal(c.state.view,'walls');assert.equal(c.state.subview.walls,profile.target);assert.equal(c.state[profile.target==='production'?'productionDay':'installationDay'],'2026-10-23');assert.match(calls.at(-1)[1],/No issue is saved until you confirm/);
+for(const profile of [{subviews:['production'],issue:true,target:'production'},{subviews:['installation'],fieldIssue:true,target:'installation'},{subviews:['installation'],manage:true,target:'installation'}])test(`Employee Today omits the issue shortcut for ${profile.target}`,()=>{
+ const {c,areas,calls}=fixture({views:['walls'],...profile});assert.equal(areas().shared.some(x=>x[0]==='report'),false);assert.equal(c.openTodayRoute('report'),false);assert.equal(c.state.view,'today');assert.deepEqual(calls,[]);
 });
 test('capabilities for a hidden Walls view do not expose Walls actions',()=>{
  const {c,areas}=fixture({views:['boxes'],subviews:['production','installation'],issue:true,fieldIssue:true,manage:true});assert.deepEqual(areas().shortcuts,[]);assert.deepEqual(areas().shared,[]);assert.equal(c.openTodayRoute('report'),false);
@@ -62,10 +62,12 @@ for(const scenario of [
  {route:'walls',profile:{views:['walls'],subviews:['current']},revoke:c=>{c.currentAllowedWallSubviews=[]}},
  {route:'production',profile:{views:['walls'],subviews:['production']},revoke:c=>{c.currentAllowedWallSubviews=[]}},
  {route:'installation',profile:{views:['walls'],subviews:['installation']},revoke:c=>{c.currentAllowedViews=[]}},
- {route:'report',profile:{views:['walls'],subviews:['production'],issue:true},revoke:c=>{c.wallsProduction.permissions.issue=false}},
+ {route:'report',profile:{admin:true},revoke:c=>{c.currentUserIsAdmin=false;c.currentUserCanWrite=false;c.currentAllowedViews=['walls'];c.currentAllowedWallSubviews=['production'];c.wallsProduction.permissions.issue=true}},
  {route:'schedule',profile:{views:['weekly-planner']},revoke:c=>{c.currentAllowedViews=[]}},
  {route:'inventory',profile:{views:['inventory']},revoke:c=>{c.currentAllowedViews=[]}}
 ])test(`stale ${scenario.route} button is denied after capability revocation, before state/read calls`,()=>{
  const {c,areas,calls}=fixture(scenario.profile),a=areas();assert.ok([...a.divisions,...a.shortcuts,...a.shared].some(x=>x[0]===scenario.route));scenario.revoke(c);const before=plain(c.state);
  assert.equal(c.openTodayRoute(scenario.route),false);assert.deepEqual(plain(c.state),before);assert.deepEqual(calls,[]);assert.equal(c.currentUserIsAdmin,false);assert.equal(c.currentUserCanWrite,false);
 });
+
+test('employee main Walls card prefers its Production module over management schedule subviews',()=>{const {c}=fixture({views:['walls'],subviews:['current','overall','active','production']});assert.equal(c.openTodayRoute('walls'),true);assert.equal(c.state.subview.walls,'production')});

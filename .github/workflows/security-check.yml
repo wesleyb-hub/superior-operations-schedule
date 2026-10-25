@@ -23,7 +23,7 @@ jobs:
       - name: Test session isolation and save recovery
         run: node --test scripts/test-session-save-safety.mjs scripts/test-operational-modal-save.mjs scripts/test-installation-load-safety.mjs
       - name: Test Today division navigation and capability filters
-        run: node --test scripts/test-today-divisions.mjs
+        run: node --test scripts/test-today-divisions.mjs scripts/test-employee-navigation.mjs scripts/test-employee-approved-packs.mjs
       - name: Verify database migrations
         run: node scripts/validate-migrations.mjs
       - name: Verify privileged RPC grants

@@ -26,6 +26,7 @@ try{
    // No hosted client exists. All service adapters below are local synthetic responses.
    sb={rpc:(name,args)=>new Promise((resolve,reject)=>qaCalls.push({name,args,resolve,reject})),from:()=>{const chain={select:()=>chain,eq:()=>chain,not:()=>chain,order:()=>chain,limit:()=>chain,in:()=>chain,then:(yes,no)=>Promise.resolve({data:[]}).then(yes,no)};return chain},removeChannel:async()=>{},channel:()=>{const c={on:()=>c,subscribe:()=>c};return c}};
    window.qaInstallFixture=()=>{
+    if(typeof resetEmployeeCrewSchedules==='function')resetEmployeeCrewSchedules();
     currentUser={id:'synthetic-wes-management-pilot'};currentUserAuthorized=true;currentUserIsAdmin=true;currentUserCanWrite=true;currentUserRole='admin';
     currentAllowedViews=[];currentAllowedWallSubviews=[];remoteReady=false;saveBusy=false;saveQueued=false;inventoryBusy=false;productionBusy=false;installationBusy=false;
     state.week='2026-10-26';state.productionDay='2026-10-26';state.installationDay='2026-10-26';state.installationWeek='2026-10-26';state.installationView='today';
@@ -57,7 +58,7 @@ try{
   async function todayAs(access=null){
    await page.evaluate(access=>{
     closeProductionModal();closeInventoryModal();document.body.classList.remove('mobile-tools-open');qaInstallFixture();qaCalls=[];
-    if(access){currentUserIsAdmin=false;currentUserCanWrite=false;currentUserRole='synthetic-restricted';currentAllowedViews=access.views;currentAllowedWallSubviews=access.wallSubviews||[];wallsProduction.permissions={issue:Boolean(access.issue)};wallsInstallation.permissions={manage:false,resources:false,field_progress:Boolean(access.fieldIssue)};applyAccessNavigation();updateAccessStatus()}
+    if(access){currentUserIsAdmin=false;currentUserCanWrite=false;currentUserRole='synthetic-restricted';currentAllowedViews=access.views;currentAllowedWallSubviews=access.wallSubviews||[];wallsProduction.permissions={issue:Boolean(access.issue)};wallsInstallation.permissions={manage:false,resources:Boolean(access.resources),field_progress:Boolean(access.fieldIssue)};inventoryCanManage=false;inventoryCanAdjust=Boolean(access.inventoryAdjust);inventoryCanView=access.views.includes('inventory');inventoryAvailableScopes=inventoryCanView?[{division_key:'walls',inventory_area:'production',can_view:true,can_adjust:inventoryCanAdjust,can_manage:false}]:[];applyAccessNavigation();updateAccessStatus()}
     state.view='today';render();closeOperationsNav();scrollTo(0,0);
    },access);
   }
@@ -105,9 +106,10 @@ try{
     {name:'Walls unknown subview',views:['walls'],wallSubviews:['not-a-real-subview'],cards:[],routes:[]},
     {name:'Walls current only',views:['walls'],wallSubviews:['current'],cards:['walls'],routes:['walls']},
     {name:'Walls production read',views:['walls'],wallSubviews:['production'],cards:['walls'],routes:['walls','production']},
-    {name:'Walls production issue',views:['walls'],wallSubviews:['production'],issue:true,cards:['walls'],routes:['walls','production','report']},
+    {name:'Walls production and inventory pilot',views:['overview','walls','inventory'],wallSubviews:['production'],cards:['walls'],routes:['walls','production','inventory']},
+    {name:'Walls production issue',views:['walls'],wallSubviews:['production'],issue:true,cards:['walls'],routes:['walls','production']},
     {name:'Walls installation read',views:['walls'],wallSubviews:['installation'],cards:['walls'],routes:['walls','installation']},
-    {name:'Walls field issue',views:['walls'],wallSubviews:['installation'],fieldIssue:true,cards:['walls'],routes:['walls','installation','report']},
+    {name:'Walls field issue',views:['walls'],wallSubviews:['installation'],fieldIssue:true,cards:['walls'],routes:['walls','installation']},
     {name:'shared tasks only',views:['inventory','weekly-planner'],cards:[],routes:['inventory','schedule']},
     {name:'no daily work areas',views:[],cards:[],routes:[]}];
    for(const profile of profiles){await todayAs(profile);
@@ -121,14 +123,82 @@ try{
    return {profiles:profiles.map(x=>x.name)};
   });
   await check('today-stale-cards-denied-after-access-change',async()=>{
-   for(const scenario of [{route:'boxes',access:{views:['boxes']},revoke:()=>{currentAllowedViews=[]}},{route:'production',access:{views:['walls'],wallSubviews:['production']},revoke:()=>{currentAllowedWallSubviews=[]}},{route:'report',access:{views:['walls'],wallSubviews:['production'],issue:true},revoke:()=>{wallsProduction.permissions.issue=false}},{route:'schedule',access:{views:['weekly-planner']},revoke:()=>{currentAllowedViews=[]}}]){
+   for(const scenario of [{route:'boxes',access:{views:['boxes']},revoke:()=>{currentAllowedViews=[]}},{route:'production',access:{views:['walls'],wallSubviews:['production']},revoke:()=>{currentAllowedWallSubviews=[]}},{route:'report',access:null,revoke:()=>{currentUserIsAdmin=false;currentUserCanWrite=false;currentAllowedViews=['walls'];currentAllowedWallSubviews=['production'];wallsProduction.permissions.issue=true}},{route:'schedule',access:{views:['weekly-planner']},revoke:()=>{currentAllowedViews=[]}}]){
     await todayAs(scenario.access);await page.evaluate(scenario.revoke);await page.locator(`[data-mobile-route="${scenario.route}"]`).click();
     assert.equal(await page.evaluate(()=>state.view),'today',`Stale ${scenario.route} card bypassed current capability check`);assert.equal(await page.evaluate(()=>qaCalls.length),0);assert.equal(await page.evaluate(()=>currentUserIsAdmin||currentUserCanWrite),false);
    }
   });
+  await check('employee-production-only-its-four-module-tabs',async()=>{
+   await todayAs({views:['overview','walls','inventory'],wallSubviews:['production','current','overall','active'],inventoryAdjust:true});
+   await page.locator('[data-mobile-route="production"]').click();
+   await page.evaluate(()=>{state.productionDay='2026-10-26';wallsProduction.weeklyForecast={currentPlannedLf:120,actualPouredLf:0,assignments:[],daily:[],baseline:null};render()});
+   for(const view of ['today','week','tables','forecast']){await page.locator(`[data-production-view="${view}"]`).click();assert.equal(await page.locator('.walls-subtabs').count(),0);assert.equal(await page.locator('[data-prod-refresh]').isVisible(),true);assert.deepEqual(await page.locator('[data-production-view]').evaluateAll(nodes=>nodes.map(n=>n.dataset.productionView)),['today','week','tables','forecast']);assert.equal(await page.locator('[data-prod-edit],[data-prod-table],[data-prod-cancel],[data-prod-pour],[data-prod-stage],[data-prod-progress]').count(),0);assert.equal(await page.evaluate(()=>qaCalls.length),0)}
+   await shot('employee-production-forecast-only');
+  });
+  await check('employee-field-work-only-its-own-module-tabs',async()=>{
+   await todayAs({views:['walls'],wallSubviews:['installation','production','current'],fieldIssue:false});await page.locator('[data-mobile-route="installation"]').click();
+   await page.evaluate(()=>{state.installationDay='2026-10-26';render()});
+   for(const view of ['today','week','resources']){await page.locator(`[data-install-view="${view}"]`).click();assert.equal(await page.locator('.walls-subtabs').count(),0);assert.deepEqual(await page.locator('[data-install-view]').evaluateAll(nodes=>nodes.map(n=>n.dataset.installView)),['today','week','resources']);assert.equal(await page.locator('[data-install-action="add"]:visible,[data-install-update-job]:visible,[data-install-status]:visible,[data-install-edit-activity]:visible,[data-install-resource]:visible').count(),0);assert.equal(await page.evaluate(()=>qaCalls.length),0)}
+   await shot('employee-field-resources-read-only');
+  });
+  await check('employee-inventory-only-authorized-scope-and-actions',async()=>{
+   for(const adjust of [false,true]){await todayAs({views:['walls','inventory'],wallSubviews:['production'],inventoryAdjust:adjust});await page.locator('[data-mobile-route="inventory"]').click();
+    assert.equal(await page.locator('#inventoryRefresh').isVisible(),true);assert.match(await page.locator('.inventory-review-banner').innerText(),/Use Refresh/);assert.deepEqual(await page.locator('[data-inventory-scope]').evaluateAll(nodes=>nodes.map(n=>n.dataset.inventoryScope)),['walls-production']);assert.equal(await page.locator('[data-inv-action="order"],[data-inv-action="receive"],[data-inv-action="preview"]').count(),0);assert.doesNotMatch(await page.locator('#view').innerText(),/Recent inventory activity|recipient delivery/);
+    assert.equal((await page.locator('[data-inv-action="edit"]').count())>0,adjust);if(adjust){await page.locator('[data-inv-action="edit"]').first().click();assert.equal(await page.locator('#inventoryQtyInput').count(),1);assert.equal(await page.locator('#inventoryThresholdInput,#inventoryUnitInput').count(),0);await page.locator('#inventoryModalClose').click()}
+    assert.equal(await page.evaluate(()=>qaCalls.length),0);
+   }
+   await shot('employee-inventory-count-only');
+  });
+  await check('restricted-overview-uses-authorized-work-areas',async()=>{
+   for(const profile of [{views:['overview','boxes'],cards:['boxes']},{views:['overview','walls','inventory'],wallSubviews:['production'],cards:['walls']}]){
+    await todayAs(profile);await page.evaluate(()=>{state.view='overview';render()});
+    assert.equal(await page.locator('#view h2').innerText(),'Overview');
+    assert.deepEqual(await page.locator('[data-mobile-division]').evaluateAll(nodes=>nodes.map(n=>n.dataset.mobileDivision)),profile.cards);
+    assert.equal(await page.locator('#view .stats,#view .stat,#view .product-scorecards').count(),0,'Restricted Overview showed all-company totals');
+    assert.doesNotMatch(await page.locator('#view').innerText(),/Your assigned operations|Active Wall Jobs|SYNTHETIC — Mobile foundation/);
+    assert.equal(await page.evaluate(()=>qaCalls.length),0);
+   }
+   await shot('restricted-overview-walls-inventory');
+  });
+  await check('employee-crew-denied-empty-error-and-retry',async()=>{
+   await todayAs({views:['weekly-planner']});assert.equal(await page.locator('[data-mobile-route="schedule"]').count(),1);
+   await page.locator('[data-mobile-route="schedule"]').click();await page.waitForFunction(()=>qaCalls.length===1);
+   assert.equal(await page.evaluate(()=>qaCalls[0].name),'get_employee_approved_crew_packs');await page.evaluate(()=>qaCalls[0].resolve({data:{permissions:{view:false},packs:[]}}));
+   await page.waitForFunction(()=>document.getElementById('view').textContent.includes('not enabled for this account'));assert.equal(await page.locator('[data-planner-action]').count(),0);assert.equal(await page.locator('#employeeCrewRefresh').count(),0);await shot('employee-crew-denied');await page.locator('#employeeCrewReturn').click();assert.equal(await page.evaluate(()=>state.view),'today');
+   await todayAs({views:['weekly-planner']});await page.locator('[data-mobile-route="schedule"]').click();await page.waitForFunction(()=>qaCalls.length===1);await page.evaluate(()=>qaCalls[0].resolve({data:{permissions:{view:true},packs:[]}}));
+   await page.waitForFunction(()=>document.getElementById('view').textContent.includes('No active approved division schedule'));assert.equal(await page.locator('[data-employee-crew-read]').count(),0);
+   await page.locator('#employeeCrewRefresh').click();await page.waitForFunction(()=>qaCalls.length===2);await page.evaluate(()=>qaCalls[1].reject(Error('PRIVATE synthetic transport detail')));
+   await page.waitForFunction(()=>document.getElementById('employeeCrewRefresh')?.textContent==='Try again');assert.doesNotMatch(await page.locator('#view').innerText(),/PRIVATE/);await shot('employee-crew-retry');await page.locator('#employeeCrewRefresh').click();await page.waitForFunction(()=>qaCalls.length===3);await page.evaluate(()=>qaCalls[2].resolve({data:{permissions:{view:true},packs:[]}}));await page.waitForFunction(()=>document.getElementById('view').textContent.includes('No active approved division schedule'));
+   assert.deepEqual(await page.evaluate(()=>[...new Set(qaCalls.map(x=>x.name))]),['get_employee_approved_crew_packs']);
+  });
+  await check('employee-crew-only-approved-projection-and-fresh-open',async()=>{
+   await todayAs({views:['weekly-planner']});await page.locator('[data-mobile-route="schedule"]').click();await page.waitForFunction(()=>qaCalls.length===1);
+   await page.evaluate(()=>{window.qaEmployeePack={permissions:{view:true},packs:[{pack_id:'qa-approved-pack',week_start:state.week,pack_version:3,is_active:true,published_at:'2026-10-26T12:00:00Z',published_by_email:'PRIVATE-PUBLISHER',snapshot:{week_start:state.week,week_end:'2026-10-30',source_snapshot:'PRIVATE-DRAFT',sections:[{section:{section_key:'walls_production',status:'approved',section_name:'Synthetic Walls <img src=x onerror=alert(1)>',crew_leader:'Synthetic leader',sort_order:1},people:[{employee_name:'Synthetic employee',user_id:'PRIVATE-UID'}],assignments:[{work_date:state.week,project_location:'Synthetic site',assignment_text:'Approved work <script>bad()</script>',start_time:'08:00',status_hold:'Confirm conditions',backup_instructions:'Ask supervisor',readiness_status:'PRIVATE-READINESS'}]}]}}]};qaCalls[0].resolve({data:qaEmployeePack})});
+   await page.locator('[data-employee-crew-read]').waitFor();assert.equal(await page.locator('[data-planner-action]').count(),0);assert.doesNotMatch(await page.locator('#view').innerText(),/PRIVATE|Crew Review|Publish Approved Packet/);await shot('employee-approved-pack-list');
+   await page.locator('[data-employee-crew-read]').click();await page.waitForFunction(()=>qaCalls.length===2);assert.equal(await page.locator('#productionModal').isVisible(),false,'Cached approval opened without fresh verification');await page.evaluate(()=>qaCalls[1].resolve({data:qaEmployeePack}));await page.locator('#productionModal').waitFor({state:'visible'});
+   assert.equal(await page.locator('#productionModalSave').isVisible(),false);assert.match(await page.locator('#productionModalBody').innerText(),/Approved work <script>bad\(\)<\/script>/);assert.doesNotMatch(await page.locator('#productionModalBody').innerText(),/PRIVATE|Readiness/);assert.equal(await page.locator('#productionModalBody img,#productionModalBody script').count(),0);await shot('employee-approved-pack-reader',{fullPage:false});await page.locator('#productionModalClose').click();
+   await page.locator('[data-employee-crew-read]').click();await page.waitForFunction(()=>qaCalls.length===3);await page.evaluate(()=>qaCalls[2].resolve({data:{permissions:{view:true},packs:[]}}));await page.waitForFunction(()=>document.getElementById('view').textContent.includes('no longer the current approved schedule'));assert.equal(await page.locator('#productionModal').isVisible(),false);assert.equal(await page.locator('[data-employee-crew-read]').count(),0);assert.deepEqual(await page.evaluate(()=>[...new Set(qaCalls.map(x=>x.name))]),['get_employee_approved_crew_packs']);
+  });
+  await check('restricted-search-hidden-and-stale-click-denied',async()=>{
+   await todayAs({views:['overview','walls','inventory'],wallSubviews:['production']});
+   await page.evaluate(()=>{document.body.classList.add('mobile-tools-open')});
+   assert.equal(await page.locator('#globalSearch').isVisible(),false);assert.equal(await page.locator('#searchBtn').isVisible(),false);
+   const result=await page.evaluate(()=>{const before={view:state.view,query:state.searchQuery};document.getElementById('globalSearch').value='Synthetic denied search';document.getElementById('searchBtn').click();document.getElementById('globalSearch').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return {before,after:{view:state.view,query:state.searchQuery},calls:qaCalls.length}});
+   assert.deepEqual(result.after,result.before);assert.equal(result.calls,0);
+   await todayAs();await page.evaluate(()=>{document.body.classList.add('mobile-tools-open')});
+   assert.equal(await page.locator('#globalSearch').isVisible(),true);assert.equal(await page.locator('#searchBtn').isVisible(),true);await page.locator('#globalSearch').fill('Synthetic');await page.locator('#searchBtn').click();assert.equal(await page.evaluate(()=>state.view),'search');
+  });
   await todayAs();
   // Desktop receives targeted Today coverage; the existing phone-specific suite stays unchanged.
   if(width>1000){await page.close();continue}
+  await check('mobile-navigation-keyboard-and-resize',async()=>{
+   await nav('today');assert.equal(await page.locator('#operationsSidebar').evaluate(n=>n.inert),true);
+   await page.locator('#operationsNavMenu').focus();for(let i=0;i<25;i++){await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.getElementById('operationsSidebar').contains(document.activeElement)),false,'Closed offscreen navigation received keyboard focus')}
+   await page.locator('#operationsNavMenu').click();assert.equal(await page.locator('#operationsSidebar').evaluate(n=>n.inert),false);assert.equal(await page.locator('#operationsSidebar .tab:not([hidden])').first().evaluate(n=>document.activeElement===n),true);
+   await page.keyboard.press('Escape');assert.equal(await page.locator('#operationsSidebar').evaluate(n=>n.inert),true);assert.equal(await page.locator('#operationsNavMenu').evaluate(n=>document.activeElement===n),true);
+   await page.setViewportSize({width:1440,height:1000});await page.waitForFunction(()=>!document.getElementById('operationsSidebar').inert);assert.equal(await page.locator('#operationsSidebar').getAttribute('aria-hidden'),'false');
+   await page.setViewportSize(viewport);await page.waitForFunction(()=>document.getElementById('operationsSidebar').inert);await shot('mobile-navigation-closed');
+  });
   await check('full-management-routes-preserved',async()=>{
    await page.evaluate(()=>{state.view='overview';render();closeOperationsNav()});
    await page.locator('#operationsNavMenu').click();
