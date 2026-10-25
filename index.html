@@ -2195,14 +2195,14 @@ function employeeCrewCache(){
 function employeeCrewProjection(data,week){
   const fail=()=>{throw new Error('Approved schedule response could not be verified.')},text=value=>value===null||value===undefined?'':typeof value==='string'?value:fail(),date=value=>{if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return fail();const parsed=new Date(value+'T00:00:00Z');return Number.isFinite(parsed.getTime())&&parsed.toISOString().slice(0,10)===value?value:fail()};
   if(!data||data.permissions?.view!==true||!Array.isArray(data.packs)||data.packs.length>1)fail();
-  const allowed=new Set(['walls_production','table_flow','walls_stripping_loading']);
+  const allowed=new Set(['walls_production','table_flow','walls_stripping_loading']),endDate=new Date(date(week)+'T00:00:00Z');endDate.setUTCDate(endDate.getUTCDate()+4);const weekEnd=endDate.toISOString().slice(0,10),workDate=value=>{const day=date(value);return day>=week&&day<=weekEnd?day:fail()};
   return data.packs.map(pack=>{
     if(!pack||typeof pack.pack_id!=='string'||!pack.pack_id||pack.week_start!==week||!Number.isSafeInteger(pack.pack_version)||pack.pack_version<1||pack.is_active!==true||typeof pack.published_at!=='string'||!Number.isFinite(Date.parse(pack.published_at)))fail();
-    const snap=pack.snapshot;if(!snap||snap.week_start!==week||!Array.isArray(snap.sections)||!snap.sections.length||snap.sections.length>allowed.size)fail();
+    const snap=pack.snapshot;if(!snap||snap.week_start!==week||snap.week_end!==weekEnd||!Array.isArray(snap.sections)||!snap.sections.length||snap.sections.length>allowed.size)fail();
     const seen=new Set(),sections=snap.sections.map(entry=>{
       const section=entry?.section;if(!section||!allowed.has(section.section_key)||seen.has(section.section_key)||section.status!=='approved'||!Array.isArray(entry.people)||!Array.isArray(entry.assignments))fail();seen.add(section.section_key);
       const name=text(section.section_name);if(!name)fail();
-      return {section:{section_key:section.section_key,status:'approved',section_name:name,crew_leader:text(section.crew_leader),sort_order:Number.isFinite(section.sort_order)?section.sort_order:0},people:entry.people.map(person=>({employee_name:text(person?.employee_name)})),assignments:entry.assignments.map(row=>({work_date:date(row?.work_date),project_location:text(row?.project_location),assignment_text:text(row?.assignment_text),start_time:text(row?.start_time),status_hold:text(row?.status_hold),backup_instructions:text(row?.backup_instructions)}))};
+      return {section:{section_key:section.section_key,status:'approved',section_name:name,crew_leader:text(section.crew_leader),sort_order:Number.isFinite(section.sort_order)?section.sort_order:0},people:entry.people.map(person=>({employee_name:text(person?.employee_name)})),assignments:entry.assignments.map(row=>({work_date:workDate(row?.work_date),project_location:text(row?.project_location),assignment_text:text(row?.assignment_text),start_time:text(row?.start_time),status_hold:text(row?.status_hold),backup_instructions:text(row?.backup_instructions)}))};
     });
     return {pack_id:pack.pack_id,week_start:date(pack.week_start),pack_version:pack.pack_version,is_active:true,published_at:pack.published_at,snapshot:{week_start:date(snap.week_start),week_end:date(snap.week_end),sections}};
   });

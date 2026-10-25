@@ -14,6 +14,8 @@ const results=[];
 try{
  for(const width of [1440,390]){
   const page=await browser.newPage({viewport:{width,height:1000}});
+  // Keep fixed synthetic audit records in the same operational week on every run.
+  await page.clock.setFixedTime(new Date('2026-10-21T12:00:00Z'));
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',route=>route.request().url()==='http://offline.test/'?route.fulfill({contentType:'text/html',body:html}):route.abort());
   await page.addInitScript(()=>{
