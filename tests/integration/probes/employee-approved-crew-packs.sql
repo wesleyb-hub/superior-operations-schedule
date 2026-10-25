@@ -163,7 +163,7 @@ select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-00000000
 select test_workflow.assert(public.weekly_planner_permission('edit') and public.weekly_planner_permission('approve') and public.weekly_planner_permission('publish'),'existing admin capabilities retained');
 
 -- The old publication flags alone do NOT detect every production source change.
--- Mutate through the actual manager RPC and verify the endpoint's live hash gate.
+-- Mutate through the actual manager RPC and verify the endpoint's planned-data gate.
 do $$ declare a public.walls_production_assignments%rowtype; begin
  select * into a from public.walls_production_assignments where wall_record_id='TEST-CREW-SOURCE-001';
  perform public.upsert_walls_production_assignment(a.assignment_id,a.wall_record_id,a.table_id,a.wall_height,a.planned_lf,
@@ -188,15 +188,464 @@ do $$ declare s record; begin
 end $$;
 select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
 select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=1,'fresh reapproved republished pack becomes visible again');
-do $$ declare started timestamptz:=clock_timestamp(); i integer; begin
- for i in 1..25 loop perform public.get_employee_approved_crew_packs('2027-01-04'); end loop;
- raise notice 'PERF: 25 authorized reads with pure source hash, synthetic fixture total ms=%',round(extract(epoch from clock_timestamp()-started)*1000,2);
+-- Scoped freshness: legacy source snapshots are read, never migrated/backfilled.
+select test_workflow.assert(not has_function_privilege('authenticated','employee_pack_private.production_plan_matches(date,text,timestamptz)','execute'),'planned-data helper is not a new client API');
+reset role;
+
+-- Explicit duplicate-source defense even if a legacy schema has lost uniqueness.
+savepoint planned_freshness_case;
+do $$ declare c text; begin
+ select conname into strict c from pg_constraint where conrelid='public.weekly_planner_source_snapshots'::regclass and contype='u';
+ execute format('alter table public.weekly_planner_source_snapshots drop constraint %I',c);
+end $$;
+insert into public.weekly_planner_source_snapshots(week_start,source_revision,source_fingerprint,source_data,created_by,created_at)
+ select s.week_start,s.source_revision,s.source_fingerprint,s.source_data,'synthetic',s.created_at
+ from public.weekly_planner_source_snapshots s join public.weekly_planner_packs p using(week_start,source_fingerprint)
+ where p.week_start='2027-01-04' and p.is_active;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(public.get_employee_approved_crew_packs('2027-01-04')->'packs'='[]'::jsonb,'duplicate legacy source snapshots fail closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- Table identity is planned work, not a presentation sort/version field.
+savepoint planned_freshness_case;
+insert into public.walls_production_tables(table_id,label,capacity_lf) values('TEST-FRESHNESS-TABLE','TEST other table',150);
+update public.walls_production_assignments set table_id='TEST-FRESHNESS-TABLE' where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(public.get_employee_approved_crew_packs('2027-01-04')->'packs'='[]'::jsonb,'planned table change requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- Nonfinite numeric JSON serializes as a string, even when both rows match.
+savepoint planned_freshness_case;
+alter table public.walls_production_assignments disable trigger walls_production_assignment_validate;
+update public.walls_production_assignments set planned_lf='NaN'::numeric where wall_record_id='TEST-CREW-SOURCE-001';
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production,0,planned_lf}',to_jsonb('NaN'::numeric))
+ where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(public.get_employee_approved_crew_packs('2027-01-04')->'packs'='[]'::jsonb,'matching malformed current and historical NaN LF fail closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- Nonfinite numeric JSON serializes as a string, even when both rows match.
+savepoint planned_freshness_case;
+alter table public.walls_production_assignments disable trigger walls_production_assignment_validate;
+update public.walls_production_assignments set planned_lf='Infinity'::numeric where wall_record_id='TEST-CREW-SOURCE-001';
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production,0,planned_lf}',to_jsonb('Infinity'::numeric))
+ where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(public.get_employee_approved_crew_packs('2027-01-04')->'packs'='[]'::jsonb,'matching malformed current and historical Infinity LF fail closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- missing legacy source snapshot fails closed
+savepoint planned_freshness_case;
+delete from public.weekly_planner_source_snapshots where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'missing legacy source snapshot fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- legacy baseline after publication fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set created_at=now()+interval '1 day' where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'legacy baseline after publication fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- missing baseline array fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=source_data-'walls_production' where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'missing baseline array fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- non-array baseline fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production}','{}') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'non-array baseline fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- duplicate baseline assignment IDs fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production}',(source_data->'walls_production')||(source_data#>'{walls_production,0}')) where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'duplicate baseline assignment IDs fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- missing planned baseline key fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production,0}',(source_data#>'{walls_production,0}')-'pour_at') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'missing planned baseline key fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- object planned timestamp fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production,0,pour_at}','{"private":"LEAK_FRESHNESS"}') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'object planned timestamp fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- invalid timestamp fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production,0,pour_at}','"not a date"') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'invalid timestamp fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- nonfinite timestamp fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production,0,pour_at}','"infinity"') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'nonfinite timestamp fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- numeric-string LF fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production,0,planned_lf}','"40"') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'numeric-string LF fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- cancelled historical baseline fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production,0,stage}','"cancelled"') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'cancelled historical baseline fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- unknown historical stage fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production,0,stage}','"invalid"') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'unknown historical stage fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- malformed historical review flag fails closed
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(source_data,'{walls_production,0,needs_review}','{}') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'malformed historical review flag fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- unrelated source snapshot keys are ignored
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=source_data||'{"private":"LEAK_FRESHNESS"}'::jsonb where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=1,'unrelated source snapshot keys are ignored');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- The new comparison itself is independent of timestamp presentation. Existing
+-- endpoint date-text checks deliberately remain unchanged in this narrow patch.
+savepoint planned_freshness_case;
+set local timezone='Pacific/Honolulu';set local datestyle='SQL, DMY';
+select test_workflow.assert((select employee_pack_private.production_plan_matches(week_start,source_fingerprint,published_at) from public.weekly_planner_packs where week_start=date '2027-01-04' and is_active),'planned comparison is timezone/DateStyle independent');
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- unrelated other-division master rows do not hide a valid plan
+savepoint planned_freshness_case;
+insert into public.schedule_records(collection,record_id,division,data) values ('jobs','TEST-UNRELATED-BOX','boxes','{"products":[{"plannedDate":"2027-01-04","private":"LEAK_FRESHNESS"}]}');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=1,'unrelated other-division master rows do not hide a valid plan');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- unrelated master metadata does not hide a valid plan
+savepoint planned_freshness_case;
+update public.schedule_records set data=data||'{"privateNote":"LEAK_FRESHNESS","job":"TEST revised descriptive label"}'::jsonb where record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=1,'unrelated master metadata does not hide a valid plan');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- planned setup_start_at change requires review
+savepoint planned_freshness_case;
+update public.walls_production_assignments set setup_start_at=setup_start_at+interval '1 minute' where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'planned setup_start_at change requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- planned pour_at change requires review
+savepoint planned_freshness_case;
+update public.walls_production_assignments set pour_at=pour_at+interval '1 minute' where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'planned pour_at change requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- planned strip_at change requires review
+savepoint planned_freshness_case;
+update public.walls_production_assignments set strip_at=strip_at+interval '1 hour' where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'planned strip_at change requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- planned planned_lf change requires review
+savepoint planned_freshness_case;
+update public.walls_production_assignments set planned_lf=39 where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'planned planned_lf change requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- planned wall_height change requires review
+savepoint planned_freshness_case;
+update public.walls_production_assignments set wall_height=9 where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'planned wall_height change requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- move out of requested week requires review
+savepoint planned_freshness_case;
+update public.walls_production_assignments set setup_start_at=setup_start_at+interval '7 days',pour_at=pour_at+interval '7 days',strip_at=strip_at+interval '7 days' where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'move out of requested week requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- new explicit production review hold requires review
+savepoint planned_freshness_case;
+update public.walls_production_assignments set needs_review=true,review_reason='TEST changed planned context' where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'new explicit production review hold requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- already-approved hold is not newly stale
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(jsonb_set(source_data,'{walls_production,0,needs_review}','true'),'{walls_production,0,review_reason}','"TEST approved hold"') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+update public.walls_production_assignments set needs_review=true,review_reason='TEST approved hold' where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=1,'already-approved hold is not newly stale');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- changed reason on an approved hold requires review
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(jsonb_set(source_data,'{walls_production,0,needs_review}','true'),'{walls_production,0,review_reason}','"TEST approved hold"') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+update public.walls_production_assignments set needs_review=true,review_reason='TEST new hold' where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'changed reason on an approved hold requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- cleared approved hold does not rewrite the frozen plan
+savepoint planned_freshness_case;
+update public.weekly_planner_source_snapshots set source_data=jsonb_set(jsonb_set(source_data,'{walls_production,0,needs_review}','true'),'{walls_production,0,review_reason}','"TEST approved hold"') where week_start='2027-01-04' and source_fingerprint=(select source_fingerprint from public.weekly_planner_packs where week_start='2027-01-04' and is_active);
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=1,'cleared approved hold does not rewrite the frozen plan');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- current wrong-division baseline target fails closed
+savepoint planned_freshness_case;
+update public.schedule_records set division='boxes' where record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'current wrong-division baseline target fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- current null-division baseline target fails closed
+savepoint planned_freshness_case;
+update public.schedule_records set division=null where record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'current null-division baseline target fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- job reassignment requires review
+savepoint planned_freshness_case;
+insert into public.schedule_records(collection,record_id,division,data) values ('walls','TEST-NEW-PLAN','walls','{"job":"TEST new","lf":40,"lfByHeight":{"h8":40}}');
+update public.walls_production_assignments set wall_record_id='TEST-NEW-PLAN' where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'job reassignment requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- new production assignment requires review
+savepoint planned_freshness_case;
+insert into public.schedule_records(collection,record_id,division,data) values ('walls','TEST-NEW-PLAN','walls','{"job":"TEST new","lf":40,"lfByHeight":{"h8":40}}');
+insert into public.walls_production_assignments(wall_record_id,table_id,wall_height,planned_lf,setup_start_at,pour_at,strip_at,created_by,updated_by) values ('TEST-NEW-PLAN','9001',8,40,'2027-01-06 07:00','2027-01-06 15:00','2027-01-07 07:00','synthetic','synthetic');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'new production assignment requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- new wrong-division production target fails closed
+savepoint planned_freshness_case;
+insert into public.schedule_records(collection,record_id,division,data) values ('walls','TEST-NEW-PLAN','boxes','{"job":"TEST new","lf":40,"lfByHeight":{"h8":40}}');
+insert into public.walls_production_assignments(wall_record_id,table_id,wall_height,planned_lf,setup_start_at,pour_at,strip_at,created_by,updated_by) values ('TEST-NEW-PLAN','9001',8,40,'2027-01-06 07:00','2027-01-06 15:00','2027-01-07 07:00','synthetic','synthetic');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'new wrong-division production target fails closed');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- outside-week production does not hide this plan
+savepoint planned_freshness_case;
+insert into public.schedule_records(collection,record_id,division,data) values ('walls','TEST-NEW-PLAN','walls','{"job":"TEST new","lf":40,"lfByHeight":{"h8":40}}');
+insert into public.walls_production_assignments(wall_record_id,table_id,wall_height,planned_lf,setup_start_at,pour_at,strip_at,created_by,updated_by) values ('TEST-NEW-PLAN','9001',8,40,'2027-01-13 07:00','2027-01-13 15:00','2027-01-14 07:00','synthetic','synthetic');
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=1,'outside-week production does not hide this plan');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- deleted planned assignment requires review
+savepoint planned_freshness_case;
+delete from public.walls_production_events where assignment_id in (select assignment_id from public.walls_production_assignments where wall_record_id='TEST-CREW-SOURCE-001');
+delete from public.walls_production_assignments where wall_record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'deleted planned assignment requires review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- real manager cancellation requires renewed review
+savepoint planned_freshness_case;
+set local role authenticated;select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+select public.cancel_walls_production_assignment((select assignment_id from public.walls_production_assignments where wall_record_id='TEST-CREW-SOURCE-001'),'TEST cancelled planned work');reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'real manager cancellation requires renewed review');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- existing installation invalidation remains authoritative
+savepoint planned_freshness_case;
+set local role authenticated;select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+select public.save_walls_installation_activity(null,'TEST-CREW-SOURCE-001','site_preparation','2027-01-04','07:00','09:00','planned',null,'TEST separate approved management invalidation');reset role;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=0,'existing installation invalidation remains authoritative');
+reset role;
+rollback to planned_freshness_case;
+release planned_freshness_case;
+
+-- Real manager progress updates all execution fields and versions, but must not
+-- silently withdraw the already-approved work plan. Cancellation after starting
+-- remains forbidden by the existing writer, not reinterpreted as completion.
+savepoint planned_progress;
+update public.schedule_records set data=data||'{"planReview":{"stages":{"approvedProduction":{"status":"Complete"}}}}'::jsonb where record_id='TEST-CREW-SOURCE-001';
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+do $$ declare a uuid; stage text; begin
+ select assignment_id into a from public.walls_production_assignments where wall_record_id='TEST-CREW-SOURCE-001';
+ foreach stage in array array['setup_in_progress','setup_complete','ready_for_pour','poured','curing','stripped'] loop
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+  perform public.advance_walls_production_stage(a,stage,25,39,true,'TEST normal execution');
+  if stage='setup_in_progress' then perform public.update_walls_production_setup_progress(a,50,'TEST halfway'); end if;
+  perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+  perform test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=1,'real progress preserves approved plan: '||stage);
+ end loop;
+ perform set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+ perform test_workflow.rejects(format('select public.cancel_walls_production_assignment(%L,%L)',a,'TEST not allowed'),'Started production history','completed production cannot be cancelled as planned work');
 end $$;
 reset role;
--- Source revision-only drift also fails closed; no broad source data is returned.
+rollback to planned_progress;
+release planned_progress;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000061","role":"authenticated"}',true);
+do $$ declare started timestamptz:=clock_timestamp(); i integer; begin
+ for i in 1..25 loop perform public.get_employee_approved_crew_packs('2027-01-04'); end loop;
+ raise notice 'PERF: 25 authorized reads with scoped planned comparison, synthetic fixture total ms=%',round(extract(epoch from clock_timestamp()-started)*1000,2);
+end $$;
+reset role;
+-- Revision-only drift is irrelevant to an unchanged approved production plan.
 update public.schedule_meta set revision=revision+1 where id=1;
 set local role authenticated;
-select test_workflow.assert(public.get_employee_approved_crew_packs('2027-01-04')->'packs'='[]'::jsonb,'master source revision drift hides approved pack');
+select test_workflow.assert(jsonb_array_length(public.get_employee_approved_crew_packs('2027-01-04')->'packs')=1,'global master revision alone leaves approved production pack visible');
 reset role;
 update public.schedule_meta set revision=revision-1 where id=1;
 set local role authenticated;

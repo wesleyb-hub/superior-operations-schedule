@@ -15,6 +15,74 @@ returns text language sql immutable security invoker set search_path=pg_catalog 
 $$;
 revoke all on function employee_pack_private.pack_text(jsonb,text) from public,anon,authenticated;
 
+-- Compare the plan that was actually generated/reviewed, not volatile execution
+-- state or the companywide source hash. Legacy generation already recorded this
+-- baseline under the pack's approved fingerprint; never seed it from today's data.
+-- No hashes, underlying rows, or diagnostics are exposed to an employee caller.
+create or replace function employee_pack_private.production_plan_matches(p_week_start date,p_fingerprint text,p_published_at timestamptz)
+returns boolean language plpgsql stable security invoker set search_path=pg_catalog as $$
+declare v_baseline jsonb;
+begin
+  if (select count(*) from public.weekly_planner_source_snapshots s
+      where s.week_start=p_week_start and s.source_fingerprint=p_fingerprint)<>1 then return false; end if;
+  select s.source_data->'walls_production' into v_baseline
+  from public.weekly_planner_source_snapshots s
+  where s.week_start=p_week_start and s.source_fingerprint=p_fingerprint
+    and s.created_at<=p_published_at;
+  if not found or jsonb_typeof(v_baseline) is distinct from 'array' then return false; end if;
+  if (select count(distinct b->>'assignment_id') from jsonb_array_elements(v_baseline) b)
+      <>jsonb_array_length(v_baseline) then return false; end if;
+
+  -- Match every historical row to its present authoritative Walls target. Missing
+  -- fields, wrong JSON types, cancellation, deletion, and changed plan values fail
+  -- closed. JSON equality uses native numeric/timestamp serialization, not casts
+  -- from malformed snapshot strings. No filter silently drops a baseline row.
+  if exists (
+    select 1 from jsonb_array_elements(v_baseline) b
+    where jsonb_typeof(b) is distinct from 'object'
+      or jsonb_typeof(b->'planned_lf') is distinct from 'number'
+      or jsonb_typeof(b->'wall_height') is distinct from 'number'
+      or b->>'stage' not in ('planned','setup_in_progress','setup_complete','ready_for_pour','poured','curing','stripped')
+      or jsonb_typeof(b->'stage') is distinct from 'string'
+      or jsonb_typeof(b->'needs_review') is distinct from 'boolean'
+      or jsonb_typeof(b->'review_reason') is distinct from 'string'
+      or not exists (
+        select 1 from public.walls_production_assignments a
+        join public.schedule_records r on r.collection=a.schedule_collection and r.record_id=a.wall_record_id and r.division='walls'
+        where a.assignment_id::text=b->>'assignment_id' and a.stage<>'cancelled'
+          and isfinite(a.setup_start_at) and isfinite(a.pour_at) and isfinite(a.strip_at)
+          and a.setup_start_at::date<=p_week_start+4 and a.strip_at::date>=p_week_start
+          and jsonb_build_array(b->'assignment_id',b->'schedule_collection',b->'wall_record_id',b->'table_id',
+            b->'wall_height',b->'planned_lf',b->'setup_start_at',b->'pour_at',b->'strip_at')
+            =jsonb_build_array(a.assignment_id,a.schedule_collection,a.wall_record_id,a.table_id,
+              a.wall_height,a.planned_lf,a.setup_start_at,a.pour_at,a.strip_at)
+          -- A new/changed explicit hold requires review. Clearing a previously
+          -- approved hold or ordinary execution progress does not rewrite a plan.
+          and (not a.needs_review or (b->'needs_review'='true'::jsonb and b->>'review_reason'=a.review_reason))
+      )
+  ) then return false; end if;
+
+  -- Production assignments are constrained to the Walls collection, not other
+  -- divisions. A corrupt newly-added target must not disappear through a JOIN.
+  if exists (
+    select 1 from public.walls_production_assignments a
+    where a.stage<>'cancelled' and a.setup_start_at::date<=p_week_start+4 and a.strip_at::date>=p_week_start
+      and not exists(select 1 from public.schedule_records r
+        where r.collection=a.schedule_collection and r.record_id=a.wall_record_id and r.division='walls')
+  ) then return false; end if;
+
+  -- Equality in both directions detects additions (including a move into the
+  -- week), not merely edits to IDs that happened to exist at generation time.
+  return not exists (
+    select 1 from public.walls_production_assignments a
+    join public.schedule_records r on r.collection=a.schedule_collection and r.record_id=a.wall_record_id and r.division='walls'
+    where a.stage<>'cancelled' and a.setup_start_at::date<=p_week_start+4 and a.strip_at::date>=p_week_start
+      and not exists(select 1 from jsonb_array_elements(v_baseline) b where b->>'assignment_id'=a.assignment_id::text)
+  );
+end;
+$$;
+revoke all on function employee_pack_private.production_plan_matches(date,text,timestamptz) from public,anon,authenticated;
+
 create or replace function employee_pack_private.approved_crew_packs(p_week_start date)
 returns jsonb language plpgsql stable security definer set search_path=pg_catalog as $$
 declare
@@ -42,10 +110,10 @@ begin
     and p.published_at is not null and w.status='approved'
     and p.source_fingerprint=w.source_fingerprint;
   if not found then return v_result; end if;
-  -- Some operational writers do not invalidate is_active. Compare the current
-  -- source exactly once; this pure internal hash never returns underlying data
-  -- or invokes generation/rebuild. Do not mistake stored approval for freshness.
-  if v_pack.source_fingerprint is distinct from public.weekly_planner_source_fingerprint(p_week_start) then return v_result; end if;
+  -- The stored fingerprint still binds publication/approval provenance, but its
+  -- GLOBAL live value includes unrelated divisions, revision counters and stage
+  -- progress. Compare only the approved production plan to current planned work.
+  if not employee_pack_private.production_plan_matches(p_week_start,v_pack.source_fingerprint,v_pack.published_at) then return v_result; end if;
   if jsonb_typeof(v_pack.snapshot->'sections') is distinct from 'array'
     or v_pack.snapshot->>'week_start' is distinct from p_week_start::text
     or v_pack.snapshot->>'week_end' is distinct from (p_week_start+4)::text then return v_result; end if;

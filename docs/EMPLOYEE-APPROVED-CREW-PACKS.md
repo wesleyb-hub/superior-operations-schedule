@@ -32,16 +32,48 @@ One Monday must be requested. The result is:
 ```
 
 `packs` is empty unless exactly one active published pack exists for that week,
-its relational week remains approved, its fingerprint agrees with the stored
-week and a single current-source hash, and all eight frozen sections still agree with their current approved
+its relational week remains approved, its stored fingerprint agrees with the
+stored week, and all eight frozen sections still agree with their current approved
 section ID/version/fingerprint. Multiple active packs, malformed section shapes,
 draft/reapproval status, or approval drift fail closed. An old week can be read if
 its pack is still active and approved; inactive packet history is never returned.
-The read does not regenerate schedules, rebuild conflicts, or load a broad
-planner snapshot. It calls the existing pure internal
-`weekly_planner_source_fingerprint` once after authorization and active-pack
-checks because production source writes do not all invalidate the active flag.
-The hash is never returned. Fresh publication is required after source drift.
+
+### Scoped planned-data freshness, including legacy packs
+
+The global live source fingerprint is **not** a freshness test for this employee
+projection: it includes all jobs, the global master revision and ordinary execution
+versions/stages. Instead, a private read-only helper finds exactly one existing
+`weekly_planner_source_snapshots` row with the pack's week and approved fingerprint,
+created no later than publication. Existing planner generation has always stored
+this baseline; no backfill, new approval, source write or publication is performed.
+Missing, duplicate, malformed or post-publication baselines fail closed.
+
+The historical/current production assignment sets must agree in both directions.
+The compared planned fields are assignment ID, schedule collection, authoritative
+Walls job ID, table ID, wall height, planned LF, and setup/pour/strip timestamps.
+Additions, deletion, cancellation, movement into/out of the week, changed planned
+values, or a malformed non-Walls production target require review. A new explicit
+`needs_review` hold or a changed reason on an approved hold also hides the pack.
+An unchanged approved hold is preserved; clearing it does not rewrite the frozen
+plan. Stage/setup progress, actual poured LF, row versions/timestamps/actors and
+execution notes are not schedule changes. Real progress through stripping leaves
+an otherwise valid approved pack visible; cancellation is not completion.
+
+Approved labels, locations, work instructions and crew names remain **frozen
+approved text**, not a live master-data mirror. Legacy baselines do not consistently
+include production-only master labels, so the endpoint neither guesses their old
+values nor rebuilds approved text using current labels. Changing the actual job ID
+is detected; changing approved planner text/crew through the existing save workflow
+invalidates approval. This contract does not detect a privileged out-of-band change
+that bypasses existing planner version/invalidation controls.
+
+This removes incidental global-hash false staleness, **not existing publication
+invalidation policy**. Existing manager workflows can deliberately deactivate a
+whole pack or change week/section approval status, including installation, resource,
+availability, issue or QC changes. Those invalidated packs still remain hidden;
+this candidate does not change triggers, reactivate packs, auto-approve, republish,
+regenerate schedules, rebuild conflicts, or return broad source snapshots. The
+stored fingerprint remains an approval/provenance binding, not a live global gate.
 
 Explicit output keys:
 
@@ -96,20 +128,20 @@ CI runs the same actual committed schema and functions, with synthetic users and
 rollback fixtures. It covers both existing profiles; absent/disabled/anonymous,
 wrong division/area, split grants, and user metadata; all twelve raw planner
 tables; broad snapshot/source/agent and mutation bypasses; scalar-field injection;
-active/approval/version/shape drift; actual production assignment mutation and master revision
-drift; renewed publication; unchanged state/audit; real manager
-publication and existing supervisor reads. No hosted data or real identity is
-included. Local PostgreSQL verifies database behavior, not hosted GoTrue JWT
-validation, PostgREST schema exposure, Realtime, or production ACL parity.
+active/approval/version/shape drift; real planned-assignment rescheduling and
+cancellation; additions/removal/reparenting/wrong-division targets; malformed legacy
+baselines; real setup/pour/strip progress; irrelevant global revision and other-division
+master changes; explicit existing installation invalidation; renewed publication;
+unchanged state/audit; manager publication and existing supervisor reads. No hosted
+data or real identity is included. Local PostgreSQL verifies database behavior, not
+hosted GoTrue JWT validation, PostgREST schema exposure, Realtime or production ACL parity.
 
-Performance caveat: the existing fingerprint includes date-filtered production
-and installation sources **and all `jobs` records**, hashing their JSON. The
-number of calls is bounded to one per authorized active-pack read; its work is
-not bounded independently of database size. The disposable probe records 25
-read timings on synthetic data only, not hosted-load evidence. Before rollout,
-review source cardinalities/query plans and expected concurrent employee reads;
-if unsuitable, optimize the shared invalidation/read-version design separately.
-Never omit freshness or expose raw source data as a performance workaround.
+Performance: the helper reads one indexed historical source snapshot and compares
+only in-week production assignments plus their authoritative Walls membership. It
+no longer hashes all jobs or installation data. Work still scales with that snapshot
+and production-table size; synthetic timings are not a concurrency or production
+SLA guarantee. Before rollout, review current cardinalities/query plans and actual
+role/API behavior. Never omit the planned-data comparison as a performance workaround.
 
 Before authorized release: compare deployed schema/ACL definitions for drift,
 confirm the private schema is not in exposed API schemas, review approved-field
