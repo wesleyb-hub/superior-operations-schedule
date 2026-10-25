@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Isolated synthetic employee UI review; not live access or release authorization",
+  "source": {
+    "commit": "ea406133b89b3109d65b28c0cda8d33eccc006bf",
+    "tree": "22abcd0362df23faa8e2fdf376ab785c220e64c2",
+    "retrievalReference": {
+      "pullRequest": "https://github.com/wesleyb-hub/superior-operations-schedule/pull/102",
+      "commit": "e1295a8f08c3d5aa39cc77761ee57b7791196f28",
+      "note": "Remote candidate reference supplied by the release worker; the builder independently requires the exact index hash below."
+    },
+    "indexSha256": "5709097ffa22b977e4348b95e12e44f8bf68cd2fb00ce13d78cf6f407b9e9dac"
+  },
+  "presentationPatch": {
+    "id": "employee-demo-mobile-polish-20261025-v1",
+    "scope": "Demo-only employee presentation at widths <=1000px; original desktop/admin layout retained. Not an unchanged reviewed-source build.",
+    "script": "mobile-presentation.js",
+    "scriptSha256": "f2d74cb83a9c8098137cb5c2946c2439ce494c2217242d0ac25bfd360285012b",
+    "style": "mobile-presentation.css",
+    "styleSha256": "704baee71ffae1fe9947dc7be6b64fb6ca19e58dac3bdcfa07f91ff4fe7aee6b",
+    "selectors": {
+      "bannerSummary": "#employeeDemoBannerSummary",
+      "productionTotals": "#employeeProductionTotals",
+      "productionWork": "#employeeProductionWork",
+      "inventoryTotals": "#employeeInventoryTotals",
+      "crewDetails": "#employeeCrewDetails"
+    }
+  },
+  "childSha256": "393d6d720c96c061cb1ec462a9158d6ae311d259f6ceaa34ea1a12998d82ddca",
+  "indexSha256": "01d140cfe531cd71310a97d6397ea59dc1d0c79effdb8a5a43dd7964bb35b41e",
+  "runtimeSha256": "868b4922dfbded44cc0c07654928e08e6954074b2c95f9074a4e165a185a9963",
+  "fixturesSha256": "4ba6d6d949305d41ea2ea67a855d1a8bad8389aaa3ab3fecd846f86a88e3db98",
+  "builderSha256": "345affa165e23fdfd026830eda65c50f03dbf61db8c33307345ef7bfc2601425",
+  "fixtureRevision": "employee-demo-20261025-v1",
+  "frameSelector": "#employeeReviewFrame",
+  "bannerSelector": "#employeeDemoBanner",
+  "resetSelector": "#employeeDemoReset",
+  "sandbox": "allow-scripts",
+  "readOnlyRpcs": [
+    "get_walls_production_snapshot",
+    "get_walls_production_weekly_forecast",
+    "get_inventory_scopes",
+    "get_inventory_snapshot",
+    "get_employee_approved_crew_packs"
+  ],
+  "sampleWeek": "2026-10-26"
+}
