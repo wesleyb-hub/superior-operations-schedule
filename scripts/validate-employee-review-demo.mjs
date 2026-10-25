@@ -21,6 +21,10 @@ const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH
 const sentinel='SYNTHETIC-PRIVATE-SESSION-SENTINEL';
 async function check(name,run){try{const detail=await run();results.push({name,passed:true,...(detail||{})})}catch(error){failures.push({name,message:error.stack||String(error)})}}
 async function frameFor(page){const el=await page.locator('#employeeReviewFrame').elementHandle();const frame=await el.contentFrame();await frame.locator('#employeeDemoBanner').waitFor();await frame.waitForFunction(()=>inventoryReady&&wallsProductionReady&&!inventoryLoadError&&!wallsProductionError);return frame}
+async function resetDemo(frame){
+ const details=frame.locator('#employeeDemoBanner');if(await details.count()&&!await details.evaluate(el=>el.open))await details.locator('summary').click();
+ await frame.locator('#employeeDemoReset').click();await frame.waitForFunction(()=>state.view==='today');
+}
 async function screenshot(page,label){if(output)await page.screenshot({path:resolve(output,`${label}.png`),fullPage:false})}
 async function navigate(frame,width,view){if(width<=1000&&!await frame.locator('#operationsSidebar').evaluate(el=>el.classList.contains('open')))await frame.locator('#operationsNavMenu').click();await frame.locator(`#operationsSidebar [data-view="${view}"]`).click();await frame.waitForFunction(view=>state.view===view,view)}
 try{
@@ -47,6 +51,22 @@ try{
    assert.match(await frame.locator('#employeeDemoBanner').innerText(),/demo|sample/i);assert.match(await frame.locator('#employeeDemoBanner').innerText(),/no.*save|saving.*disabled|read.only/i);
    return proof;
   });
+  await check(label+'-compact-demo-notice-keyboard-and-reset',async()=>{
+   const banner=frame.locator('#employeeDemoBanner'),summary=frame.locator('#employeeDemoBannerSummary');
+   assert.equal(await banner.evaluate(el=>el.tagName),'DETAILS');
+   if(width<=1000){
+    assert.equal(await banner.evaluate(el=>el.open),false);assert.equal(await frame.locator('#employeeDemoReset').isVisible(),false);
+    const text=await summary.innerText();assert.match(text,/demo|sample/i);assert.match(text,/no live/i);assert.match(text,/no saves/i);
+    assert.ok((await summary.boundingBox()).height>=44,'Notice summary touch target shrank');
+    assert.ok((await banner.boundingBox()).height<=90,'Collapsed notice still dominates the phone');
+    await summary.focus();await page.keyboard.press('Enter');assert.equal(await banner.evaluate(el=>el.open),true);
+    assert.match(await frame.locator('#employeeDemoBannerDetails').innerText(),/optional.*example|not.*access grant/i);
+    await screenshot(page,label+'-notice-expanded');await summary.focus();await page.keyboard.press('Space');assert.equal(await banner.evaluate(el=>el.open),false);
+    await summary.click();await frame.locator('#employeeDemoReset').click();await frame.waitForFunction(()=>state.view==='today'&&inventoryReady&&wallsProductionReady);
+    assert.equal(await banner.evaluate(el=>el.open),false,'Reset should restore compact notice');
+   }else{assert.equal(await banner.evaluate(el=>el.open),true);assert.equal(await frame.locator('#employeeDemoReset').isVisible(),true);assert.equal(await summary.isVisible(),false)}
+   await frame.evaluate(()=>scrollTo(0,0));
+  });
   await check(label+'-authorized-today-and-navigation',async()=>{
    assert.equal(await frame.evaluate(()=>state.view),'today');assert.deepEqual(await frame.locator('[data-mobile-division]').evaluateAll(ns=>ns.map(n=>n.dataset.mobileDivision)),['walls']);
    assert.equal(await frame.locator('[data-mobile-route="report"],[data-mobile-route="installation"]').count(),0);
@@ -60,13 +80,32 @@ try{
     await frame.locator(`[data-production-view="${tab}"]`).click();assert.deepEqual(await frame.locator('[data-production-view]').evaluateAll(ns=>ns.map(n=>n.dataset.productionView)),['today','week','tables','forecast']);
     assert.equal(await frame.locator('.walls-subtabs').count(),0);assert.equal(await frame.locator('[data-prod-refresh]').isVisible(),true);
     assert.equal(await frame.locator('[data-prod-edit],[data-prod-table],[data-prod-cancel],[data-prod-pour],[data-prod-stage],[data-prod-progress]').count(),0);
-    await frame.locator('[data-prod-refresh]').click();await frame.waitForFunction(()=>!wallsProductionError&&wallsProductionReady);assert.match(await frame.locator('#view').innerText(),/Sample foundation A/,'Production '+tab+' must show sample work');await screenshot(page,label+'-production-'+tab);
+    await frame.locator('[data-prod-refresh]').click();await frame.waitForFunction(()=>!wallsProductionError&&wallsProductionReady);assert.match(await frame.locator('#view').innerText(),/Sample foundation A/,'Production '+tab+' must show sample work');
+    if(tab==='today'){
+     const totals=frame.locator('#employeeProductionTotals');
+     assert.equal(await frame.locator('.production-kpi').count(),7,'Production totals must not be deleted');
+     if(width<=1000){
+      assert.equal(await totals.evaluate(el=>el.open),false);assert.equal(await frame.locator('.production-kpis').isVisible(),false);
+      assert.equal(await frame.locator('#employeeProductionWork').evaluate(el=>Boolean(el.compareDocumentPosition(document.getElementById('employeeProductionTotals'))&Node.DOCUMENT_POSITION_FOLLOWING)),true,'Work must precede totals in DOM and keyboard order');
+      const summary=totals.locator('summary');assert.ok((await summary.boundingBox()).height>=44);
+      await summary.focus();await page.keyboard.press('Enter');assert.equal(await totals.evaluate(el=>el.open),true);assert.equal(await frame.locator('.production-kpis').isVisible(),true);
+      await screenshot(page,label+'-production-totals-expanded');await summary.focus();await page.keyboard.press('Space');assert.equal(await totals.evaluate(el=>el.open),false);
+     }else{assert.equal(await totals.count(),0);assert.equal(await frame.locator('.production-kpis').isVisible(),true);assert.equal(await frame.locator('.production-kpis').evaluate(el=>Boolean(el.compareDocumentPosition(document.querySelector('.production-columns'))&Node.DOCUMENT_POSITION_FOLLOWING)),true,'Desktop totals/order should stay unchanged')}
+    }
+    await frame.evaluate(()=>scrollTo(0,0));await screenshot(page,label+'-production-'+tab);
    }
   });
   await check(label+'-inventory-search-and-cancel-without-save',async()=>{
    await navigate(frame,width,'today');await frame.locator('[data-mobile-route="inventory"]').click();await frame.locator('#inventorySearch').waitFor();
    assert.deepEqual(await frame.locator('[data-inventory-scope]').evaluateAll(ns=>ns.map(n=>n.dataset.inventoryScope)),['walls-production']);
    assert.equal(await frame.locator('[data-inv-action="order"],[data-inv-action="receive"],[data-inv-action="preview"]').count(),0);
+   const totals=frame.locator('#employeeInventoryTotals');
+   if(width<=1000){
+    assert.equal(await totals.evaluate(el=>el.open),false);assert.equal(await frame.locator('.inventory-stats').isVisible(),false);
+    assert.equal(await frame.locator('#inventoryCatalog').evaluate(el=>Boolean(el.compareDocumentPosition(document.getElementById('employeeInventoryTotals'))&Node.DOCUMENT_POSITION_FOLLOWING)),true,'Materials/search must precede mobile totals');
+    const summary=totals.locator('summary');assert.ok((await summary.boundingBox()).height>=44);await summary.focus();await page.keyboard.press('Enter');assert.equal(await totals.evaluate(el=>el.open),true);
+    assert.equal(await frame.locator('.inventory-stats').isVisible(),true);await screenshot(page,label+'-inventory-totals-expanded');await summary.focus();await page.keyboard.press('Space');assert.equal(await totals.evaluate(el=>el.open),false);
+   }else{assert.equal(await totals.count(),0);assert.equal(await frame.locator('.inventory-stats').isVisible(),true)}
    const before=await frame.evaluate(()=>JSON.stringify(inventoryItems));
    await frame.locator('#inventorySearch').fill('sample');assert.equal(await frame.locator('#inventorySearch').inputValue(),'sample');await frame.locator('#inventorySearch').fill('');
    for(const node of await frame.locator('[data-inv-action="plus"],[data-inv-action="minus"]').all())assert.equal(await node.isDisabled(),true);
@@ -81,22 +120,32 @@ try{
     for(const name of names){try{const x=await sb.rpc(name,{p_quantity:999});rejected.push(Boolean(x?.error))}catch{rejected.push(true)}}
     return {before,after:JSON.stringify(inventoryItems),rejected};
    });assert.equal(proof.before,proof.after);assert.ok(proof.rejected.every(Boolean));
-   await frame.locator('#employeeDemoReset').click();await frame.waitForFunction(()=>state.view==='today');assert.equal(await frame.locator('#inventoryModal').isVisible(),false);
+   await resetDemo(frame);assert.equal(await frame.locator('#inventoryModal').isVisible(),false);
    return {mutationCallsRejected:proof.rejected.length};
   });
   await check(label+'-optional-approved-schedule-example',async()=>{
-   assert.match(await frame.locator('#employeeDemoBanner').innerText(),/optional.*example|not.*access grant/i);
+   assert.match(await frame.locator('#employeeDemoBanner').textContent(),/optional.*example|not.*access grant/i);
    await frame.locator('[data-mobile-route="schedule"]').click();await frame.locator('[data-employee-crew-read]').waitFor();assert.equal(await frame.locator('[data-planner-action]').count(),0);
-   await screenshot(page,label+'-approved-list');await frame.locator('[data-employee-crew-read]').click();await frame.locator('#productionModal').waitFor({state:'visible'});
+   if(width<=1000){const details=frame.locator('#employeeCrewDetails');assert.equal(await details.evaluate(el=>el.open),false);const summary=details.locator('summary');assert.ok((await summary.boundingBox()).height>=44);await summary.focus();await page.keyboard.press('Enter');assert.equal(await details.evaluate(el=>el.open),true);assert.match(await details.innerText(),/active.*published.*approved/i);await summary.focus();await page.keyboard.press('Space');assert.equal(await details.evaluate(el=>el.open),false)}else assert.equal(await frame.locator('#employeeCrewDetails').count(),0);
+   await frame.evaluate(()=>scrollTo(0,0));await screenshot(page,label+'-approved-list');await frame.locator('[data-employee-crew-read]').click();await frame.locator('#productionModal').waitFor({state:'visible'});
    assert.equal(await frame.locator('#productionModalSave').isVisible(),false);assert.match(await frame.locator('#productionModalBody').innerText(),/sample/i);assert.doesNotMatch(await frame.locator('#productionModalBody').innerText(),/Readiness|PRIVATE/);
    await screenshot(page,label+'-approved-reader');await frame.locator('#productionModalClose').click();assert.equal(await frame.locator('#productionModal').isVisible(),false);
-   await frame.locator('#employeeDemoReset').click();await frame.waitForFunction(()=>state.view==='today');
+   await resetDemo(frame);
   });
   await check(label+'-parent-session-preserved',async()=>{
    const proof=await page.evaluate(()=>({local:localStorage.getItem('sb-synthetic-auth-token'),session:sessionStorage.getItem('synthetic_hub_session'),cookie:document.cookie}));
    assert.equal(proof.local,sentinel);assert.equal(proof.session,sentinel);assert.ok(proof.cookie.includes(sentinel));return {unchanged:true};
   });
   if(width===1440){
+   await check('mobile-desktop-mobile-layout-reentry-without-state-loss',async()=>{
+    await frame.locator('[data-mobile-route="production"]').click();await frame.locator('[data-production-view="today"]').click();
+    for(const w of [390,1440,390,1440]){
+     await page.setViewportSize({width:w,height:w===390?844:1000});await frame.waitForFunction(w=>w<=1000?Boolean(document.getElementById('employeeProductionTotals')):!document.getElementById('employeeProductionTotals'),w);
+     assert.equal(await frame.locator('[data-production-view="today"]').count(),1);assert.equal(await frame.locator('.production-kpi').count(),7);assert.match(await frame.locator('#view').innerText(),/Sample foundation A/);
+     assert.equal(await frame.locator('#employeeDemoBanner').evaluate(el=>el.open),w>1000);assert.equal(await frame.evaluate(()=>state.productionDay),'2026-10-26');
+    }
+    await resetDemo(frame);assert.equal(await frame.locator('#inventoryModal').isVisible(),false);
+   });
    await check('sandbox-no-transmitted-network-via-fetch-xhr-websocket-beacon-assets-form',async()=>{
     const count=requests.length,blockedBefore=unexpected.length;
     await frame.evaluate(async origin=>{

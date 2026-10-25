@@ -29,3 +29,24 @@ node employee-review/build-demo.mjs --check /path/to/reviewed/index.html
 The builder is service-free, requires only Node.js, and writes only `employee-review/index.html` and `employee-review/manifest.json`. The manifest records source, builder, fixture, runtime, child and outer-document hashes. Changes to fixtures or runtime require regeneration and another visual/security review. No separately served source snapshot or child page is needed.
 
 Stable review selectors: `#employeeReviewFrame` outside; `#employeeDemoBanner`, `#employeeDemoReset`, existing `#view`, `[data-production-view]`, `[data-inv-action="edit"]`, `#inventoryModal`, and `[data-employee-crew-read]` inside. `employeeDemoStatus()` returns only a copied sample-count/revision/reset/denial diagnostic; it cannot change data or bridge out of the frame.
+
+## Demo-only phone presentation candidate (2026-10-25)
+
+`mobile-presentation.js` and `mobile-presentation.css` are an explicit presentation patch **on top of** the pinned reviewed UI, not a claim that this generated page is an unchanged source snapshot. Their hashes and scope are recorded separately in `manifest.presentationPatch`. The source, fixture, client allowlist and opaque sandbox/security policies remain unchanged.
+
+The patch is active only for the sample employee at widths **≤1000px**, matching the existing Hub mobile layout and including phone landscape. It implements the three approved phone-review adjustments:
+
+1. A compact native disclosure preserves a visible **DEMO / sample data / no live connections / no saves** label. Expand it to see the sample date, no-account-change and optional-Crew explanations and Reset. Reset restores the collapsed phone banner. Desktop retains the expanded full banner.
+2. Today's actual production work columns and queue stay ahead of the seven original totals. The totals are moved, not copied or deleted, into a closed native disclosure underneath. DOM order matches the visual order.
+3. Inventory and Crew use shorter mobile headings. Inventory search/materials precede collapsed stock totals and watch summaries; each material's status remains on its card. Crew retains revision, publication and active-approved labels while its full scope explanation is expandable.
+
+Native `details`/`summary` controls retain keyboard Enter/Space operation and at least 44px touch targets. Resizing to desktop re-renders the original layouts and ordering; returning to mobile creates one fresh closed disclosure per section. No wrapper duplicates record buttons. Inventory search retains the original node/caret-preserving update path. Nothing persists between reloads.
+
+Stable mobile selectors:
+
+- `details#employeeDemoBanner > summary#employeeDemoBannerSummary`; expanded content `#employeeDemoBannerDetails`
+- `#employeeProductionWork` (actual work columns), `details#employeeProductionTotals > summary`
+- `#inventoryCatalog` (actual search and materials), `details#employeeInventoryTotals > summary`
+- `details#employeeCrewDetails > summary`
+
+This candidate is isolated for phone review. Any later adoption in the real employee UI requires a separately reviewed frontend patch and its authorization/device gates; no root source, management view or permissions are changed here.

@@ -11,11 +11,26 @@
     },
     "indexSha256": "5709097ffa22b977e4348b95e12e44f8bf68cd2fb00ce13d78cf6f407b9e9dac"
   },
-  "childSha256": "656cc94a0f10eff4d818562c7b60382c093fcf1f5c7fc504869250dbc1afc615",
-  "indexSha256": "6445d23c73a61676efe6631235a60f747bb3c211acaae964633cc01bc0ef28a1",
+  "presentationPatch": {
+    "id": "employee-demo-mobile-polish-20261025-v1",
+    "scope": "Demo-only employee presentation at widths <=1000px; original desktop/admin layout retained. Not an unchanged reviewed-source build.",
+    "script": "mobile-presentation.js",
+    "scriptSha256": "f2d74cb83a9c8098137cb5c2946c2439ce494c2217242d0ac25bfd360285012b",
+    "style": "mobile-presentation.css",
+    "styleSha256": "704baee71ffae1fe9947dc7be6b64fb6ca19e58dac3bdcfa07f91ff4fe7aee6b",
+    "selectors": {
+      "bannerSummary": "#employeeDemoBannerSummary",
+      "productionTotals": "#employeeProductionTotals",
+      "productionWork": "#employeeProductionWork",
+      "inventoryTotals": "#employeeInventoryTotals",
+      "crewDetails": "#employeeCrewDetails"
+    }
+  },
+  "childSha256": "393d6d720c96c061cb1ec462a9158d6ae311d259f6ceaa34ea1a12998d82ddca",
+  "indexSha256": "01d140cfe531cd71310a97d6397ea59dc1d0c79effdb8a5a43dd7964bb35b41e",
   "runtimeSha256": "868b4922dfbded44cc0c07654928e08e6954074b2c95f9074a4e165a185a9963",
   "fixturesSha256": "4ba6d6d949305d41ea2ea67a855d1a8bad8389aaa3ab3fecd846f86a88e3db98",
-  "builderSha256": "920a609cd4c12fd6b4254d38c7165ea44fdae86041893be83c44c61d6e5ddd7d",
+  "builderSha256": "345affa165e23fdfd026830eda65c50f03dbf61db8c33307345ef7bfc2601425",
   "fixtureRevision": "employee-demo-20261025-v1",
   "frameSelector": "#employeeReviewFrame",
   "bannerSelector": "#employeeDemoBanner",
