@@ -67,3 +67,28 @@ test('demo writer guards and count-form save disabling are explicit',()=>{
  assert.match(runtime,/save\.disabled=true/);assert.match(runtime,/data-inv-action="minus"/);assert.match(runtime,/data-inv-action="plus"/);
  assert.match(runtime,/saveUiPrefs=\(\)=>\{\}/);assert.match(runtime,/persistState=async\(\)=>false/);
 });
+test('mobile presentation provenance is separate from the pinned reviewed source',async()=>{
+ const patch=manifest.presentationPatch;assert.ok(patch);assert.match(patch.scope,/demo.only.*1000px/i);assert.match(patch.scope,/not an unchanged/i);
+ assert.equal(patch.script,'mobile-presentation.js');assert.equal(patch.style,'mobile-presentation.css');
+ assert.equal(sha(await readFile(new URL(patch.script,dir))),patch.scriptSha256);
+ assert.equal(sha(await readFile(new URL(patch.style,dir))),patch.styleSha256);
+ assert.match(child,/<details id="employeeDemoBanner" open><summary id="employeeDemoBannerSummary"/);
+ assert.match(child,/No live connections · No saves<\/span><\/summary>/);
+});
+test('mobile polish is employee-only and does not initialize a data, auth or persistence path',async()=>{
+ const code=await readFile(new URL('mobile-presentation.js',dir),'utf8');
+ assert.doesNotMatch(code,/\b(?:fetch|XMLHttpRequest|WebSocket|localStorage|sessionStorage|indexedDB|postMessage)\b|document\.cookie|\bsb\.|\.rpc\(|\.auth\.|https?:\/\//);
+ const gate=code.slice(0,code.indexOf('function employeeMobileDisclosure'));
+ for(const [mobile,admin,expected]of [[true,false,true],[true,true,false],[false,false,false],[false,true,false]]){
+  const context={window:{matchMedia:query=>{assert.equal(query,'(max-width:1000px)');return {matches:mobile}}},currentUserIsAdmin:admin};
+  vm.runInNewContext(gate+';globalThis.result=employeeMobilePresentationActive()',context);assert.equal(context.result,expected);
+ }
+});
+test('mobile disclosures use native accessible details and move existing nodes rather than duplicate controls',async()=>{
+ const code=await readFile(new URL('mobile-presentation.js',dir),'utf8');
+ const factory=code.slice(code.indexOf('function employeeMobileDisclosure'),code.indexOf('function employeeMobileProductionPresentation'));
+ const node=tag=>({tag,children:[],append(...children){this.children.push(...children)}}),existing=[node('existing-work')];
+ const context={document:{createElement:node},existing};vm.runInNewContext(factory+';globalThis.result=employeeMobileDisclosure("totals","Production totals",existing)',context);
+ assert.equal(context.result.tag,'details');assert.equal(context.result.children[0].tag,'summary');assert.equal(context.result.children[0].textContent,'Production totals');
+ assert.equal(context.result.children[1].children[0],existing[0]);assert.equal(context.result.open,undefined);
+});

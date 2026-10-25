@@ -598,6 +598,43 @@ button:disabled{opacity:.58;filter:saturate(.35);box-shadow:none!important}.moda
 
 #employeeDemoBanner{display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-top:9px;padding:8px 10px;border:1px solid #c88b2d;border-radius:7px;background:#fff6e7;color:#664816;font-size:12px;line-height:1.35}#employeeDemoBanner strong{color:#513600}#employeeDemoReset{min-height:42px;flex-shrink:0}button:disabled{cursor:not-allowed;opacity:.6}
 #assistantLaunch,#refreshLiveBtn,#signOutBtn{display:none!important}
+/* Demo-only presentation patch. Desktop retains the original full banner and render order. */
+#employeeDemoBanner{display:block}
+#employeeDemoBannerSummary{display:none}
+#employeeDemoBanner:not([open])&gt;#employeeDemoBannerDetails{display:none}
+.employee-mobile-details:not([open])&gt;.employee-mobile-details-body{display:none}
+#employeeDemoBannerDetails{display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+@media(max-width:1000px){
+  body.employee-mobile-polish #employeeDemoBanner{margin-top:6px;padding:0}
+  body.employee-mobile-polish #employeeDemoBannerSummary{display:list-item;min-height:46px;padding:8px 10px;cursor:pointer;line-height:1.35;font-size:12px}
+  body.employee-mobile-polish #employeeDemoBannerSummary strong{font-size:12px}
+  body.employee-mobile-polish #employeeDemoBannerSummary .employee-demo-short{display:block;margin-left:16px;font-size:12px;font-weight:600}
+  body.employee-mobile-polish #employeeDemoBannerSummary .employee-demo-hint{float:right;font-size:12px;font-weight:700}
+  body.employee-mobile-polish #employeeDemoBannerDetails{padding:10px;border-top:1px solid #e7c88c;max-height:55vh;overflow:auto}
+  body.employee-mobile-polish #employeeDemoReset{min-height:46px;min-width:44px;font-size:14px}
+  body.employee-mobile-polish .main&gt;.notice{display:none}
+  body.employee-mobile-polish #view .production-heading .eyebrow,
+  body.employee-mobile-polish #view .inventory-heading .eyebrow,
+  body.employee-mobile-polish #view .inventory-crumb,
+  body.employee-mobile-polish #view .inventory-review-banner{display:none}
+  body.employee-mobile-polish #view .inventory-heading,
+  body.employee-mobile-polish #view .planner-heading{margin:0;gap:8px}
+  body.employee-mobile-polish #view .inventory-heading p,
+  body.employee-mobile-polish #view .planner-heading p{font-size:14px;line-height:1.4;margin:4px 0 0}
+  body.employee-mobile-polish #view .inventory-shell{gap:12px}
+  body.employee-mobile-polish #view .inventory-shell&gt;.subtabs{margin-bottom:0}
+  body.employee-mobile-polish #view .inventory-section-head{padding:10px 12px;gap:4px}
+  body.employee-mobile-polish #view .inventory-scope{padding:6px 8px}
+  body.employee-mobile-polish #view .planner-shell{gap:12px}
+  body.employee-mobile-polish #view .employee-mobile-details{margin:0;background:#fff;border:1px solid #d4dfe7;border-radius:9px;min-width:0}
+  body.employee-mobile-polish #view .employee-mobile-details&gt;summary{min-height:48px;padding:12px;cursor:pointer;font-size:14px;font-weight:800;line-height:1.4;color:var(--navy)}
+  body.employee-mobile-polish #view .employee-mobile-details-body{padding:0 10px 10px}
+  body.employee-mobile-polish #view .employee-mobile-details-body&gt;.phone-schedule-note{margin:0;font-size:14px;line-height:1.5}
+  body.employee-mobile-polish #view .employee-mobile-details-body .inventory-section{margin-top:10px}
+  body.employee-mobile-polish #employeeDemoBannerSummary:focus-visible,
+  body.employee-mobile-polish #view .employee-mobile-details&gt;summary:focus-visible{outline:3px solid #315f93;outline-offset:2px}
+}
+
 &lt;/style&gt;
 &lt;/head&gt;
 &lt;body&gt;
@@ -652,7 +689,7 @@ button:disabled{opacity:.58;filter:saturate(.35);box-shadow:none!important}.moda
       &lt;/details&gt;
     &lt;/div&gt;
   &lt;/div&gt;
-&lt;div id=&quot;employeeDemoBanner&quot; role=&quot;note&quot;&gt;&lt;div&gt;&lt;strong&gt;DEMO — SAMPLE DATA ONLY&lt;/strong&gt;&lt;br&gt;No live connections · No saves · No account changes&lt;br&gt;&lt;small&gt;Sample clock: Oct 26, 2026 · Week: Oct 26–30. Crew is an optional example, not an access grant.&lt;/small&gt;&lt;/div&gt;&lt;button type=&quot;button&quot; class=&quot;mini&quot; id=&quot;employeeDemoReset&quot;&gt;Reset demo&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;&lt;/header&gt;
+&lt;details id=&quot;employeeDemoBanner&quot; open&gt;&lt;summary id=&quot;employeeDemoBannerSummary&quot; aria-controls=&quot;employeeDemoBannerDetails&quot;&gt;&lt;strong&gt;DEMO · SAMPLE DATA&lt;/strong&gt;&lt;span class=&quot;employee-demo-hint&quot;&gt;Details&lt;/span&gt;&lt;span class=&quot;employee-demo-short&quot;&gt;No live connections · No saves&lt;/span&gt;&lt;/summary&gt;&lt;div id=&quot;employeeDemoBannerDetails&quot;&gt;&lt;div&gt;&lt;strong&gt;DEMO — SAMPLE DATA ONLY&lt;/strong&gt;&lt;br&gt;No live connections · No saves · No account changes&lt;br&gt;&lt;small&gt;Sample clock: Oct 26, 2026 · Week: Oct 26–30. Crew is an optional example, not an access grant.&lt;/small&gt;&lt;/div&gt;&lt;button type=&quot;button&quot; class=&quot;mini&quot; id=&quot;employeeDemoReset&quot;&gt;Reset demo&lt;/button&gt;&lt;/div&gt;&lt;/details&gt;&lt;/div&gt;&lt;/header&gt;
 
 &lt;main class=&quot;main&quot;&gt;
   &lt;div class=&quot;toolbar&quot;&gt;
@@ -4678,6 +4715,75 @@ demoObserver.observe(document.getElementById('view'),{childList:true,subtree:tru
 document.getElementById('employeeDemoReset').onclick=()=&gt;void demoReset();
 document.getElementById('currentWeekBtn').textContent='Sample week';
 document.getElementById('currentWeekBtn').onclick=()=&gt;{state.week=DEMO_FIXTURES.week;state.year=2026;render()};
+// DEMO-ONLY presentation candidate, based on the user's four phone screenshots.
+// No data/client/auth changes. Original renderers are preserved for desktop/admin.
+const employeeMobileQuery=window.matchMedia('(max-width:1000px)');
+function employeeMobilePresentationActive(){return employeeMobileQuery.matches&amp;&amp;!currentUserIsAdmin}
+function employeeMobileDisclosure(id,label,nodes){
+  const details=document.createElement('details');details.id=id;details.className='employee-mobile-details';
+  const summary=document.createElement('summary');summary.textContent=label;details.append(summary);
+  const content=document.createElement('div');content.className='employee-mobile-details-body';content.append(...nodes);details.append(content);
+  return details;
+}
+function employeeMobileProductionPresentation(){
+  if(!employeeMobilePresentationActive())return;
+  const root=document.getElementById('view'),shell=root.querySelector('.production-shell'),work=shell?.querySelector('.production-columns'),totals=shell?.querySelector('.production-kpis');
+  if(!shell||!work||!totals||shell.querySelector('#employeeProductionTotals'))return;
+  work.id='employeeProductionWork';
+  const description=shell.querySelector('.production-heading p');
+  if(description)description.textContent=fmt(normalizeDate(state.productionDay)||todayISO())+' · Planned work is not completed work.';
+  // Move the real totals after every work/queue section: visual and keyboard order agree.
+  const disclosure=employeeMobileDisclosure('employeeProductionTotals','Production totals',[totals]);
+  shell.append(disclosure);
+}
+function employeeMobileInventoryPresentation(){
+  if(!employeeMobilePresentationActive()||!inventoryReady)return;
+  const shell=document.querySelector('#view .inventory-shell');if(!shell)return;
+  // The persistent sample identity is in the sticky banner; this screen needs one title.
+  const heading=shell.querySelector('.inventory-heading');
+  if(heading){const title=heading.querySelector('h2'),description=heading.querySelector('p');if(title)title.textContent='Inventory';if(description)description.textContent='Check sample stock. No count changes are saved.'}
+  const catalog=shell.querySelector('#inventoryCatalog'),catalogHead=catalog?.querySelector('.inventory-section-head&gt;div');
+  if(catalogHead){const title=catalogHead.querySelector('h3'),description=catalogHead.querySelector('small');if(title)title.textContent='Materials';if(description)description.textContent='Open a count to preview the form.'}
+  const search=shell.querySelector('#inventorySearch');if(search)search.placeholder='Search materials';
+  if(shell.querySelector('#employeeInventoryTotals'))return;
+  const stats=shell.querySelector('.inventory-stats');if(!stats)return;
+  const summaries=[stats,...shell.querySelectorAll('.inventory-section.watch,.inventory-section.low-watch')];
+  const reorder=inventoryItems.filter(item=&gt;inventoryStatus(item)==='reorder').length,low=inventoryItems.filter(item=&gt;inventoryStatus(item)==='low').length;
+  const disclosure=employeeMobileDisclosure('employeeInventoryTotals',`Stock summary · ${reorder} reorder · ${low} low`,summaries);
+  // Search and item counts come before optional rollups on a small screen.
+  if(catalog)catalog.after(disclosure);else shell.append(disclosure);
+}
+function employeeMobileCrewPresentation(){
+  if(!employeeMobilePresentationActive())return;
+  const shell=document.querySelector('#view .planner-shell');if(!shell)return;
+  const heading=shell.querySelector('.planner-heading');
+  if(heading){const title=heading.querySelector('h2'),description=heading.querySelector('p');if(title)title.textContent='Crew schedules';if(description)description.textContent='Approved only · Not personal assignments.'}
+  const note=shell.querySelector(':scope &gt; .phone-schedule-note');
+  if(note&amp;&amp;!shell.querySelector('#employeeCrewDetails'))shell.append(employeeMobileDisclosure('employeeCrewDetails','Schedule details',[note]));
+  shell.querySelectorAll('[data-employee-crew-read]').forEach(button=&gt;{button.textContent='Read schedule'});
+  const refresh=shell.querySelector('#employeeCrewRefresh');if(refresh&amp;&amp;refresh.textContent==='Refresh approved schedules')refresh.textContent='Refresh';
+}
+const employeeOriginalProductionToday=renderWallsProductionToday;
+renderWallsProductionToday=function(){employeeOriginalProductionToday();employeeMobileProductionPresentation()};
+const employeeOriginalInventory=renderInventory;
+renderInventory=function(options={}){employeeOriginalInventory(options);employeeMobileInventoryPresentation()};
+const employeeOriginalCrew=renderEmployeeCrewSchedules;
+renderEmployeeCrewSchedules=function(){employeeOriginalCrew();employeeMobileCrewPresentation()};
+function employeeSyncMobilePresentation(){
+  const mobile=employeeMobilePresentationActive(),banner=document.getElementById('employeeDemoBanner');
+  document.body.classList.toggle('employee-mobile-polish',mobile);
+  if(banner)banner.open=!mobile;
+}
+const employeeOriginalDemoReset=demoReset;
+demoReset=function(){const pending=employeeOriginalDemoReset();employeeSyncMobilePresentation();return pending};
+employeeSyncMobilePresentation();
+employeeMobileQuery.addEventListener('change',()=&gt;{
+  employeeSyncMobilePresentation();
+  // Re-render from the unmodified original markup when crossing the breakpoint.
+  // Native details never duplicate controls; no extra service call or save is added.
+  render();demoApplyReadOnlyControls();
+});
+
 demoReset();
 
 window.employeeDemoStatus=()=&gt;({fixtureRevision:'employee-demo-20261025-v1',resetCount:demoResetCount,deniedMutationCount:demoDeniedMutationCount,counts:inventoryItems.map(item=&gt;({code:item.code,qty:item.qty})),sampleOnly:true});
