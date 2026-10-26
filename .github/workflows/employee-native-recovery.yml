@@ -1,0 +1,32 @@
+name: Native employee recovery and username acceptance (disposable)
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-recovery-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUN_EMPLOYEE_NATIVE_RECOVERY_TEST: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked synthetic test tools without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Install matching test browser
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Native existing-user recovery and full-Hub identity-bound password tests
+        run: node tests/integration/run-employee-native-recovery.mjs
+      - name: Retain only secret-free result summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: employee-native-recovery-result
+          path: artifacts/employee-native-recovery/result.json
+          if-no-files-found: warn
+          retention-days: 7
