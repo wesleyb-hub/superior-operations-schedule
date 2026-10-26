@@ -1059,7 +1059,7 @@ function resetLocalSession(){
   hubSessionLocked=true;hubSessionEpoch++;remoteLoadToken++;inventoryLoadToken++;importReadToken++;
   currentUser=null;currentUserRole='none';currentUserCanWrite=false;currentUserAuthorized=false;currentUserIsAdmin=false;currentAllowedViews=[];currentAllowedWallSubviews=[];
   remoteReady=false;structuredBackendReady=false;lastRemoteData=null;lastSharedJson='';lastRevision=0;lastRemoteUpdatedAt='';saveBusy=false;saveQueued=false;queuedReason='Saved';
-  inventoryReady=false;inventoryBusy=false;inventoryItems=[];inventoryEvents=[];inventoryAvailableScopes=[];inventoryCanView=false;inventoryCanAdjust=false;inventoryCanManage=false;inventoryLoadError='';inventoryModalSaveAction=null;
+  inventoryRawRealtimeAllowed=false;inventoryReady=false;inventoryBusy=false;inventoryItems=[];inventoryEvents=[];inventoryAvailableScopes=[];inventoryCanView=false;inventoryCanAdjust=false;inventoryCanManage=false;inventoryLoadError='';inventoryModalSaveAction=null;
   wallsProductionReady=false;wallsProductionError='';productionBusy=false;productionModalSaveAction=null;wallsProduction={permissions:{},tables:[],jobs:[],assignments:[],issues:[],events:[],weeklyForecast:null};
   wallsInstallationReady=false;wallsInstallationError='';installationBusy=false;wallsInstallation={permissions:{},jobs:[],day_cards:[],resource_conflicts:[]};
   weeklyPlannerReady=false;weeklyPlannerBusy=false;weeklyPlannerProgress=null;weeklyPlannerManualRefreshRequest=null;if(typeof plannerUpdatePendingUI==='function')plannerUpdatePendingUI();weeklyPlannerDraftError='';weeklyPlannerLoadToken=null;weeklyPlannerLoadPromise=null;weeklyPlannerLoadedWeek='';weeklyPlannerEmployeeHistory=null;weeklyPlannerCompanyRoster=null;weeklyPlannerRealtimeDirty=false;
@@ -1206,7 +1206,7 @@ async function persistState(reason='Saved'){
   return true
 }
 function subscribeLive(){
-  if(!sb)return;if(stateChannel)sb.removeChannel(stateChannel);
+  if(!sb)return;if(stateChannel)sb.removeChannel(stateChannel);stateChannel=null;if(!currentUserIsAdmin)return;
   const table=structuredBackendReady?'schedule_meta':'schedule_state';
   stateChannel=sb.channel('superior-master-operations-live').on('postgres_changes',{event:'UPDATE',schema:'public',table,filter:'id=eq.1'},evt=>{
     const row=evt.new;if(remoteReady&&Number(row.revision||0)>lastRevision&&!saveBusy)loadRemoteState(false)
@@ -1230,7 +1230,7 @@ const inventoryScopeDefinitions=[
   {key:'walls-install',division:'walls',area:'install',label:'Superior Walls Install',entity:'Superior Walls of North Dakota, LLC',heading:'Install Inventory',catalog:'Superior Walls — Install materials',empty:'No Superior Walls Install materials have been added yet. Titan inventory data will be imported later.'},
   {key:'boxes-production',division:'boxes',area:'production',label:'Box Culverts',entity:'Superior Precast Structures, LLC',heading:'Box Culvert Inventory',catalog:'Box Culverts — Production materials',empty:'No Box Culvert materials have been added yet. Titan inventory data will be imported later.'}
 ];
-let inventoryScopeKey='walls-production',inventoryAvailableScopes=[],inventoryItems=[],inventoryEvents=[],inventoryReady=false,inventoryLoadError='',inventoryCanView=false,inventoryCanAdjust=false,inventoryCanManage=false,inventoryBusy=false;
+let inventoryScopeKey='walls-production',inventoryAvailableScopes=[],inventoryItems=[],inventoryEvents=[],inventoryReady=false,inventoryRawRealtimeAllowed=false,inventoryLoadError='',inventoryCanView=false,inventoryCanAdjust=false,inventoryCanManage=false,inventoryBusy=false;
 let inventorySearch='',inventoryFilter='all',inventoryCategory='all',inventoryModalSaveAction=null,inventoryToastTimer=null;
 let wallsProduction={permissions:{},tables:[],jobs:[],assignments:[],issues:[],events:[],weeklyForecast:null},wallsProductionReady=false,wallsProductionError='',productionBusy=false,productionModalSaveAction=null;
 let wallsInstallation={permissions:{},jobs:[],day_cards:[],resource_conflicts:[]},wallsInstallationReady=false,wallsInstallationError='',installationBusy=false,wallsInstallationReloadTimer=null;
@@ -1260,7 +1260,9 @@ async function loadWallsProduction(){
     if(!isCurrent())return false;
     if(error)throw error;
     if(weeklyError)console.error('Could not load Superior Walls weekly forecast:',weeklyError);
+    const rawReadChanged=(wallsProduction.full_read_access===true)!==(data?.full_read_access===true);
     wallsProduction={...(data||{permissions:{},tables:[],jobs:[],assignments:[],issues:[],events:[]}),weeklyForecast:weeklyForecast||null};wallsProductionReady=true;wallsProductionError=weeklyError?.message||'';
+    if(rawReadChanged)subscribeWallsProduction();
     if(state.view==='walls'&&state.subview.walls==='production')render();
     return true
   }catch(error){
@@ -1369,7 +1371,7 @@ function createOperationalRealtimeRefresh({load,isOwner,isBusy,key,failed,recove
   }
 }
 function subscribeWallsProduction(){
-  if(!sb||!currentUser)return;if(productionChannel)sb.removeChannel(productionChannel);
+  if(!sb||!currentUser)return;if(productionChannel)sb.removeChannel(productionChannel);productionChannel=null;if(wallsProduction.full_read_access!==true)return;
   const user=currentUser,client=sb,epoch=hubSessionEpoch,channel=client.channel('walls-production-live');productionChannel=channel;
   const refresh=createOperationalRealtimeRefresh({load:()=>loadWallsProduction(),isOwner:()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch&&productionChannel===channel&&wallSubviewAllowed('production'),isBusy:()=>productionBusy,key:()=>normalizeDate(state.productionDay)||todayISO(),failed:()=>!wallsProductionReady&&Boolean(wallsProductionError),recovered:()=>wallsProductionReady&&!wallsProductionError});
   ['walls_production_tables','walls_production_assignments','walls_production_events','walls_production_issues'].forEach(table=>channel.on('postgres_changes',{event:'*',schema:'public',table},()=>{void refresh()}));
@@ -1432,20 +1434,20 @@ async function loadInventory(){
   const access=inventoryAvailableScopes.find(x=>x.division_key===scope.division&&x.inventory_area===scope.area)||{};
   inventoryCanView=Boolean(access.can_view);inventoryCanAdjust=Boolean(access.can_adjust);inventoryCanManage=Boolean(access.can_manage);
   if(!inventoryCanView){inventoryItems=[];inventoryEvents=[];inventoryReady=false;inventoryLoadError='Your account does not have access to this inventory section.';if(state.view==='inventory')renderInventory();return false}
-  const itemsResult=await sb.from('inventory_items').select('item_id,titan_code,description,category,unit,quantity,reorder_threshold,ordered,version,updated_at,updated_by').eq('division_key',scope.division).eq('inventory_area',scope.area).order('item_id');
+  const snapshotResult=await client.rpc('get_inventory_snapshot',{p_division_key:scope.division,p_inventory_area:scope.area});
   if(!valid())return false;
-  if(itemsResult.error){inventoryReady=false;inventoryLoadError=itemsResult.error.message;console.error('Inventory load failed:',itemsResult.error);if(state.view==='inventory')renderInventory();return false}
-  const itemIds=(itemsResult.data||[]).map(x=>x.item_id);
-  const eventsResult=itemIds.length?await sb.from('inventory_events').select('event_id,item_id,event_type,quantity_before,quantity_after,detail,occurred_at,actor_email').in('item_id',itemIds).order('occurred_at',{ascending:false}).limit(50):{data:[],error:null};
-  if(!valid())return false;
-  if(eventsResult.error){inventoryReady=false;inventoryLoadError=eventsResult.error.message;console.error('Inventory events failed:',eventsResult.error);if(state.view==='inventory')renderInventory();return false}
+  if(snapshotResult.error){inventoryReady=false;inventoryLoadError=snapshotResult.error.message;console.error('Inventory load failed:',snapshotResult.error);if(state.view==='inventory')renderInventory();return false}
+  const snapshot=snapshotResult.data;
+  if(!snapshot||snapshot.division_key!==scope.division||snapshot.inventory_area!==scope.area||!Array.isArray(snapshot.items)||!Array.isArray(snapshot.events))throw new Error('Inventory snapshot is unavailable or belongs to another section. Refresh to retry.');
+  const itemsResult={data:snapshot.items},eventsResult={data:snapshot.events};
+  if(inventoryRawRealtimeAllowed!==(snapshot.full_read_access===true)){inventoryRawRealtimeAllowed=snapshot.full_read_access===true;subscribeInventory()}
   inventoryItems=(itemsResult.data||[]).map(x=>({id:x.item_id,code:x.titan_code,description:x.description,group:x.category,unit:x.unit,qty:x.quantity,threshold:x.reorder_threshold,ordered:Boolean(x.ordered),version:Number(x.version||1),updatedAt:x.updated_at,updatedBy:x.updated_by}));
   inventoryEvents=(eventsResult.data||[]).map(x=>({id:x.event_id,itemId:x.item_id,type:x.event_type,before:x.quantity_before,after:x.quantity_after,detail:x.detail||{},at:x.occurred_at,actor:x.actor_email}));
   inventoryReady=true;inventoryLoadError='';if(state.view==='inventory')renderInventory();return true
   }catch(error){if(valid()){inventoryReady=false;inventoryLoadError=error?.message||'Inventory could not be loaded. Retry Refresh.';if(state.view==='inventory')renderInventory()}return false}
 }
 function subscribeInventory(){
-  if(!sb||!currentUser)return;if(inventoryChannel)sb.removeChannel(inventoryChannel);
+  if(!sb||!currentUser)return;if(inventoryChannel)sb.removeChannel(inventoryChannel);inventoryChannel=null;if(!inventoryRawRealtimeAllowed)return;
   const user=currentUser,client=sb,epoch=hubSessionEpoch,channel=client.channel('superior-inventory-live');inventoryChannel=channel;
   const refresh=createOperationalRealtimeRefresh({load:()=>loadInventory(),isOwner:()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch&&inventoryChannel===channel,isBusy:()=>inventoryBusy,key:()=>inventoryScopeKey,failed:()=>!inventoryReady&&Boolean(inventoryLoadError),recovered:()=>inventoryReady&&!inventoryLoadError});
   channel.on('postgres_changes',{event:'*',schema:'public',table:'inventory_items'},payload=>{const row=payload.new||payload.old||{};const scope=inventoryScopeDefinitions.find(x=>x.key===inventoryScopeKey)||inventoryScopeDefinitions[0];if(!row.division_key||(row.division_key===scope.division&&row.inventory_area===scope.area))void refresh()}).on('postgres_changes',{event:'INSERT',schema:'public',table:'inventory_events'},()=>{void refresh()}).subscribe()

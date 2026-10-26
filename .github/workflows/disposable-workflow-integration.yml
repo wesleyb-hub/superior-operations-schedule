@@ -54,6 +54,11 @@ jobs:
         run: |
           set -o pipefail
           psql -X --set ON_ERROR_STOP=1 -f tests/integration/probes/planner-helper-permissions.sql 2>&1 | tee artifacts/disposable-workflow/planner-helper-permissions.log
+      - name: Verify employee projections, raw-table denials and supervisor compatibility
+        run: |
+          set -o pipefail
+          psql -X --set ON_ERROR_STOP=1 -f tests/integration/probes/employee-data-scope.sql 2>&1 | tee artifacts/disposable-workflow/employee-data-scope.log
+          node tests/integration/probes/employee-mark-ordered-drift.mjs 2>&1 | tee artifacts/disposable-workflow/employee-mark-ordered-drift.log
       - name: Run browser through actual SQL functions and RLS
         if: ${{ always() && steps.schema.outcome == 'success' }}
         run: node tests/integration/workflow-browser.mjs
