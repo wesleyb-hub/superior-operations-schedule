@@ -1,0 +1,48 @@
+name: Employee approved crew pack boundaries
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  approved-packs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: disposable-test-only
+          POSTGRES_DB: superior_workflow_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGDATABASE: superior_workflow_test
+      PGUSER: postgres
+      PGPASSWORD: disposable-test-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate isolated read endpoint and privilege contract
+        run: node scripts/validate-employee-approved-packs.mjs
+      - name: Apply actual committed schema to disposable PostgreSQL17
+        run: bash tests/integration/apply-schema.sh
+      - name: Exercise actual management lifecycle and employee allow-deny matrix
+        run: |
+          mkdir -p artifacts/employee-approved-packs
+          set -o pipefail
+          psql -X --set ON_ERROR_STOP=1 -f tests/integration/walls-workflow-cases.sql 2>&1 | tee artifacts/employee-approved-packs/lifecycle.log
+          psql -X --set ON_ERROR_STOP=1 -f tests/integration/probes/employee-approved-crew-packs.sql 2>&1 | tee artifacts/employee-approved-packs/boundaries.log
+      - name: Retain synthetic-only test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: employee-approved-packs-evidence
+          path: artifacts/employee-approved-packs
+          if-no-files-found: warn
+          retention-days: 7

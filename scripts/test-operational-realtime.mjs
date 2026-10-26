@@ -8,7 +8,7 @@ const part=(a,b)=>html.slice(html.indexOf(a),html.indexOf(b));
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(kind){
  const reads=[],channels=[],timers=new Map();let timer=0;
- const c={Promise,hubSessionEpoch:0,currentUser:{id:'synthetic'},state:{productionDay:'2026-10-19'},productionBusy:false,inventoryBusy:false,productionChannel:null,inventoryChannel:null,wallsProductionReady:true,wallsProductionError:'',inventoryReady:true,inventoryLoadError:'',inventoryScopeKey:'walls-production',inventoryScopeDefinitions:[{key:'walls-production',division:'walls',area:'production'},{key:'walls-install',division:'walls',area:'install'}],normalizeDate:x=>x,todayISO:()=>'',wallSubviewAllowed:()=>true,setTimeout(fn,ms){assert.equal(ms,350);timers.set(++timer,fn);return timer}};
+ const c={Promise,hubSessionEpoch:0,currentUser:{id:'synthetic'},state:{productionDay:'2026-10-19'},productionBusy:false,inventoryBusy:false,wallsProduction:{full_read_access:true},inventoryRawRealtimeAllowed:true,productionChannel:null,inventoryChannel:null,wallsProductionReady:true,wallsProductionError:'',inventoryReady:true,inventoryLoadError:'',inventoryScopeKey:'walls-production',inventoryScopeDefinitions:[{key:'walls-production',division:'walls',area:'production'},{key:'walls-install',division:'walls',area:'install'}],normalizeDate:x=>x,todayISO:()=>'',wallSubviewAllowed:()=>true,setTimeout(fn,ms){assert.equal(ms,350);timers.set(++timer,fn);return timer}};
  c.sb={channel(name){const channel={name,handlers:[],on(_event,filter,handler){this.handlers.push({filter,handler});return this},subscribe(){return this}};channels.push(channel);return channel},removeChannel(){}};
  c.loadWallsProduction=c.loadInventory=()=>new Promise((resolve,reject)=>reads.push({resolve,reject,key:kind==='production'?c.state.productionDay:c.inventoryScopeKey}));
  vm.createContext(c);
@@ -86,4 +86,9 @@ test('inventory: unrelated area item events do not spend the refresh budget',asy
 });
 test('production: permission revocation cancels queued reads',async()=>{
  const f=fixture('production');f.notify();f.c.wallSubviewAllowed=()=>false;await f.advance();assert.equal(f.reads.length,0);
+});
+
+for(const kind of ['production','inventory'])test(`${kind}: employee-only payload never subscribes to raw change rows`,()=>{
+ const f=fixture(kind);if(kind==='production')f.c.wallsProduction.full_read_access=false;else f.c.inventoryRawRealtimeAllowed=false;
+ f.subscribe();assert.equal(f.channels.length,1,'no second raw channel is created');assert.equal(f.c[kind==='production'?'productionChannel':'inventoryChannel'],null);
 });

@@ -8,7 +8,7 @@ const tick=()=>new Promise(r=>setImmediate(r));
 function fixture(){
  const pending=[],messages=[],nodes=new Map(),removed=[];
  const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',classList:{remove(){}},querySelector(){return null},replaceChildren(){this.cleared=true}});return nodes.get(id)};
- const c={wallsInstallationLoadToken:0,console:{error(){}},Promise,clearTimeout,Date,JSON,clone:x=>JSON.parse(JSON.stringify(x)),seed:{walls:[]},state:{view:'other',walls:[{id:'draft'}]},currentUser:{id:'test',email:'test@example.invalid'},sb:null,currentUserCanWrite:true,currentUserIsAdmin:true,remoteReady:true,structuredBackendReady:true,lastRevision:1,lastRemoteData:{},lastSharedJson:'',lastRemoteUpdatedAt:'',saveBusy:false,saveQueued:false,queuedReason:'Saved',inventoryScopeKey:'walls-production',inventoryAvailableScopes:[],inventoryItems:[],inventoryEvents:[],inventoryReady:false,inventoryLoadError:'',inventoryBusy:false,inventoryScopeDefinitions:[{key:'walls-production',division:'walls',area:'production'},{key:'walls-install',division:'walls',area:'install'}],stateChannel:{id:1},inventoryChannel:{id:2},productionChannel:null,weeklyPlannerChannel:null,wallsInstallationChannel:null,weeklyPlannerRefreshTimer:null,wallsInstallationReloadTimer:null,inventoryToastTimer:null,loadUiPrefs:()=>({}),showAuthGate(){},setAuthMode(){},setAuthMessage:m=>messages.push(m),document:{getElementById:node,querySelectorAll:()=>[]},alert:m=>messages.push(m),showInventoryToast:m=>messages.push(m),renderInventory(){},saveUiPrefs(){},sharedDataFromState:s=>JSON.parse(JSON.stringify(s)),validateOperationalTransition:()=>'',applyRemoteRow:async row=>{c.applied=row;return true}};
+ const c={wallsInstallationLoadToken:0,console:{error(){}},Promise,clearTimeout,Date,JSON,clone:x=>JSON.parse(JSON.stringify(x)),seed:{walls:[]},state:{view:'other',walls:[{id:'draft'}]},currentUser:{id:'test',email:'test@example.invalid'},sb:null,currentUserCanWrite:true,currentUserIsAdmin:true,remoteReady:true,structuredBackendReady:true,lastRevision:1,lastRemoteData:{},lastSharedJson:'',lastRemoteUpdatedAt:'',saveBusy:false,saveQueued:false,queuedReason:'Saved',inventoryScopeKey:'walls-production',inventoryAvailableScopes:[],inventoryItems:[],inventoryEvents:[],inventoryReady:false,inventoryRawRealtimeAllowed:false,subscribeInventory(){},inventoryLoadError:'',inventoryBusy:false,inventoryScopeDefinitions:[{key:'walls-production',division:'walls',area:'production'},{key:'walls-install',division:'walls',area:'install'}],stateChannel:{id:1},inventoryChannel:{id:2},productionChannel:null,weeklyPlannerChannel:null,wallsInstallationChannel:null,weeklyPlannerRefreshTimer:null,wallsInstallationReloadTimer:null,inventoryToastTimer:null,loadUiPrefs:()=>({}),showAuthGate(){},setAuthMode(){},setAuthMessage:m=>messages.push(m),document:{getElementById:node,querySelectorAll:()=>[]},alert:m=>messages.push(m),showInventoryToast:m=>messages.push(m),renderInventory(){},saveUiPrefs(){},sharedDataFromState:s=>JSON.parse(JSON.stringify(s)),validateOperationalTransition:()=>'',applyRemoteRow:async row=>{c.applied=row;return true}};
  const request=(name,args)=>new Promise((resolve,reject)=>pending.push({name,args,resolve,reject}));
  c.sb={rpc:request,from(table){const q={};for(const method of ['select','eq','order','in','limit','update'])q[method]=()=>q;q.then=(resolve,reject)=>request(table).then(resolve,reject);return q},removeChannel:async channel=>removed.push(channel),auth:{signOut:()=>request('signOut')}};
  vm.createContext(c);vm.runInContext(part('let hubSessionEpoch=','function updateAccessStatus('),c);
@@ -19,7 +19,7 @@ function fixture(){
  return {c,pending,messages,nodes,removed};
 }
 const scopes={data:[{division_key:'walls',inventory_area:'production',can_view:true},{division_key:'walls',inventory_area:'install',can_view:true}]};
-async function finishInventory(f,index,id){f.pending[index].resolve(scopes);await tick();f.pending[index+1].resolve({data:[{item_id:id,description:id}]});await tick();f.pending[index+2].resolve({data:[]});await tick()}
+async function finishInventory(f,index,id){f.pending[index].resolve(scopes);await tick();const request=f.pending[index+1];assert.equal(request.name,'get_inventory_snapshot');request.resolve({data:{division_key:request.args.p_division_key,inventory_area:request.args.p_inventory_area,items:[{item_id:id,description:id}],events:[]}});await tick()}
 test('master rejected save releases latch, preserves draft, drops queue and never resubmits unknown outcome',async()=>{
  const f=fixture(),save=f.c.persistState();assert.equal(f.c.saveBusy,true);await f.c.persistState('queued');
  f.pending[0].reject(Error('network lost'));assert.equal(await save,false);
@@ -214,4 +214,29 @@ test('confirmed login with failed workspace initialization relocks and exposes s
 });
 test('auth mode changes invalidate older callbacks without unlocking a new submission',async()=>{
  const f=authFixture();vm.runInContext(part('function setAuthMode(', 'async function handleAuthSubmit('),f.c);f.c.resetLocalSession();const old=f.c.handleAuthSubmit();f.c.setAuthMode('forgot');f.c.setAuthMode('login');f.nodes.get('authPassword').value='synthetic-new-password';const fresh=f.c.handleAuthSubmit();const before=f.messages.length;f.pending[0].resolve({data:{session:{user:{id:'obsolete'}}}});await old;assert.equal(f.started.length,0);assert.equal(f.nodes.get('authBtn').disabled,true);assert.equal(f.messages.length,before);f.pending[1].resolve({error:{message:'Synthetic newer error'}});await fresh;assert.equal(f.nodes.get('authBtn').disabled,false);
+});
+
+
+test('inventory projection RPC error never falls back to raw tables',async()=>{
+ const f=fixture(),load=f.c.loadInventory();f.pending[0].resolve(scopes);await tick();
+ assert.equal(f.pending[1].name,'get_inventory_snapshot');f.pending[1].resolve({error:{message:'safe projection missing'}});
+ assert.equal(await load,false);assert.equal(f.c.inventoryReady,false);assert.equal(f.pending.length,2);
+ assert.equal(f.c.inventoryLoadError,'safe projection missing');
+});
+test('inventory rejects mismatched scope and malformed projection payloads',async()=>{
+ for(const data of [{division_key:'boxes',inventory_area:'production',items:[],events:[]},{division_key:'walls',inventory_area:'production',items:{private:'not an array'},events:[]}]){
+  const f=fixture(),load=f.c.loadInventory();f.pending[0].resolve(scopes);await tick();f.pending[1].resolve({data});
+  assert.equal(await load,false);assert.equal(f.c.inventoryReady,false);assert.equal(f.c.inventoryItems.length,0);assert.equal(f.pending.length,2);
+ }
+});
+
+test('allowlisted employee assistant parameters retain exact confirmation target and value',()=>{
+ const f=fixture();vm.runInContext(part('function agentActionDetail(', 'async function refreshAfterAgentAction('),f.c);
+ const count={action_id:'synthetic-count',action_type:'set_inventory_count',status:'pending',summary:'Synthetic count',parameters:{item_id:101,expected_version:3,quantity:12}};
+ assert.equal(f.c.agentActionDetail(count),'Inventory item 101: set the physical count to 12.');
+ const setup={action_id:'synthetic-setup',action_type:'update_setup_progress',status:'pending',parameters:{assignment_id:'synthetic-run',expected_version:4,setup_progress:35}};
+ assert.equal(f.c.agentActionDetail(setup),'Production assignment synthetic-run: record setup progress at 35%.');
+ const pour={action_id:'synthetic-pour',action_type:'advance_production_stage',status:'pending',parameters:{assignment_id:'synthetic-run',expected_version:5,new_stage:'poured',actual_lf:80}};
+ assert.equal(f.c.agentActionDetail(pour),'Production assignment synthetic-run: advance to poured with 80 actual LF.');
+ for(const p of [count,setup,pour])assert.doesNotMatch(f.c.agentActionDetail(p),/undefined|\[object Object\]/);
 });

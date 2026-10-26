@@ -168,3 +168,25 @@ identity/scope confirmation. Start read-only. Enable a small write capability
 only after the required backend, phone, retry and account-handoff tests pass.
 Keep this employee phase open; it is not completed by a mobile stylesheet or the
 internal-helper ACL migration.
+
+## Frontend completion boundary (2026-10-25)
+
+Restricted Overview and Today use the same capability-aware launcher. Neither
+claims that company data is personally assigned. Production and Field Work stay
+inside their own module tabs; Inventory shows only the granted scope/actions.
+Employee Today omits the Report a Walls issue shortcut for the first rollout.
+Management's existing screens and authority remain intact.
+
+An explicitly permitted employee Crew schedules route uses only the dedicated
+`get_employee_approved_crew_packs` endpoint, active approved packets, and a
+field-allowlisted read-only client cache. It does not widen the management planner
+loader or grant the `weekly-planner` view. Source must ship together with the
+separately reviewed backend contract before that employee feature is usable.
+
+These are presentation/client-read changes, not backend isolation. No personal
+identity/assignment mapping, account grant, production write capability, inventory
+scope or live operational record changes are included. The separate backend
+projection/policy candidate and Phase 2 authorization requirements remain gates.
+Manual Refresh is visible because restricted raw realtime payloads are not part
+of the safe employee read contract; confirmed writes still refresh via the
+approved loader rather than polling.

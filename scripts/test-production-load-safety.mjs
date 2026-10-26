@@ -6,7 +6,7 @@ const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const part=(a,b)=>html.slice(html.indexOf(a),html.indexOf(b));
 function fixture(){
   const pending=[],alerts=[],toasts=[];
-  const c={hubSessionEpoch:0,console:{error(){}},state:{productionDay:'2026-10-19',view:'other',subview:{}},currentUser:{id:'synthetic'},wallsProduction:{marker:'initial'},wallsProductionReady:false,wallsProductionError:'',productionBusy:false,wallSubviewAllowed:()=>true,normalizeDate:x=>x,todayISO:()=>'',weekStart:x=>x,addDays:x=>x,alert:x=>alerts.push(x),showInventoryToast:x=>toasts.push(x),sb:{rpc:(name,args)=>new Promise((resolve,reject)=>pending.push({name,args,resolve,reject}))}};
+  const c={hubSessionEpoch:0,console:{error(){}},state:{productionDay:'2026-10-19',view:'other',subview:{}},currentUser:{id:'synthetic'},wallsProduction:{marker:'initial'},wallsProductionReady:false,wallsProductionError:'',productionBusy:false,subscriptions:[],subscribeWallsProduction:()=>c.subscriptions.push(c.wallsProduction.full_read_access===true),wallSubviewAllowed:()=>true,normalizeDate:x=>x,todayISO:()=>'',weekStart:x=>x,addDays:x=>x,alert:x=>alerts.push(x),showInventoryToast:x=>toasts.push(x),sb:{rpc:(name,args)=>new Promise((resolve,reject)=>pending.push({name,args,resolve,reject}))}};
   vm.createContext(c);
   vm.runInContext(part('let wallsProductionLoadToken=','let wallsInstallationLoadPromise='),c);
   vm.runInContext(part('async function wallsProductionRpc(', 'function closeProductionModal('),c);
@@ -85,4 +85,12 @@ test('production save refreshing across replacement session never posts old succ
   const f=fixture(),save=f.c.wallsProductionRpc('synthetic',{},'Saved');f.pending[0].resolve({data:{}});
   await new Promise(resolve=>setImmediate(resolve));f.c.hubSessionEpoch++;f.c.productionBusy=true;f.resolve(1,'old');
   await save;assert.equal(f.c.productionBusy,true);assert.equal(f.toasts.length,0);assert.equal(f.c.wallsProduction.marker,'initial');
+});
+
+test('production retry restores full-read realtime and projected transition removes it',async()=>{
+ const f=fixture(),failed=f.c.loadWallsProduction();f.pending[0].reject(Error('first load failed'));await failed;
+ const retry=f.c.loadWallsProduction();f.pending[2].resolve({data:{full_read_access:true}});f.pending[3].resolve({data:{}});assert.equal(await retry,true);
+ assert.equal(f.c.subscriptions.join(','),'true');
+ const limited=f.c.loadWallsProduction();f.pending[4].resolve({data:{full_read_access:false}});f.pending[5].resolve({data:{}});assert.equal(await limited,true);
+ assert.equal(f.c.subscriptions.join(','),'true,false');
 });
