@@ -619,8 +619,19 @@ button:disabled{opacity:.58;filter:saturate(.35);box-shadow:none!important}.moda
     <h2 id="authTitle">Sign in to the Master Operations Hub</h2>
     <p id="authDescription">Use your Superior work email and password. Changes are shared live with the team.</p>
     <form id="authForm" novalidate>
-      <label class="auth-field-label" for="authEmail">Superior work email</label>
-      <input id="authEmail" type="email" autocomplete="email" placeholder="you@superiorwallsnd.com" required />
+      <div id="authEmailGroup">
+        <label class="auth-field-label" for="authEmail">Superior work email</label>
+        <input id="authEmail" type="email" autocomplete="email" placeholder="you@superiorwallsnd.com" required />
+      </div>
+      <div id="authUsernameGroup" hidden>
+        <label class="auth-field-label" id="authUsernameLabel" for="authUsername">Employee username</label>
+        <input id="authUsername" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="32" placeholder="Your username" />
+      </div>
+      <div id="authSetupCodeGroup" hidden>
+        <label class="auth-field-label" for="authSetupCode">Setup or reset code</label>
+        <input id="authSetupCode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" placeholder="Code from your owner" />
+        <p class="auth-password-hint">Codes expire after 10 minutes and work once. First setup: choose your username and password. Reset: keep your existing username. Never share your password.</p>
+      </div>
       <div id="authLoginPasswordGroup">
         <label class="auth-field-label" for="authPassword">Password</label>
         <input id="authPassword" type="password" autocomplete="current-password" placeholder="Password" />
@@ -635,6 +646,8 @@ button:disabled{opacity:.58;filter:saturate(.35);box-shadow:none!important}.moda
       <button type="submit" id="authBtn">Sign in</button>
     </form>
     <div class="auth-actions">
+      <button type="button" id="employeeLoginBtn" hidden>Employee username sign in</button>
+      <button type="button" id="employeeSetupBtn" hidden>Use setup / reset code</button>
       <button type="button" id="forgotPasswordBtn">Forgot your password?</button>
       <button type="button" id="backToLoginBtn" hidden>Back to sign in</button>
     </div>
@@ -854,6 +867,7 @@ button:disabled{opacity:.58;filter:saturate(.35);box-shadow:none!important}.moda
 const STORAGE_KEY='superior-operations-ui-v28';
 const SUPABASE_URL=(window.SUPERIOR_CONFIG&&window.SUPERIOR_CONFIG.supabaseUrl)||'';
 const SUPABASE_ANON_KEY=(window.SUPERIOR_CONFIG&&window.SUPERIOR_CONFIG.supabaseAnonKey)||'';
+const EMPLOYEE_USERNAME_LOGIN_ENABLED=window.SUPERIOR_CONFIG?.employeeUsernameLoginEnabled===true;
 const ALLOWED_EMAIL_DOMAIN=((window.SUPERIOR_CONFIG&&window.SUPERIOR_CONFIG.allowedEmailDomain)||'superiorwallsnd.com').toLowerCase();
 const sb=(SUPABASE_URL&&SUPABASE_ANON_KEY&&window.supabase)?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
 const INVENTORY_REVIEW_MODE=false;
@@ -995,29 +1009,109 @@ function mergeRemoteData(data){
   state={...clone(seed),...ui,...clone(data||{})};
   ensureState();syncAllLinkedDeliveries();syncBilling()
 }
-let authMode='login';
+let authMode='login',employeeAuthAbort=null,employeeSessionInstalling=false;
 function authAllowed(email=''){return email.toLowerCase().endsWith('@'+ALLOWED_EMAIL_DOMAIN)}
 function setAuthMessage(msg,isError=false){const el=document.getElementById('authMessage');if(!el)return;el.textContent=msg||'';el.style.color=isError?'#b94141':'#52616d'}
 function showAuthGate(show){const el=document.getElementById('authGate');if(el)el.style.display=show?'flex':'none';const app=document.querySelector('.app');if(app){app.style.filter=show?'blur(2px)':'none';app.style.pointerEvents=show?'none':'auto';app.inert=Boolean(show);app.setAttribute?.('aria-hidden',String(Boolean(show)))}}
 function authCallbackType(){const sources=[location.search.slice(1),location.hash.slice(1)];for(const source of sources){const type=new URLSearchParams(source).get('type');if(type)return type}return''}
 function clearAuthCallbackFromUrl(){const url=new URL(location.href);['code','type','token_hash','error','error_code','error_description'].forEach(key=>url.searchParams.delete(key));url.hash='';history.replaceState(null,document.title,url.pathname+url.search)}
+function clearEmployeePasswordInputs(){for(const id of ['authPassword','authNewPassword','authConfirmPassword']){const el=document.getElementById(id);if(el)el.value=''}}
+function clearEmployeeAuthSecrets(){clearEmployeePasswordInputs();const code=document.getElementById('authSetupCode');if(code)code.value=''}
 function showPasswordSetup(session,message){const email=session?.user?.email;if(email)document.getElementById('authEmail').value=email;setAuthMode('recovery',message);showAuthGate(true);clearAuthCallbackFromUrl()}
 function setAuthMode(mode,message=''){
-  authMode=mode;const recovery=mode==='recovery',forgot=mode==='forgot';
+  if(employeeSessionInstalling){setAuthMessage('Finishing sign-in. Please wait a moment.');return}
+  if(mode.startsWith('employee-')&&!EMPLOYEE_USERNAME_LOGIN_ENABLED)mode='login';
+  employeeAuthAbort?.abort();employeeAuthAbort=null;
+  if(mode!==authMode)clearEmployeeAuthSecrets();
+  authMode=mode;const recovery=mode==='recovery',forgot=mode==='forgot',employee=mode.startsWith('employee-'),setup=mode==='employee-setup';
   const button=document.getElementById('authBtn');button.authRequest=null;button.disabled=false;
-  document.getElementById('authTitle').textContent=recovery?'Create a new password':forgot?'Reset your password':'Sign in to the Master Operations Hub';
-  document.getElementById('authDescription').textContent=recovery?'Choose a new password for your account, then sign in with it on any computer.':forgot?'Enter your Superior work email. If it has an active Hub account, Supabase will email a secure reset link.':'Use your Superior work email and password. Changes are shared live with the team.';
-  document.getElementById('authLoginPasswordGroup').hidden=forgot||recovery;
-  document.getElementById('authNewPasswordGroup').hidden=!recovery;
-  document.getElementById('authBtn').textContent=recovery?'Save new password':forgot?'Send reset link':'Sign in';
-  document.getElementById('forgotPasswordBtn').hidden=mode!=='login';
+  document.getElementById('authTitle').textContent=setup?'Choose your sign-in details':employee?'Employee sign in':recovery?'Create a new password':forgot?'Reset your password':'Sign in to the Master Operations Hub';
+  document.getElementById('authDescription').textContent=setup?'First setup? Choose your username and a private password. Resetting? Use your existing username and choose a new password. Your approved screens and access stay the same.':employee?'Use your employee username and password. Your approved work screens stay the same.':recovery?'Choose a new password for your account, then sign in with it on any computer.':forgot?'Enter your Superior work email. If it has an active Hub account, Supabase will email a secure reset link.':'Use your Superior work email and password. Changes are shared live with the team.';
+  document.getElementById('authEmailGroup').hidden=employee;
+  document.getElementById('authUsernameGroup').hidden=!employee;
+  document.getElementById('authUsernameLabel').textContent=setup?'Username (choose one for first setup)':'Employee username';
+  document.getElementById('authSetupCodeGroup').hidden=!setup;
+  document.getElementById('authLoginPasswordGroup').hidden=forgot||recovery||setup;
+  document.getElementById('authNewPasswordGroup').hidden=!(recovery||setup);
+  document.getElementById('authBtn').textContent=setup?'Save sign-in details':recovery?'Save new password':forgot?'Send reset link':'Sign in';
+  document.getElementById('forgotPasswordBtn').hidden=!['login','employee-login'].includes(mode);
+  document.getElementById('employeeLoginBtn').hidden=!EMPLOYEE_USERNAME_LOGIN_ENABLED||mode!=='login';
+  document.getElementById('employeeSetupBtn').hidden=mode!=='employee-login';
   document.getElementById('backToLoginBtn').hidden=mode==='login';
-  if(mode==='login')document.getElementById('authPassword').value='';
-  if(!recovery){document.getElementById('authNewPassword').value='';document.getElementById('authConfirmPassword').value=''}
+  document.getElementById('backToLoginBtn').textContent=setup?'Back to employee sign in':employee?'Use work email instead':'Back to sign in';
+  if(['login','employee-login'].includes(mode))document.getElementById('authPassword').value='';
+  if(!recovery&&!setup){document.getElementById('authNewPassword').value='';document.getElementById('authConfirmPassword').value=''}
   setAuthMessage(message)
+}
+async function employeeAccessRequest(body,signal){
+  const response=await fetch(SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/employee-access',{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPABASE_ANON_KEY},body:JSON.stringify(body),cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',signal});
+  if(!response.ok)throw new Error('Employee access request not confirmed');
+  return response.json()
+}
+// Non-secret interrupted-install marker only: never a password, code or token.
+const EMPLOYEE_NATIVE_PENDING_KEY='superior-employee-native-install-pending-v1:'+SUPABASE_URL;
+function employeeNativeInstallPending(){try{return sessionStorage.getItem(EMPLOYEE_NATIVE_PENDING_KEY)==='pending'}catch{return false}}
+function setEmployeeNativeInstallPending(pending){if(pending)sessionStorage.setItem(EMPLOYEE_NATIVE_PENDING_KEY,'pending');else sessionStorage.removeItem(EMPLOYEE_NATIVE_PENDING_KEY)}
+async function discardEmployeeNativeSession(client,message='Sign-in was cancelled. Sign in again when ready.'){
+  resetLocalSession();showAuthGate(true);
+  try{const result=await client.auth.signOut({scope:'local'});if(result?.error)throw new Error('Local sign-out not confirmed');setEmployeeNativeInstallPending(false);document.getElementById('retrySignOutBtn').hidden=true;setAuthMessage(message);return true}
+  catch{document.getElementById('retrySignOutBtn').hidden=false;setAuthMessage('The screen is locked, but interrupted sign-in cleanup was not confirmed. Retry Sign Out before continuing.',true);return false}
+}
+async function recoverInterruptedEmployeeNativeSession(client){
+  if(!employeeNativeInstallPending())return false;
+  await discardEmployeeNativeSession(client,'An earlier employee sign-in was interrupted. Sign in again.');return true
+}
+async function handleEmployeeAuthSubmit(){
+  if(!EMPLOYEE_USERNAME_LOGIN_ENABLED||!sb)return;
+  if(employeeSessionInstalling){setAuthMessage('Finishing sign-in. Please wait a moment.');return}
+  const button=document.getElementById('authBtn');if(button.disabled)return;
+  const username=(document.getElementById('authUsername').value||'').trim().toLowerCase();
+  const setup=authMode==='employee-setup',password=document.getElementById(setup?'authNewPassword':'authPassword').value||'',confirmation=document.getElementById('authConfirmPassword').value||'';
+  clearEmployeePasswordInputs();
+  if(!/^[a-z][a-z0-9._-]{2,31}$/.test(username)){setAuthMessage('Enter your employee username (3–32 letters, numbers, dots, dashes or underscores).',true);return}
+  if(!password){setAuthMessage('Enter your password.',true);return}
+  if(setup&&(password.length<12||new TextEncoder().encode(password).length>72)){setAuthMessage('Choose at least 12 characters, using no more than 72 bytes. Shorten the password if it contains many symbols or emoji.',true);return}
+  if(setup&&password!==confirmation){setAuthMessage('The passwords do not match.',true);return}
+  const code=setup?(document.getElementById('authSetupCode').value||'').trim():'';
+  if(setup&&!code){setAuthMessage('Enter the setup or reset code from your owner.',true);return}
+  const client=sb,epoch=hubSessionEpoch,mode=authMode,request={},controller=new AbortController();employeeAuthAbort=controller;button.authRequest=request;button.disabled=true;
+  const owns=()=>button.authRequest===request&&sb===client&&hubSessionEpoch===epoch&&authMode===mode;
+  hubSessionLocked=true;setAuthMessage(setup?'Saving your sign-in details...':'Signing in...');
+  try{
+    const data=await employeeAccessRequest(setup?{action:'redeem',username,code,password}:{action:'sign-in',username,password},controller.signal);if(!owns())return;
+    if(setup){if(data?.ok!==true)throw new Error('Password change not confirmed');clearEmployeeAuthSecrets();document.getElementById('authUsername').value=username;setAuthMode('employee-login','Sign-in details saved. Use this username and your new password to sign in.');return}
+    if(!data?.session?.access_token||!data?.session?.refresh_token)throw new Error('Sign-in not confirmed');
+    // Once native session installation starts, mode switches wait for it to settle.
+    // Earlier cancelled/obsolete fetches never install a session or load workspace data.
+    setEmployeeNativeInstallPending(true);employeeSessionInstalling=true;
+    const installed=await client.auth.setSession({access_token:data.session.access_token,refresh_token:data.session.refresh_token});if(!owns()){await discardEmployeeNativeSession(client);return}
+    if(installed.error||!installed.data?.session?.user)throw new Error('Sign-in not confirmed');
+    const verified=await client.auth.getUser();if(!owns()){await discardEmployeeNativeSession(client);return}
+    if(verified.error||verified.data?.user?.id!==installed.data.session.user.id)throw new Error('Sign-in not confirmed');
+    clearEmployeeAuthSecrets();hubSessionLocked=false;document.getElementById('retrySignOutBtn').hidden=true;
+    await startSession(verified.data.user);
+    if(!owns()||currentUser!==verified.data.user){await discardEmployeeNativeSession(client);return}
+    setEmployeeNativeInstallPending(false)
+  }catch(error){
+    const report=owns();if(employeeSessionInstalling)await discardEmployeeNativeSession(client,'Sign-in was not confirmed. Please sign in again.');
+    if(report){hubSessionLocked=true;showAuthGate(true);setAuthMessage(setup?'Could not complete setup/reset. Check the code. For first setup, try another username with the same unexpired code; for a reset, use your existing username. If the result is uncertain, try signing in or ask your owner to check status.':'Sign-in could not be confirmed. Check your username and password, or ask your owner for help.',true);if(employeeSessionInstalling)document.getElementById('retrySignOutBtn').hidden=false}
+  }finally{employeeSessionInstalling=false;if(employeeAuthAbort===controller)employeeAuthAbort=null;if(owns())button.disabled=false}
+}
+async function managedHubIdentity(user){
+  const email=(user.email||'').toLowerCase();
+  if(user.is_anonymous===true)return {allowed:false,username:''};
+  if(authAllowed(email))return {allowed:true,username:''};
+  if(!EMPLOYEE_USERNAME_LOGIN_ENABLED)return {allowed:false,username:''};
+  try{const {data,error}=await sb.rpc('get_employee_login_access');
+    if(error||!data||typeof data.managed!=='boolean')return {allowed:false,username:''};
+    if(data.managed)return {allowed:data.enabled===true&&data.status==='active',username:typeof data.username==='string'?data.username:''};
+  }catch{}
+  return {allowed:false,username:''}
 }
 async function handleAuthSubmit(event){
   event?.preventDefault();if(!sb){setAuthMessage('Supabase is not connected. Check config.js.',true);return}
+  if(employeeSessionInstalling){setAuthMessage('Finishing sign-in. Please wait a moment.');return}
+  if(authMode.startsWith('employee-'))return handleEmployeeAuthSubmit();
   const email=(document.getElementById('authEmail').value||'').trim().toLowerCase();
   if(!authAllowed(email)){setAuthMessage('Use your @'+ALLOWED_EMAIL_DOMAIN+' work email.',true);return}
   const btn=document.getElementById('authBtn');if(btn.disabled)return;btn.disabled=true;
@@ -1056,6 +1150,7 @@ async function handleAuthSubmit(event){
 // Invalidate local work before awaiting network logout; never delete operational storage.
 let hubSessionEpoch=0,remoteLoadToken=0,inventoryLoadToken=0,importReadToken=0,hubSessionLocked=false;
 function resetLocalSession(){
+  if(typeof clearEmployeeAuthSecrets==='function')clearEmployeeAuthSecrets();
   hubSessionLocked=true;hubSessionEpoch++;remoteLoadToken++;inventoryLoadToken++;importReadToken++;
   currentUser=null;currentUserRole='none';currentUserCanWrite=false;currentUserAuthorized=false;currentUserIsAdmin=false;currentAllowedViews=[];currentAllowedWallSubviews=[];
   remoteReady=false;structuredBackendReady=false;lastRemoteData=null;lastSharedJson='';lastRevision=0;lastRemoteUpdatedAt='';saveBusy=false;saveQueued=false;queuedReason='Saved';
@@ -1084,7 +1179,7 @@ function resetLocalSession(){
   for(const channel of channels)if(channel&&client)Promise.resolve().then(()=>client.removeChannel(channel)).catch(()=>{});
   showAuthGate(true)
 }
-async function signOut(){const client=sb;resetLocalSession();const epoch=hubSessionEpoch;setAuthMode('login','Signing out...');try{const result=client?await client.auth.signOut():{};if(result?.error)throw result.error;if(epoch===hubSessionEpoch&&!currentUser)setAuthMode('login','Signed out.')}catch(error){if(epoch!==hubSessionEpoch||currentUser)return;document.getElementById('retrySignOutBtn').hidden=false;setAuthMessage('The screen is locked, but sign-out could not be confirmed. Retry Sign Out before leaving this device.',true)}}
+async function signOut(){const client=sb;resetLocalSession();const epoch=hubSessionEpoch;setAuthMode('login','Signing out...');try{const result=client?await client.auth.signOut():{};if(result?.error)throw result.error;if(typeof employeeSessionInstalling!=='undefined'&&!employeeSessionInstalling&&typeof setEmployeeNativeInstallPending==='function'&&employeeNativeInstallPending())setEmployeeNativeInstallPending(false);if(epoch===hubSessionEpoch&&!currentUser)setAuthMode('login','Signed out.')}catch(error){if(epoch!==hubSessionEpoch||currentUser)return;document.getElementById('retrySignOutBtn').hidden=false;setAuthMessage('The screen is locked, but sign-out could not be confirmed. Retry Sign Out before leaving this device.',true)}}
 function updateAccessStatus(){
   const el=document.getElementById('accessStatus');
   if(!el)return;
@@ -1214,8 +1309,9 @@ function subscribeLive(){
 }
 async function startSession(user){
   if(!user)return;const email=(user.email||'').toLowerCase();
-  if(!authAllowed(email)){setAuthMessage('This hub is limited to @'+ALLOWED_EMAIL_DOMAIN+' accounts.',true);await sb.auth.signOut();showAuthGate(true);return}
-  currentUser=user;const epoch=hubSessionEpoch,client=sb;await loadCurrentAccess(user);if(currentUser!==user||epoch!==hubSessionEpoch||client!==sb)return;if(!currentUserAuthorized){setAuthMessage('This account has not been assigned access to the Superior Operations Hub.',true);await sb.auth.signOut();currentUser=null;showAuthGate(true);return}showAuthGate(false);const sign=document.getElementById('signOutBtn');if(sign){sign.style.display='inline-block';sign.textContent='Sign Out - '+email.split('@')[0]}
+  const identityEpoch=hubSessionEpoch,identityClient=sb,identity=await managedHubIdentity(user);if(identityEpoch!==hubSessionEpoch||identityClient!==sb)return;
+  if(user.is_anonymous===true||(!authAllowed(email)&&!identity.allowed)){setAuthMessage('This account cannot open the Hub. Ask your owner to check access.',true);await sb.auth.signOut();showAuthGate(true);return}
+  currentUser=user;const epoch=hubSessionEpoch,client=sb;await loadCurrentAccess(user);if(currentUser!==user||epoch!==hubSessionEpoch||client!==sb)return;if(!currentUserAuthorized){setAuthMessage('This account has not been assigned access to the Superior Operations Hub.',true);await sb.auth.signOut();currentUser=null;showAuthGate(true);return}showAuthGate(false);const sign=document.getElementById('signOutBtn');if(sign){sign.style.display='inline-block';sign.textContent='Sign Out - '+(identity.username||email.split('@')[0])}
   await loadRemoteState();if(currentUser!==user||epoch!==hubSessionEpoch||client!==sb)return;
   const requestedView=new URLSearchParams(location.search).get('view');
   if(!requestedView&&window.matchMedia('(max-width:1000px)').matches){state.view='today';saveUiPrefs();render()}
@@ -4811,8 +4907,12 @@ document.getElementById('assistantLaunch').onclick=openAssistant;
 document.getElementById('assistantClose').onclick=()=>document.getElementById('assistantPanel').classList.remove('open');
 document.getElementById('assistantForm').onsubmit=async e=>{e.preventDefault();const form=e.currentTarget,input=document.getElementById('assistantInput'),button=form.querySelector('button'),q=input.value.trim();if(!q||button.disabled)return;const user=currentUser,client=sb,epoch=hubSessionEpoch;const valid=()=>currentUser===user&&sb===client&&hubSessionEpoch===epoch;appendAssistantMessage('user',q);input.value='';input.disabled=true;button.disabled=true;button.textContent='Working...';try{await askOperationsAgent(q)}catch(error){if(valid())appendAssistantMessage('bot','The request could not be completed. No automatic retry was made; check any pending action before trying again.')}finally{if(valid()){input.disabled=false;button.disabled=false;button.textContent='Ask';input.focus()}}};
 document.getElementById('authForm').addEventListener('submit',handleAuthSubmit);
-document.getElementById('forgotPasswordBtn').onclick=()=>setAuthMode('forgot');
-document.getElementById('backToLoginBtn').onclick=()=>setAuthMode('login');
+document.getElementById('forgotPasswordBtn').onclick=()=>authMode==='employee-login'?setAuthMessage('Ask your owner for a private, one-use reset code. Then choose Use setup / reset code. Never share your password.'):setAuthMode('forgot');
+document.getElementById('employeeLoginBtn').onclick=()=>setAuthMode('employee-login');
+document.getElementById('employeeSetupBtn').onclick=()=>setAuthMode('employee-setup');
+document.getElementById('backToLoginBtn').onclick=()=>setAuthMode(authMode==='employee-setup'?'employee-login':'login');
+window.addEventListener('pagehide',()=>{employeeAuthAbort?.abort();clearEmployeeAuthSecrets();const button=document.getElementById('authBtn');if(button)button.authRequest=null;hubSessionLocked=true});
+setAuthMode('login');
 document.getElementById('retrySignOutBtn').onclick=signOut;
 document.getElementById('inventoryModalClose').onclick=()=>requestOperationalModalClose('inventory');
 document.getElementById('inventoryModalCancel').onclick=()=>requestOperationalModalClose('inventory');
@@ -4834,6 +4934,7 @@ async function bootstrap(){
   }
   ensureState();syncAllLinkedDeliveries();syncBilling();render();showAuthGate(true);
   if(!sb){setAuthMessage('Supabase is not connected. Check config.js.',true);const s=document.getElementById('saveStatus');if(s)s.textContent='Live connection unavailable';return}
+  const recoveredInterruptedEmployeeSession=await recoverInterruptedEmployeeNativeSession(sb);
   sb.auth.onAuthStateChange(async(event,session)=>{
     if(event==='PASSWORD_RECOVERY'&&session){currentUser=null;showPasswordSetup(session,'Use this secure link to choose your password.');return}
     if(session&&session.user&&(event==='SIGNED_IN'||event==='INITIAL_SESSION')&&['invite','signup'].includes(authCallbackType())){currentUser=null;showPasswordSetup(session,'Your account is confirmed. Choose a private password to finish setup.');return}
@@ -4841,7 +4942,7 @@ async function bootstrap(){
     if(session&&session.user&&!currentUser&&!hubSessionLocked)await startSession(session.user);
     if(!session&&event==='SIGNED_OUT')resetLocalSession()
   });
-  const initialEpoch=hubSessionEpoch;const {data}=await sb.auth.getSession();
+  const initialEpoch=hubSessionEpoch;if(recoveredInterruptedEmployeeSession)return;const {data}=await sb.auth.getSession();
   if(initialEpoch!==hubSessionEpoch||hubSessionLocked)return;
   if(data.session&&authMode!=='recovery')await startSession(data.session.user);else showAuthGate(true)
 }

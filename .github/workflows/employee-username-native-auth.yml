@@ -1,0 +1,32 @@
+name: Employee native Auth lifecycle (disposable)
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-auth-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUN_EMPLOYEE_NATIVE_AUTH_TEST: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install exact locked test tools (no project secrets)
+        run: npm ci
+      - name: Install pinned browser for actual SDK cross-tab test
+        run: npx playwright install --with-deps chromium
+      - name: Native Auth setup reset refresh and actual role boundaries
+        run: node tests/integration/run-employee-native-auth.mjs
+      - name: Retain only secret-free result summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: employee-native-auth-result
+          path: artifacts/employee-native-auth/result.json
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,36 @@
+name: Employee username and private password boundaries
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  local-only-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install exact locked test tools
+        run: npm ci
+      - name: Credential boundary and existing UI regression tests
+        run: npm test
+      - name: Typecheck credential Edge Function without invocation
+        run: npm run check:employee-access
+      - name: Actual disposable SQL ACL, scope, reset race and rate-limit tests
+        run: npm run test:employee-access-db
+      - name: Validate unchanged public security boundaries
+        run: |
+          node scripts/validate-public-bundle.mjs
+          node scripts/validate-migrations.mjs
+          node scripts/validate-function-privilege-hardening.mjs
+          node scripts/validate-employee-approved-packs.mjs
+          node scripts/validate-employee-login-database.mjs
+      - name: Install pinned synthetic browser runtime
+        run: npx playwright install --with-deps chromium
+      - name: Synthetic desktop/phone interrupted-login and owner handoff tests
+        run: npm run test:employee-access-browser
