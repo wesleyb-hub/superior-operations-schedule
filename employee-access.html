@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Employee sign-in help | Superior Operations</title>
+<style>
+:root{color-scheme:light;font-family:Arial,sans-serif;color:#13283d;background:#eef2f5}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;padding:24px 16px}main{max-width:640px;margin:24px auto;background:white;border:1px solid #dfe5eb;border-radius:14px;padding:28px;box-shadow:0 12px 38px #13283d13}h1{font-size:26px;margin:8px 0 12px}h2{font-size:19px;margin-top:0}p,li{font-size:15px;line-height:1.55;color:#536678}.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#6b7d8d;font-weight:bold}label{display:block;margin:20px 0 8px;font-weight:bold}select,button{min-height:46px;font:inherit;border-radius:8px;padding:11px 14px}select{width:100%;background:#fff;border:1px solid #bac7d0}button{border:0;background:#13283d;color:#fff;font-weight:bold;cursor:pointer}button:disabled{opacity:.5;cursor:wait}.check{display:flex;gap:10px;font-size:14px;font-weight:normal;line-height:1.5}.check input{width:20px;height:20px;flex:none}.hint{font-size:13px}.panel{background:#fff6e7;border:1px solid #e6c68f;padding:20px;margin-top:22px;border-radius:10px}code{display:block;font-size:25px;letter-spacing:.1em;overflow-wrap:anywhere;margin:18px 0;background:white;padding:14px;border-radius:8px;color:#13283d}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}.secondary{background:#e9eef2;color:#13283d}#ownerMessage{min-height:24px}a{color:#315f93}footer{font-size:13px;margin-top:24px;color:#6b7d8d}@media(max-width:450px){body{padding:12px}main{padding:22px 18px;margin:6px auto}h1{font-size:23px}.actions button{width:100%}code{font-size:21px}}
+</style>
+</head>
+<body><main>
+<div class="eyebrow">Superior Operations · Owner tools</div>
+<h1>Employee sign-in help</h1>
+<p>Give an employee a short-lived code. They choose their own password privately. You never need to see, write down or keep their password.</p>
+<p id="ownerMessage" role="status" aria-live="polite">Checking owner access…</p>
+<form id="ownerIssueForm" hidden>
+<label for="ownerEmployee">Employee username</label><select id="ownerEmployee" required></select>
+<p class="hint" id="ownerEmployeeStatus"></p>
+<label class="check"><input id="ownerConfirmEmail" type="checkbox"><span>For initial setup only: I have verified this existing employee identity in person and authorize confirming its internal sign-in identifier. This does not send email or create an account.</span></label>
+<p class="hint">For a forgotten password, leave the initial-setup checkbox off. Issuing a new code invalidates any previous unused code and temporarily pauses username sign-in until setup finishes.</p>
+<button id="ownerIssueBtn" type="submit">Create private setup / reset code</button>
+</form>
+<section id="ownerCodePanel" class="panel" hidden aria-labelledby="ownerCodeTitle">
+<h2 id="ownerCodeTitle">Share privately with the employee</h2>
+<p>Username: <strong id="ownerIssuedUsername"></strong></p>
+<code id="ownerIssuedCode"></code>
+<p id="ownerExpires"></p>
+<ol><li>Give this code to the verified employee privately.</li><li>They open the Hub → Employee username sign in → Use setup / reset code.</li><li>They choose their own password on their device. Do not ask them to tell you.</li></ol>
+<button id="ownerHideCode" class="secondary" type="button">Hide code</button>
+<p class="hint">This code is shown once. Hiding it does not revoke it; it remains valid until used, replaced or expired. Switching away from this page hides it.</p>
+</section>
+<div class="actions"><button id="ownerReload" type="button" class="secondary" hidden>Refresh employee status</button><a href="./index.html">Back to the Hub</a></div>
+<footer>Existing employee screens and permissions stay unchanged. This page does not grant access or fully offboard an employee. An owner must separately revoke all backend grants and Auth access when someone leaves.</footer>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4"></script>
+<script src="./config.js"></script>
+<script src="./employee-access-owner.js"></script>
+</body></html>

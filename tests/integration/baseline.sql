@@ -24,7 +24,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, au
 SET search_path=public,extensions;
 -- Supabase's Auth provider is the only stub: callers set verified test identities
 -- in a transaction. These functions do not verify JWTs or exercise GoTrue.
-CREATE TABLE auth.users (id uuid PRIMARY KEY, email text NOT NULL UNIQUE);
+CREATE TABLE auth.users (id uuid PRIMARY KEY, email text NOT NULL UNIQUE, is_anonymous boolean NOT NULL DEFAULT false);
 CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS $$
  SELECT coalesce(nullif(current_setting('request.jwt.claims',true),''),'{}')::jsonb
 $$;

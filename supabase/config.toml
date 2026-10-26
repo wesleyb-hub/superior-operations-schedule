@@ -1,2 +1,8 @@
 [functions.inventory-reorder-notify]
 verify_jwt = false
+
+# Public password/code actions must work before sign-in. Owner actions verify the
+# bearer token through Auth AND the private owner capability inside this endpoint.
+# Endpoint also remains disabled unless EMPLOYEE_ACCESS_ENABLED=true is approved.
+[functions.employee-access]
+verify_jwt = false

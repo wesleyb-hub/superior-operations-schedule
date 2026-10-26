@@ -1,0 +1,21 @@
+{
+  "name": "superior-operations-hub-checks",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pinned local and CI tooling; the Hub remains a static site.",
+  "scripts": {
+    "test": "node --test scripts/test-*.mjs",
+    "test:employee-access": "node --test scripts/test-employee-access-handler.mjs scripts/test-employee-login-ui.mjs scripts/test-employee-login-owner-ui.mjs",
+    "check:employee-access": "deno check --node-modules-dir=manual --no-remote supabase/functions/employee-access/index.ts",
+    "test:employee-access-db": "node tests/integration/run-employee-login-disposable.mjs",
+    "demo:employee-access": "node employee-login-demo/build-demo.mjs",
+    "test:employee-access-browser": "node scripts/validate-employee-login-ui.mjs"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "2.57.4",
+    "deno": "2.5.2",
+    "embedded-postgres": "17.10.0-beta.17",
+    "pg": "8.16.3",
+    "playwright": "1.56.1"
+  }
+}
