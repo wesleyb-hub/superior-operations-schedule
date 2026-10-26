@@ -4,8 +4,8 @@
 
 ## Identity and ownership
 
-- `employee_login.aliases` has one normalized, unique ASCII username per existing Auth UID. The UID and backing Auth identifier stay unchanged. Aliases have no business-role fields.
-- New rows are disabled and require setup by default. No real or synthetic identity is seeded by the migration.
+- `employee_login.aliases` is keyed by the existing Auth UID. Its unique normalized ASCII username starts **NULL**: the employee chooses both username and password during first activation. The UID and backing Auth identifier stay unchanged. Aliases have no business-role fields.
+- New rows are disabled, `setup_completed=false`, and require setup by default. An optional owner-maintained display label (maximum 80 characters) helps identify an unactivated employee; it is not a login or permission. No real or synthetic identity is seeded by the migration.
 - `employee_login.owners` is an empty, explicit UID allowlist. An operator must both be enabled there **and** retain the existing management `can_write` role. A manager not in this table is not a credential operator.
 - Reset targets must be nonanonymous Auth users with enabled `app_employee_access`, no `app_user_roles` row, and no owner membership. Credential operators must also be nonanonymous. This endpoint cannot reset a management or owner account.
 - First-phase linking is a separately approved maintenance operation, not a self-service endpoint. Resolve and independently verify the exact existing UID; never match a roster display name automatically. Future employees still require an approved internal email/phone identifier and provisioning policy because Supabase password authentication is not username-native.
@@ -19,14 +19,14 @@ Eligibility is not a certification of a person's final business scope. Independe
 | RPC | Result / rule |
 | --- | --- |
 | `employee_login_check_owner(p_actor uuid)` | Boolean; actor must be validated by native Auth before Edge submits it. |
-| `employee_login_list(p_actor uuid)` | Owner-only array of username, user_id, enabled and status. No email, code or hash. |
-| `employee_login_resolve(p_username text)` | `{user_id,username}` only for an enabled, active, eligible alias; otherwise null. Used both before and after native password sign-in. |
+| `employee_login_list(p_actor uuid)` | Owner-only array of nullable username, user_id, optional display_name, setup_completed, enabled and status. No email, code or hash. |
+| `employee_login_resolve(p_username text)` | `{user_id,username}` only for an enabled, active, setup-completed, eligible alias; otherwise null. Used both before and after native password sign-in. |
 | `employee_login_throttle(p_keys text[],p_limit int,p_window_seconds int)` | Durable atomic boolean. One to four distinct HMAC-hex64 keys; limit 1–1000, window 60–3600 seconds. Denials still increment all buckets. |
-| `employee_login_issue(p_actor,p_username,p_code_hash,p_code_id,p_confirm_email)` | Owner-only ten-minute code issuance. Hash only; replaces any earlier unclaimed code. Optional single-user confirmation must be a deliberate owner setup decision. |
-| `employee_login_claim(p_username,p_code_hash,p_claim_id)` | Atomically consumes a matching unexpired code and returns `{user_id,confirm_email}`. Exactly one claimant can start an external password update. |
-| `employee_login_finish(p_uid,p_claim_id,p_success)` | Only matching processing operation can complete. Success requires still-enabled eligible identity. Failure/uncertainty stays blocked. |
+| `employee_login_issue(p_actor,p_uid,p_code_hash,p_code_id,p_confirm_email)` | Owner selects the existing UID, not a username. Issues a ten-minute code with globally unique hash; replaces any earlier unclaimed code. Returns user_id, nullable username, setup_completed and expiry. Individual confirmation is allowed only during unfinished first setup. |
+| `employee_login_claim(p_username,p_code_hash,p_claim_id)` | The unique code identifies the existing UID. Atomically reserves the employee's requested username, then consumes the code and returns `{user_id,confirm_email}`. A name collision returns generic denial without consuming the code. Completed accounts must use their existing name. |
+| `employee_login_finish(p_uid,p_claim_id,p_success)` | Only matching processing operation can complete. Success requires still-enabled eligible identity and permanently sets setup_completed=true; password resets cannot rename the username. Failure/uncertainty stays blocked. |
 | `employee_login_password_rejected(p_uid,p_claim_id)` | Narrow definitive native Auth `weak_password` rejection recovery only. Consumed code never returns; owner must issue a fresh code. Do not call after timeouts, unknown errors, or a successful Auth update. |
-| `employee_login_disable(p_actor,p_username)` | Disables alias and outstanding code only. Rejects processing operations. Preserves failed reconciliation blocks. **Not offboarding.** |
+| `employee_login_disable(p_actor,p_uid)` | Disables the UID's alias and outstanding code only, including invitations without a username. Rejects processing operations. Preserves failed reconciliation blocks, chosen usernames and setup_completed. **Not offboarding.** |
 | `employee_login_audit(p_event,p_outcome,p_actor,p_target)` | Service-only sign-in audit with fixed enums. Other events are recorded transactionally by their lifecycle RPC. |
 | `get_employee_login_access()` | Authenticated caller's `{managed,enabled,status,username}`. This is an identity gate, not permission. |
 
@@ -37,8 +37,8 @@ Username grammar is `[a-z][a-z0-9._-]{2,31}` after trimming/lowercasing. `admin`
 `setup_required/active/pending → pending → processing → active`
 
 - Issuance blocks alias sign-in until successful reset. A replacement code invalidates the old one.
-- Claim locks the alias row and removes the code hash **before** calling external Auth. Processing blocks reissue and alias disable; no worker lease automatically expires into another password update.
-- A received native `weak_password` validation rejection can move the matching operation to `setup_required`; the employee needs a new owner-issued code.
+- Claim locates and locks the UID's row by globally unique code hash, reserves the normalized requested name under a unique constraint, and removes the code hash **before** calling external Auth. Concurrent invitations cannot take the same name, and one code racing different names starts at most one password update. A collision leaves the valid code available for another choice. Processing blocks reissue and alias disable; no worker lease automatically expires into another password update.
+- A received native `weak_password` validation rejection can move the matching operation to `setup_required`; the employee needs a new owner-issued code. Before the first successful setup, they may choose another available name with that new code. After first success, setup_completed stays true and the username is fixed, including across weak-password failures and disable operations.
 - Transport failure, timeout, any unknown Auth outcome, failed refresh-session revocation, or lost completion acknowledgement must remain `processing`/`failed`. No automatic retry of the password write and no automatic reissue.
 - To reconcile a stuck operation, first verify the old worker cannot still change Auth, inspect the provider-side outcome through approved tooling, and obtain a narrowly reviewed recovery action. Never merely clear the state/claim or toggle enabled. Disabling a failed alias preserves its failed state even if an operator later reenables it.
 
@@ -46,7 +46,7 @@ This cross-service workflow is intentionally not described as a distributed tran
 
 ## Rate-limit maintenance
 
-Edge consumes a shared global bucket first, then independently keyed IP and username/owner buckets. Missing/untrusted gateway IP, DB error or unavailable throttle storage must fail closed. A process-local counter is insufficient.
+Edge consumes a shared global bucket first, then independently keyed IP and sign-in username/activation-code/owner buckets. The activation limiter follows the code rather than a freely changeable proposed name. Missing/untrusted gateway IP, DB error or unavailable throttle storage must fail closed. A process-local counter is insufficient.
 
 Throttle cleanup removes at most 100 records older than a day per request using row locks with `SKIP LOCKED` and an outer expiry recheck; a concurrently refreshed bucket cannot be deleted. Audit retention should follow an approved operational policy rather than exposing a free-form delete endpoint. Do not disable throttling to diagnose a sign-in problem.
 
@@ -69,6 +69,6 @@ node tests/integration/employee-login.mjs
 
 For a completely fresh local embedded PostgreSQL instance with schema + all three business-scope regression probes, run `node tests/integration/run-employee-login-disposable.mjs`. It binds loopback only on a free ephemeral port, creates temporary data, writes synthetic evidence under `artifacts/employee-login/database`, then stops and deletes its temporary cluster. Dependencies are pinned in the root lockfile.
 
-The SQL suite executes real function ACLs, RLS, locks, replay/expiry/replacement, concurrent claims and throttles, owner/target checks, unknown-outcome blocks, definitive weak-password recovery, grant preservation and old-JWT caveats. Existing `walls-workflow-cases.sql`, `employee-data-scope.sql` and `employee-approved-crew-packs.sql` are also required unchanged. Synthetic identity rows are removed after this suite. Run only on a disposable database.
+The SQL suite executes real function ACLs, RLS, locks, replay/expiry/replacement, concurrent invitations claiming one name, one code racing different names, persistent reservations after ambiguity, reset-name immutability, throttles, owner/target checks, unknown-outcome blocks, definitive weak-password recovery, grant preservation and old-JWT caveats. Existing `walls-workflow-cases.sql`, `employee-data-scope.sql` and `employee-approved-crew-packs.sql` are also required unchanged. Synthetic identity rows are removed after this suite. Run only on a disposable database.
 
 These tests do **not** verify hosted default privileges, native GoTrue password/JWT behavior, gateway IP header trust or live Edge deployment. Before any production activation: obtain approval for the exact migration, dedicated Edge secrets/configuration, endpoint deployment, frontend flag, explicit owner/alias mapping and any individual confirmation; verify hosted privilege drift and a nonproduction native-Auth lifecycle first. Keep the frontend feature disabled until all dependencies pass. Do not repurpose the operations-agent or inventory notifier for credential administration.

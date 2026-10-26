@@ -12,10 +12,10 @@
 <body><main>
 <div class="eyebrow">Superior Operations · Owner tools</div>
 <h1>Employee sign-in help</h1>
-<p>Give an employee a short-lived code. They choose their own password privately. You never need to see, write down or keep their password.</p>
+<p>Give an employee a short-lived code. At first activation, they choose their own username and password privately. You never need to see, write down or keep their password.</p>
 <p id="ownerMessage" role="status" aria-live="polite">Checking owner access…</p>
 <form id="ownerIssueForm" hidden>
-<label for="ownerEmployee">Employee username</label><select id="ownerEmployee" required></select>
+<label for="ownerEmployee">Existing employee account</label><select id="ownerEmployee" required></select>
 <p class="hint" id="ownerEmployeeStatus"></p>
 <label class="check"><input id="ownerConfirmEmail" type="checkbox"><span>For initial setup only: I have verified this existing employee identity in person and authorize confirming its internal sign-in identifier. This does not send email or create an account.</span></label>
 <p class="hint">For a forgotten password, leave the initial-setup checkbox off. Issuing a new code invalidates any previous unused code and temporarily pauses username sign-in until setup finishes.</p>
@@ -23,10 +23,11 @@
 </form>
 <section id="ownerCodePanel" class="panel" hidden aria-labelledby="ownerCodeTitle">
 <h2 id="ownerCodeTitle">Share privately with the employee</h2>
-<p>Username: <strong id="ownerIssuedUsername"></strong></p>
+<p id="ownerIssuedEmployee"></p>
+<p><strong id="ownerIssuedUsername"></strong></p>
 <code id="ownerIssuedCode"></code>
 <p id="ownerExpires"></p>
-<ol><li>Give this code to the verified employee privately.</li><li>They open the Hub → Employee username sign in → Use setup / reset code.</li><li>They choose their own password on their device. Do not ask them to tell you.</li></ol>
+<ol><li>Give this code to the verified employee privately.</li><li>They open the Hub → Employee username sign in → Use setup / reset code.</li><li id="ownerPrivateChoice">For first activation, they choose a username and password on their own device. For a reset, they keep their username and choose a new password. Never ask them to tell you their password.</li></ol>
 <button id="ownerHideCode" class="secondary" type="button">Hide code</button>
 <p class="hint">This code is shown once. Hiding it does not revoke it; it remains valid until used, replaced or expired. Switching away from this page hides it.</p>
 </section>

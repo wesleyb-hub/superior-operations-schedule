@@ -1,13 +1,15 @@
 # Employee usernames and private password setup
 
-**Local, disabled-by-default candidate. Not a live account rollout.**
+**Draft, disabled-by-default candidate. Not a live account rollout.**
 
 ## The employee experience
 
 1. Open the Hub and choose **Employee username sign in**.
 2. Enter a username such as `jade` and a password. No working mailbox is required for this sign-in route.
 3. For first setup or a forgotten password, the owner verifies the employee and creates a ten-minute, one-use code in **Employee sign-in help** (`employee-access.html`).
-4. The employee chooses **Use setup / reset code**, enters the code, and privately chooses a password on their own device. They then sign in normally.
+4. For first activation, the employee chooses **Use setup / reset code**, enters the code, and privately chooses **both their username and password** on their own device. They then use that username each time they sign in. For a forgotten password, they enter their established username and choose a new password; reset does not rename the account.
+
+The owner approves the existing employee identity and access, not the employee's username or password. The activation code is already bound to that existing UID. There is no open registration or employee choice of identity, roles or permissions.
 
 The owner never asks for, retrieves, emails or keeps the employee's password. Only Supabase Auth stores the password verifier. The code is a temporary credential: hand it directly to the verified employee, do not put it in an operational chat, shared document, URL or password file. Hiding a displayed code does not revoke it.
 
@@ -21,13 +23,13 @@ For the current approved pilot, the intended scope stays Walls production Today,
 
 ## What is implemented
 
-- Private, normalized unique username → existing UID mapping. No public alias/email directory.
+- Private existing UID activation records; usernames remain unassigned until employee activation. The chosen name is normalized and uniquely reserved under a row lock before native Auth changes. No public alias/email directory or availability endpoint. A private optional owner-provided display label is never an identity/permission key.
 - Separate explicit owner allowlist, additionally requiring the owner's current management capability; ordinary writers are not credential operators.
 - Dedicated `employee-access` Edge Function. It does not reuse the Operations Assistant or inventory email worker.
 - Native Supabase password sign-in and native Admin password update, without account recreation, direct `auth.users` writes or global email-confirmation changes.
 - Optional, explicit owner-approved **individual** identifier confirmation for first setup only. Existing confirmed accounts need no confirmation action.
 - CSPRNG 80-bit codes, HMAC-SHA256 storage, ten-minute lifetime, row-lock one-use claim before any Auth write, matching-claim completion and secret-free lifecycle audit.
-- Durable global/IP/username/owner rate limits with hashed bucket keys, generic errors, exact-origin CORS, bounded request size and no request/password/token logging.
+- Durable global/IP/username/invitation-code/owner rate limits with hashed bucket keys, generic errors, exact-origin CORS, bounded request size and no request/password/token logging.
 - Double-check of the alias after native sign-in, fail-closed unknown password-update outcomes, no automatic credential-write retry.
 - Private owner handoff screen and a network-disabled synthetic review demo. No real identifiers or credentials are embedded in the demo.
 
@@ -37,7 +39,9 @@ The Edge Function never returns the backing identifier before authentication. A 
 
 The browser rejects stale responses and repeated clicks. Setup returns no session. Password/code fields are cleared on mode changes or leaving the page. A nonsecret pending-install marker fences native session installation across reload; no password, code or token is added to application storage by this feature. Existing Supabase session storage continues to behave as configured by the Hub.
 
-Issuing a code temporarily pauses **username sign-in**. A definite native Auth 422 `weak_password` rejection consumes the code but permits an owner to issue a new one. For a timeout, unknown Auth response, or ambiguous completion, the identity stays blocked pending inspected reconciliation. Do not automatically reissue or merely toggle its enabled flag. See [database reconciliation and old-token limits](EMPLOYEE-USERNAME-DATABASE.md).
+A username collision does not consume a valid activation code or call Auth: the employee can try another name in the same setup form. Responses stay generic. A completed activation permanently distinguishes later resets from first setup, so reset or disable never reopens username choice.
+
+Issuing a code temporarily pauses **username sign-in**. A definite native Auth 422 `weak_password` rejection consumes the code but permits an owner to issue a new one. An unfinished activation may choose a new available name with that new code; a previously activated account keeps its established username. For a timeout, unknown Auth response, or ambiguous completion, the identity and reserved username stay blocked pending inspected reconciliation. Do not automatically reissue or merely toggle its enabled flag. See [database reconciliation and old-token limits](EMPLOYEE-USERNAME-DATABASE.md).
 
 An expired or lost unused code can be replaced by the owner. A lost success response may mean the password was already changed: first try the newly chosen password; otherwise the owner checks the status rather than repeatedly changing it.
 
@@ -64,13 +68,13 @@ No CAPTCHA or MFA enrollment is added or disabled. Before rollout, verify compat
 
 Source review and local testing authorize **none** of the following production actions. Each must be covered explicitly before it occurs:
 
-1. Publish the exact reviewed source as a draft PR (if desired), require CI/browser tests and review the exact commit. No push/PR is included in this local task.
-2. Validate native Auth lifecycle on a separately authorized nonproduction Supabase project: password rejected/changed, individual confirmation, old-password denial, refresh-session behavior, expiry, MFA/CAPTCHA settings and account-state coherence. Current unit tests use synthetic providers, not hosted GoTrue.
+1. Review the exact draft PR head and require its current CI/browser/native Auth results. Public synthetic test publication does not authorize merge or deployment.
+2. Validate native Auth lifecycle in the authorized disposable local/CI Supabase runtime, then verify compatibility with the intended hosted version/settings: password rejected/changed, individual confirmation, old-password denial, refresh-session behavior, expiry, MFA/CAPTCHA settings and account-state coherence. Unit tests use synthetic providers; the separately authorized native CI harness uses actual GoTrue with invented identities only. Neither is a hosted production test.
 3. Recheck current production definitions/ACLs and apply only the exact reviewed schema migration. It seeds no identities or business grants.
 4. Deploy only the dedicated Edge Function and approve its secrets/origin/IP provenance configuration. No existing notifier or assistant credentials are repurposed.
-5. Separately verify and approve the exact owner UID and each username → existing employee UID mapping, including current additive permission scope. No live mapping SQL is supplied as an automatic script.
+5. Separately verify and approve the exact owner UID and each existing restricted employee UID activation record, including current additive permission scope. Leave its username unassigned; the employee chooses it during activation. No live mapping SQL is supplied as an automatic script.
 6. Deploy the reviewed frontend and enable its feature flag only after backend checks pass. Existing admin email login remains independent.
-7. Explicitly authorize any first-setup individual confirmation and code issuance. The employee privately chooses the password. No credentials are collected in chat.
+7. Explicitly authorize any first-setup individual confirmation and code issuance. The employee privately chooses their username and password at first activation. No credentials are collected in chat.
 
 Stopping or rolling back the username feature does not revoke already issued native sessions or undo a password change. Turn the browser/server flags off if necessary, preserve the mapping/audit for diagnosis, and separately handle Auth/session/grant remediation under authorization. Do not delete identities or grant management access as a workaround.
 

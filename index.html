@@ -624,13 +624,13 @@ button:disabled{opacity:.58;filter:saturate(.35);box-shadow:none!important}.moda
         <input id="authEmail" type="email" autocomplete="email" placeholder="you@superiorwallsnd.com" required />
       </div>
       <div id="authUsernameGroup" hidden>
-        <label class="auth-field-label" for="authUsername">Employee username</label>
+        <label class="auth-field-label" id="authUsernameLabel" for="authUsername">Employee username</label>
         <input id="authUsername" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="32" placeholder="Your username" />
       </div>
       <div id="authSetupCodeGroup" hidden>
         <label class="auth-field-label" for="authSetupCode">Setup or reset code</label>
         <input id="authSetupCode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="40" placeholder="Code from your owner" />
-        <p class="auth-password-hint">Codes expire after 10 minutes and work once. Choose your own password below; never share it with your owner or in chat.</p>
+        <p class="auth-password-hint">Codes expire after 10 minutes and work once. First setup: choose your username and password. Reset: keep your existing username. Never share your password.</p>
       </div>
       <div id="authLoginPasswordGroup">
         <label class="auth-field-label" for="authPassword">Password</label>
@@ -1015,7 +1015,8 @@ function setAuthMessage(msg,isError=false){const el=document.getElementById('aut
 function showAuthGate(show){const el=document.getElementById('authGate');if(el)el.style.display=show?'flex':'none';const app=document.querySelector('.app');if(app){app.style.filter=show?'blur(2px)':'none';app.style.pointerEvents=show?'none':'auto';app.inert=Boolean(show);app.setAttribute?.('aria-hidden',String(Boolean(show)))}}
 function authCallbackType(){const sources=[location.search.slice(1),location.hash.slice(1)];for(const source of sources){const type=new URLSearchParams(source).get('type');if(type)return type}return''}
 function clearAuthCallbackFromUrl(){const url=new URL(location.href);['code','type','token_hash','error','error_code','error_description'].forEach(key=>url.searchParams.delete(key));url.hash='';history.replaceState(null,document.title,url.pathname+url.search)}
-function clearEmployeeAuthSecrets(){for(const id of ['authPassword','authSetupCode','authNewPassword','authConfirmPassword']){const el=document.getElementById(id);if(el)el.value=''}}
+function clearEmployeePasswordInputs(){for(const id of ['authPassword','authNewPassword','authConfirmPassword']){const el=document.getElementById(id);if(el)el.value=''}}
+function clearEmployeeAuthSecrets(){clearEmployeePasswordInputs();const code=document.getElementById('authSetupCode');if(code)code.value=''}
 function showPasswordSetup(session,message){const email=session?.user?.email;if(email)document.getElementById('authEmail').value=email;setAuthMode('recovery',message);showAuthGate(true);clearAuthCallbackFromUrl()}
 function setAuthMode(mode,message=''){
   if(employeeSessionInstalling){setAuthMessage('Finishing sign-in. Please wait a moment.');return}
@@ -1024,14 +1025,15 @@ function setAuthMode(mode,message=''){
   if(mode!==authMode)clearEmployeeAuthSecrets();
   authMode=mode;const recovery=mode==='recovery',forgot=mode==='forgot',employee=mode.startsWith('employee-'),setup=mode==='employee-setup';
   const button=document.getElementById('authBtn');button.authRequest=null;button.disabled=false;
-  document.getElementById('authTitle').textContent=setup?'Choose your private password':employee?'Employee sign in':recovery?'Create a new password':forgot?'Reset your password':'Sign in to the Master Operations Hub';
-  document.getElementById('authDescription').textContent=setup?'Enter the code your owner gave you. This changes only your password, not your approved screens or access.':employee?'Use your employee username and password. Your approved work screens stay the same.':recovery?'Choose a new password for your account, then sign in with it on any computer.':forgot?'Enter your Superior work email. If it has an active Hub account, Supabase will email a secure reset link.':'Use your Superior work email and password. Changes are shared live with the team.';
+  document.getElementById('authTitle').textContent=setup?'Choose your sign-in details':employee?'Employee sign in':recovery?'Create a new password':forgot?'Reset your password':'Sign in to the Master Operations Hub';
+  document.getElementById('authDescription').textContent=setup?'First setup? Choose your username and a private password. Resetting? Use your existing username and choose a new password. Your approved screens and access stay the same.':employee?'Use your employee username and password. Your approved work screens stay the same.':recovery?'Choose a new password for your account, then sign in with it on any computer.':forgot?'Enter your Superior work email. If it has an active Hub account, Supabase will email a secure reset link.':'Use your Superior work email and password. Changes are shared live with the team.';
   document.getElementById('authEmailGroup').hidden=employee;
   document.getElementById('authUsernameGroup').hidden=!employee;
+  document.getElementById('authUsernameLabel').textContent=setup?'Username (choose one for first setup)':'Employee username';
   document.getElementById('authSetupCodeGroup').hidden=!setup;
   document.getElementById('authLoginPasswordGroup').hidden=forgot||recovery||setup;
   document.getElementById('authNewPasswordGroup').hidden=!(recovery||setup);
-  document.getElementById('authBtn').textContent=setup||recovery?'Save new password':forgot?'Send reset link':'Sign in';
+  document.getElementById('authBtn').textContent=setup?'Save sign-in details':recovery?'Save new password':forgot?'Send reset link':'Sign in';
   document.getElementById('forgotPasswordBtn').hidden=!['login','employee-login'].includes(mode);
   document.getElementById('employeeLoginBtn').hidden=!EMPLOYEE_USERNAME_LOGIN_ENABLED||mode!=='login';
   document.getElementById('employeeSetupBtn').hidden=mode!=='employee-login';
@@ -1064,19 +1066,20 @@ async function handleEmployeeAuthSubmit(){
   if(employeeSessionInstalling){setAuthMessage('Finishing sign-in. Please wait a moment.');return}
   const button=document.getElementById('authBtn');if(button.disabled)return;
   const username=(document.getElementById('authUsername').value||'').trim().toLowerCase();
-  const setup=authMode==='employee-setup',password=document.getElementById(setup?'authNewPassword':'authPassword').value||'';
+  const setup=authMode==='employee-setup',password=document.getElementById(setup?'authNewPassword':'authPassword').value||'',confirmation=document.getElementById('authConfirmPassword').value||'';
+  clearEmployeePasswordInputs();
   if(!/^[a-z][a-z0-9._-]{2,31}$/.test(username)){setAuthMessage('Enter your employee username (3–32 letters, numbers, dots, dashes or underscores).',true);return}
   if(!password){setAuthMessage('Enter your password.',true);return}
   if(setup&&(password.length<12||new TextEncoder().encode(password).length>72)){setAuthMessage('Choose at least 12 characters, using no more than 72 bytes. Shorten the password if it contains many symbols or emoji.',true);return}
-  if(setup&&password!==document.getElementById('authConfirmPassword').value){setAuthMessage('The passwords do not match.',true);return}
+  if(setup&&password!==confirmation){setAuthMessage('The passwords do not match.',true);return}
   const code=setup?(document.getElementById('authSetupCode').value||'').trim():'';
   if(setup&&!code){setAuthMessage('Enter the setup or reset code from your owner.',true);return}
   const client=sb,epoch=hubSessionEpoch,mode=authMode,request={},controller=new AbortController();employeeAuthAbort=controller;button.authRequest=request;button.disabled=true;
   const owns=()=>button.authRequest===request&&sb===client&&hubSessionEpoch===epoch&&authMode===mode;
-  hubSessionLocked=true;setAuthMessage(setup?'Saving your private password...':'Signing in...');
+  hubSessionLocked=true;setAuthMessage(setup?'Saving your sign-in details...':'Signing in...');
   try{
     const data=await employeeAccessRequest(setup?{action:'redeem',username,code,password}:{action:'sign-in',username,password},controller.signal);if(!owns())return;
-    if(setup){if(data?.ok!==true)throw new Error('Password change not confirmed');clearEmployeeAuthSecrets();setAuthMode('employee-login','Password saved. Sign in with your username and new password.');return}
+    if(setup){if(data?.ok!==true)throw new Error('Password change not confirmed');clearEmployeeAuthSecrets();document.getElementById('authUsername').value=username;setAuthMode('employee-login','Sign-in details saved. Use this username and your new password to sign in.');return}
     if(!data?.session?.access_token||!data?.session?.refresh_token)throw new Error('Sign-in not confirmed');
     // Once native session installation starts, mode switches wait for it to settle.
     // Earlier cancelled/obsolete fetches never install a session or load workspace data.
@@ -1091,7 +1094,7 @@ async function handleEmployeeAuthSubmit(){
     setEmployeeNativeInstallPending(false)
   }catch(error){
     const report=owns();if(employeeSessionInstalling)await discardEmployeeNativeSession(client,'Sign-in was not confirmed. Please sign in again.');
-    if(report){hubSessionLocked=true;showAuthGate(true);setAuthMessage(setup?'Password change was not confirmed. Try signing in with your new password. If it does not work, ask your owner to check the setup status before issuing another code.':'Sign-in could not be confirmed. Check your username and password, or ask your owner for help.',true);if(employeeSessionInstalling)document.getElementById('retrySignOutBtn').hidden=false}
+    if(report){hubSessionLocked=true;showAuthGate(true);setAuthMessage(setup?'Could not complete setup/reset. Check the code. For first setup, try another username with the same unexpired code; for a reset, use your existing username. If the result is uncertain, try signing in or ask your owner to check status.':'Sign-in could not be confirmed. Check your username and password, or ask your owner for help.',true);if(employeeSessionInstalling)document.getElementById('retrySignOutBtn').hidden=false}
   }finally{employeeSessionInstalling=false;if(employeeAuthAbort===controller)employeeAuthAbort=null;if(owns())button.disabled=false}
 }
 async function managedHubIdentity(user){

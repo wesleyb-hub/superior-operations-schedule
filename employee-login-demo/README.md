@@ -17,10 +17,11 @@ You can also open the generated `index.html` directly in a browser; no server or
 account is needed for this self-contained demo. Open `owner.html` for the owner
 example. Never type a real password into either demo.
 
-Open `http://127.0.0.1:8765/`. Choose **Employee username sign in**. Use a sample
-username such as `sample-employee` and any invented password. For setup, use an
-invented code and a matching invented password of at least 12 characters and at
-most 72 UTF-8 bytes. Do not type real credentials into a demo. The owner handoff
+Open `http://127.0.0.1:8765/`. Choose **Employee username sign in → Use setup /
+reset code**. The sample employee starts unactivated: choose an invented username
+such as `sample-employee`, an invented code, and your own invented password
+(at least 12 characters and at most 72 UTF-8 bytes). Then sign in using the chosen
+username. Later sample resets keep that username; they do not rename the account. Do not type real credentials into a demo. The owner handoff
 example is `http://127.0.0.1:8765/owner.html`.
 
 The demo strips live config and external scripts, uses an in-memory synthetic
@@ -57,8 +58,14 @@ HTML file or passing Node unit tests is not a browser acceptance result.
 - `employee-access.html` is a separate owner handoff page. It requires an existing
   native session and a successful server owner-list authorization; it does not
   infer owner authority from an admin screen or writer role.
-- It only lists already-configured employee aliases and issues codes. No account,
-  alias mapping, owner grant or employee permission is provisioned by this UI.
+- It lists already-authorized existing employee identities, including those
+  awaiting their first username. Owner actions target the complete immutable Auth
+  UID, never a label/name match. First activation lets the employee choose the
+  username and password; later resets keep that established username.
+- The UI creates no account, identity mapping, owner grant or employee permission.
+  Password fields clear on each employee submission. A setup code stays only in
+  the active form so a generic username conflict can be retried before expiry;
+  leaving the form clears it. There is no username-availability lookup.
 - Alias disable does not revoke native email sign-in or already-issued access
   tokens. Full offboarding needs a separately authorized backend/Auth procedure.
 - Deployment, owner/mapping provisioning and any actual credential change require

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createEmployeeAccessHandler, normalizeUsername, normalizeCode, acceptablePassword, canonicalIp, digestSecret, generateCode, FAILURE, PasswordRejected } from '../supabase/functions/employee-access/handler.mjs';
+import { createEmployeeAccessHandler, normalizeUsername, normalizeEmployeeId, normalizeCode, acceptablePassword, canonicalIp, digestSecret, generateCode, FAILURE, PasswordRejected } from '../supabase/functions/employee-access/handler.mjs';
 
 const UID = '00000000-0000-4000-8000-000000000201';
 const OWNER = '00000000-0000-4000-8000-000000000202';
@@ -20,7 +20,7 @@ function fixture({ overrides = {}, cfg = {}, rpcOverride } = {}) {
         case 'employee_login_check_owner': return args.p_actor === OWNER;
         case 'employee_login_list': return [{ username: 'synthetic', user_id: UID, status: 'active', enabled: true }];
         case 'employee_login_resolve': return { user_id: UID, username: args.p_username };
-        case 'employee_login_issue': return { username: args.p_username, expires_at: '2099-01-01T00:00:00Z' };
+        case 'employee_login_issue': return { user_id: args.p_uid, username: null, setup_completed: false, expires_at: '2099-01-01T00:00:00Z' };
         case 'employee_login_claim': return { user_id: UID, confirm_email: false };
         case 'employee_login_finish': return args.p_success;
         case 'employee_login_password_rejected': return true;
@@ -51,6 +51,10 @@ test('normalizes ASCII aliases without accepting homographs, reserved names or e
   assert.equal(normalizeUsername('  Jade  '), 'jade');
   for (const value of ['JADE@EXAMPLE.INVALID', 'ja', '1jade', 'jаde', 'a\nb', 'admin', 'Owner', 'x'.repeat(33), null, {}]) assert.equal(normalizeUsername(value), null);
 });
+test('owner targets use a canonical existing UID, not an employee-chosen name', () => {
+  assert.equal(normalizeEmployeeId(UID.toUpperCase()), UID);
+  for (const value of ['synthetic', ' ' + UID, UID + 'x', null, {}]) assert.equal(normalizeEmployeeId(value), null);
+});
 test('codes have80-bit generation and unambiguous normalized alphabet', () => {
   assert.equal(normalizeCode('abcd efgh-jklm npqr'), 'ABCDEFGHJKLMNPQR');
   for (const value of ['', 'OOOO-OOOO-OOOO-OOOO', 'ABCD-EFGH-JKLM-NPQR-extra', null]) assert.equal(normalizeCode(value), null);
@@ -67,11 +71,11 @@ test('trusted IP requires a single canonical IP, not a client forwarding list', 
   assert.equal(canonicalIp('2001:0db8:0000::1'), '2001:db8::1');
   for (const value of ['127.0.0.01', '256.1.1.1', '203.0.113.8, 10.0.0.1', 'unknown', '::1%eth0', '[::1]:80', null]) assert.equal(canonicalIp(value), null);
 });
-test('HMAC binds secrets to purpose, alias and high-entropy code; only digest persists', async () => {
-  const one = await digestSecret(config.hmacSecret, 'code', 'synthetic\0ABCDEFGHJKLMNPQR');
+test('HMAC binds high-entropy invitation code independently of chosen username; only digest persists', async () => {
+  const one = await digestSecret(config.hmacSecret, 'code', 'ABCDEFGHJKLMNPQR');
   assert.match(one, /^[0-9a-f]{64}$/);
-  assert.notEqual(one, await digestSecret(config.hmacSecret, 'code', 'other\0ABCDEFGHJKLMNPQR'));
-  assert.notEqual(one, await digestSecret(config.hmacSecret, 'throttle', 'synthetic\0ABCDEFGHJKLMNPQR'));
+  assert.notEqual(one, await digestSecret(config.hmacSecret, 'code', 'ABCDEFGHJKLMNPQS'));
+  assert.notEqual(one, await digestSecret(config.hmacSecret, 'throttle', 'ABCDEFGHJKLMNPQR'));
 });
 test('disabled/misconfigured server fails closed without any services', async () => {
   for (const cfg of [{ enabled: false }, { ipTrustVerified: false }, { hmacSecret: '' }, { hmacSecret: undefined }, { ipHeader: '' }]) {
@@ -156,16 +160,24 @@ test('verified explicit owner sees mapped identities but no passwords, email or 
   assert.ok(f.calls.findIndex(c => c.name === 'getUser') < f.calls.findIndex(c => c.name === 'employee_login_check_owner'));
 });
 test('owner issue returns a code once; SQL receives only HMAC and never chooses or receives a password', async () => {
-  const f = fixture(); const response = await f.request({ action: 'owner-issue', username: 'synthetic' }, { headers: ownerHeaders });
+  const f = fixture(); const response = await f.request({ action: 'owner-issue', employeeId: UID }, { headers: ownerHeaders });
   const result = await response.json(); assert.equal(response.status, 200); assert.ok(normalizeCode(result.code));
   const issue = f.calls.find(c => c.name === 'employee_login_issue'); assert.equal(issue.args.p_confirm_email, false);
   assert.match(issue.args.p_code_hash, /^[a-f0-9]{64}$/); assert.ok(!JSON.stringify(issue).includes(result.code));
   assert.equal(f.calls.some(c => c.name === 'updatePassword'), false);
+  assert.equal(issue.args.p_uid, UID); assert.equal(issue.args.p_username, undefined);
+  assert.equal(result.employeeId, UID); assert.equal(result.username, null); assert.equal(result.setupCompleted, false);
+});
+test('owner cannot assign the activation username and an incorrect UID response never exposes a code', async () => {
+  const f = fixture(); await generic(await f.request({ action: 'owner-issue', employeeId: UID, username: 'assigned' }, { headers: ownerHeaders }), 400);
+  assert.equal(f.calls.some(c => c.name === 'employee_login_issue'), false);
+  const wrong = fixture({ rpcOverride: name => name === 'employee_login_issue' ? { user_id: OTHER, expires_at: '2099-01-01T00:00:00Z' } : undefined });
+  await generic(await wrong.request({ action: 'owner-issue', employeeId: UID }, { headers: ownerHeaders }), 400);
 });
 test('individual email confirmation is stored only when explicitly chosen by owner', async () => {
-  const f = fixture(); await f.request({ action: 'owner-issue', username: 'synthetic', confirmEmail: true }, { headers: ownerHeaders });
+  const f = fixture(); await f.request({ action: 'owner-issue', employeeId: UID, confirmEmail: true }, { headers: ownerHeaders });
   assert.equal(f.calls.find(c => c.name === 'employee_login_issue').args.p_confirm_email, true);
-  const bad = fixture(); await generic(await bad.request({ action: 'owner-issue', username: 'synthetic', confirmEmail: 'true' }, { headers: ownerHeaders }), 400);
+  const bad = fixture(); await generic(await bad.request({ action: 'owner-issue', employeeId: UID, confirmEmail: 'true' }, { headers: ownerHeaders }), 400);
 });
 test('redemption atomically claims before native Auth call then finishes same UID/claim without login', async () => {
   const f = fixture(); const response = await f.request({ action: 'redeem', username: 'synthetic', code: CODE, password: PASSWORD });
@@ -175,6 +187,28 @@ test('redemption atomically claims before native Auth call then finishes same UI
   assert.deepEqual(f.calls.find(c => c.name === 'updatePassword').args, { uid: UID, patch: { password: PASSWORD } });
   assert.ok(f.calls.findIndex(c => c.name === 'employee_login_claim') < f.calls.findIndex(c => c.name === 'updatePassword'));
   assert.equal(f.calls.some(c => ['signIn', 'getUserById'].includes(c.name)), false);
+});
+test('activation code and durable budget identify one invitation regardless of chosen username', async () => {
+  const f = fixture();
+  for (const username of ['first-choice', 'second-choice']) await f.request({ action: 'redeem', username, code: CODE, password: PASSWORD });
+  const claims = f.calls.filter(c => c.name === 'employee_login_claim');
+  assert.deepEqual(claims.map(c => c.args.p_username), ['first-choice', 'second-choice']);
+  assert.equal(claims[0].args.p_code_hash, claims[1].args.p_code_hash);
+  assert.equal(claims[0].args.p_code_hash, await digestSecret(config.hmacSecret, 'code', normalizeCode(CODE)));
+  const budgets = f.calls.filter(c => c.name === 'employee_login_throttle' && c.args.p_limit === 5);
+  assert.deepEqual(budgets[0].args.p_keys, budgets[1].args.p_keys);
+  assert.ok(!JSON.stringify(budgets).includes(normalizeCode(CODE)));
+});
+test('collision/invalid invitation stays generic and cannot reach Auth; employee cannot supply target UID', async () => {
+  let claims = 0;
+  const f = fixture({ rpcOverride: name => name === 'employee_login_claim' && ++claims === 1 ? null : undefined });
+  await generic(await f.request({ action: 'redeem', username: 'already-taken', code: CODE, password: PASSWORD }), 401);
+  assert.equal(f.calls.some(c => c.name === 'updatePassword'), false);
+  assert.equal((await f.request({ action: 'redeem', username: 'my-chosen-name', code: CODE, password: PASSWORD })).status, 200);
+  assert.equal(f.calls.filter(c => c.name === 'updatePassword').length, 1);
+  const tampered = fixture();
+  await generic(await tampered.request({ action: 'redeem', employeeId: OTHER, username: 'chosen', code: CODE, password: PASSWORD }), 400);
+  assert.equal(tampered.calls.some(c => c.name === 'employee_login_claim'), false);
 });
 test('only claim-authorized email confirmation reaches native Auth, never client supplied metadata', async () => {
   const f = fixture({ rpcOverride: name => name === 'employee_login_claim' ? { user_id: UID, confirm_email: true } : undefined });
@@ -214,7 +248,7 @@ test('audit failure never returns a newly minted session and tries to revoke it'
   await generic(await f.request(), 503); assert.equal(f.calls.filter(c => c.name === 'revokeSession').length, 1);
 });
 test('disable endpoint is owner-only alias state change, not permission or Auth mutation', async () => {
-  const f = fixture(); assert.deepEqual(await (await f.request({ action: 'owner-disable', username: 'synthetic' }, { headers: ownerHeaders })).json(), { ok: true });
+  const f = fixture(); assert.deepEqual(await (await f.request({ action: 'owner-disable', employeeId: UID }, { headers: ownerHeaders })).json(), { ok: true });
   assert.equal(f.calls.some(c => ['updatePassword', 'signIn', 'getUserById'].includes(c.name)), false);
 });
 test('new auth runtime is pinned, isolated, no credential logs and no unrelated provider imports', async () => {

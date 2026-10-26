@@ -2,17 +2,17 @@
 (()=>{
   'use strict';
   const fixture=window.EMPLOYEE_LOGIN_DEMO_FIXTURES;
-  const user={id:'synthetic-employee-ui-only',email:'sample-employee@managed.example.invalid'};
+  const user={id:'00000000-0000-4000-8000-000000000101',email:'sample-employee@managed.example.invalid'};
   const owner={id:'synthetic-owner-ui-only',email:'sample-owner@superiorwallsnd.com'};
   let session=window.EMPLOYEE_OWNER_DEMO?{access_token:'synthetic-owner-token',refresh_token:'synthetic-owner-refresh',user:owner}:null,authHandler=()=>{};
   const counts={signIn:0,redeem:0,install:0,ownerIssue:0,ownerList:0,signOut:0,rpc:[]};
-  const control={delay:0,failNext:false,managedEnabled:true,managedStatus:'active',ownerDenied:false,resetDone:false};
+  const control={delay:0,failNext:false,managedEnabled:true,managedStatus:'active',ownerDenied:false,resetDone:false,username:null};
   window.employeeLoginDemoControl=control;
-  window.employeeLoginDemoStatus=()=>({counts:structuredClone(counts),hasSession:!!session,resetDone:control.resetDone});
+  window.employeeLoginDemoStatus=()=>({counts:structuredClone(counts),hasSession:!!session,resetDone:control.resetDone,username:control.username});
   const clone=value=>structuredClone(value),wait=()=>new Promise(resolve=>setTimeout(resolve,control.delay));
   const scopes=[{division_key:'walls',inventory_area:'production',can_view:true,can_adjust:true,can_manage:false}];
   const reads={
-    get_employee_login_access(){return {managed:true,enabled:control.managedEnabled,status:control.managedStatus,username:'sample-employee'}},
+    get_employee_login_access(){return {managed:true,enabled:control.managedEnabled,status:control.managedStatus,username:control.username||'sample-employee'}},
     get_app_access(){return {authorized:true,profile_key:'walls_inventory_counter',can_write:false,is_admin:false,allowed_views:['overview','walls','inventory','weekly-planner'],allowed_wall_subviews:['production']}},
     get_schedule_snapshot(){return {id:1,revision:1,updated_at:'2026-10-26T12:00:00Z',payload:{schemaVersion:28,data:{walls:fixture.walls,jobs:[],billing:[],audit:[],historyArchive:[],deliveryHistory:[],qcHistory:[],loads:[]}}}},
     get_walls_production_snapshot(){return {full_read_access:false,permissions:{view:true,assign:false,plan:false,manage:false,issue:false,setup:false,pour:false,strip:false},tables:fixture.tables,jobs:fixture.walls.map(w=>({...w,assignedLf:w.totalLf,releaseStatus:'Released for Production',documentLinks:[]})),assignments:fixture.assignments,issues:[],events:[]}},
@@ -43,10 +43,10 @@
     if(url!=='https://employee-demo.invalid/functions/v1/employee-access')return deny();
     const body=JSON.parse(options.body);await wait();
     if(control.failNext){control.failNext=false;return {ok:false,status:400,json:async()=>({error:'Request not confirmed'})}}
-    if(body.action==='sign-in'){counts.signIn++;return {ok:true,json:async()=>({session:{access_token:'synthetic-employee-token',refresh_token:'synthetic-employee-refresh'}})}}
-    if(body.action==='redeem'){counts.redeem++;control.resetDone=true;return {ok:true,json:async()=>({ok:true})}}
-    if(body.action==='owner-list'){counts.ownerList++;return {ok:!control.ownerDenied,json:async()=>({employees:[{username:'sample-employee',user_id:user.id,status:'active',enabled:true}]})}}
-    if(body.action==='owner-issue'){counts.ownerIssue++;return {ok:!control.ownerDenied,json:async()=>({username:'sample-employee',code:'DEMO-ONLY-CODE-HERE',expires_at:new Date(Date.now()+600000).toISOString()})}}
+    if(body.action==='sign-in'){counts.signIn++;if(!control.username||body.username!==control.username)return {ok:false,json:async()=>({error:'Request not confirmed'})};return {ok:true,json:async()=>({session:{access_token:'synthetic-employee-token',refresh_token:'synthetic-employee-refresh'}})}}
+    if(body.action==='redeem'){counts.redeem++;if(control.username&&body.username!==control.username)return {ok:false,json:async()=>({error:'Request not confirmed'})};control.username=body.username;control.resetDone=true;return {ok:true,json:async()=>({ok:true})}}
+    if(body.action==='owner-list'){counts.ownerList++;return {ok:!control.ownerDenied,json:async()=>({employees:[{username:control.username,user_id:user.id,display_name:'Sample employee',status:control.username?'active':'pending',enabled:true,setup_completed:!!control.username}]})}}
+    if(body.action==='owner-issue'){counts.ownerIssue++;return {ok:!control.ownerDenied&&body.employeeId===user.id,json:async()=>({employeeId:user.id,username:control.username,setupCompleted:!!control.username,code:'DEMO-ONLY-CODE-HERE',expires_at:new Date(Date.now()+600000).toISOString()})}}
     return deny();
   };
   // No password/code is retained by the fake provider. A synthetic form submission is not an Auth test.

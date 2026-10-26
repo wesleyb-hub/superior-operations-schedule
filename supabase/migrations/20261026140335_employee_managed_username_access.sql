@@ -14,12 +14,14 @@ create table employee_login.owners (
   created_at timestamptz not null default now()
 );
 create table employee_login.aliases (
-  username text primary key check (username collate "C" ~ '^[a-z][a-z0-9._-]{2,31}$'
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  username text unique check (username collate "C" ~ '^[a-z][a-z0-9._-]{2,31}$'
     and username not in ('admin','administrator','owner','root','system','support')),
-  user_id uuid not null unique references auth.users(id) on delete cascade,
+  display_name text check (char_length(display_name)<=80),
+  setup_completed boolean not null default false,
   enabled boolean not null default false,
   state text not null default 'setup_required' check(state in ('setup_required','active','pending','processing','failed')),
-  code_hash text check(code_hash collate "C" ~ '^[a-f0-9]{64}$'),
+  code_hash text unique check(code_hash collate "C" ~ '^[a-f0-9]{64}$'),
   code_id uuid,
   expires_at timestamptz,
   claim_id uuid,
@@ -28,7 +30,9 @@ create table employee_login.aliases (
   updated_at timestamptz not null default now(),
   check ((state='pending' and code_hash is not null and code_id is not null and expires_at is not null)
     or (state<>'pending' and code_hash is null and code_id is null and expires_at is null)),
-  check (state<>'processing' or claim_id is not null)
+  check (not setup_completed or username is not null),
+  check (state<>'active' or (setup_completed and username is not null)),
+  check (state<>'processing' or (username is not null and claim_id is not null))
 );
 create table employee_login.throttles (
   bucket_key text primary key check(bucket_key collate "C" ~ '^[a-f0-9]{64}$'),
@@ -98,7 +102,8 @@ begin
   perform employee_login.require_service();
   if not employee_login.owner_allowed(p_actor) then raise exception using errcode='42501',message='Access request unavailable'; end if;
   return coalesce((select jsonb_agg(jsonb_build_object('username',a.username,'user_id',a.user_id,
-    'enabled',a.enabled and employee_login.target_allowed(a.user_id),'status',a.state) order by a.username)
+    'display_name',a.display_name,'setup_completed',a.setup_completed,
+    'enabled',a.enabled and employee_login.target_allowed(a.user_id),'status',a.state) order by a.display_name nulls last,a.username nulls last,a.user_id)
     from employee_login.aliases a),'[]'::jsonb);
 end;
 $$;
@@ -108,7 +113,7 @@ begin
   perform employee_login.require_service();
   return (select jsonb_build_object('user_id',a.user_id,'username',a.username)
     from employee_login.aliases a where a.username=employee_login.normalized(p_username)
-      and a.enabled and a.state='active' and employee_login.target_allowed(a.user_id));
+      and a.enabled and a.setup_completed and a.state='active' and employee_login.target_allowed(a.user_id));
 end;
 $$;
 
@@ -143,7 +148,7 @@ begin
 end;
 $$;
 
-create function public.employee_login_issue(p_actor uuid,p_username text,p_code_hash text,p_code_id uuid,p_confirm_email boolean default false)
+create function public.employee_login_issue(p_actor uuid,p_uid uuid,p_code_hash text,p_code_id uuid,p_confirm_email boolean default false)
 returns jsonb language plpgsql volatile security definer set search_path=pg_catalog as $$
 declare v_alias employee_login.aliases%rowtype;v_expires timestamptz;
 begin
@@ -152,16 +157,22 @@ begin
   if p_code_hash is null or p_code_hash collate "C" !~ '^[a-f0-9]{64}$' or p_code_id is null or p_confirm_email is null then
     raise exception using errcode='22023',message='Access request unavailable';
   end if;
-  select * into v_alias from employee_login.aliases where username=employee_login.normalized(p_username) for update;
-  if not found or not v_alias.enabled or v_alias.state in ('processing','failed') or not employee_login.target_allowed(v_alias.user_id) then
+  select * into v_alias from employee_login.aliases where user_id=p_uid for update;
+  if not found or not v_alias.enabled or v_alias.state in ('processing','failed')
+    or (v_alias.setup_completed and p_confirm_email) or not employee_login.target_allowed(v_alias.user_id) then
     insert into employee_login.audit(event,outcome,actor,target) values('issue','denied',p_actor,v_alias.user_id);
     return null;
   end if;
   v_expires:=clock_timestamp()+interval '10 minutes';
-  update employee_login.aliases set state='pending',code_hash=p_code_hash,code_id=p_code_id,expires_at=v_expires,
-    claim_id=null,confirm_email=p_confirm_email,updated_at=clock_timestamp() where username=v_alias.username;
+  begin
+    update employee_login.aliases set state='pending',code_hash=p_code_hash,code_id=p_code_id,expires_at=v_expires,
+      claim_id=null,confirm_email=p_confirm_email,updated_at=clock_timestamp() where user_id=v_alias.user_id;
+  exception when unique_violation then
+    insert into employee_login.audit(event,outcome,actor,target) values('issue','denied',p_actor,v_alias.user_id);
+    return null;
+  end;
   insert into employee_login.audit(event,outcome,actor,target,confirm_email) values('issue','succeeded',p_actor,v_alias.user_id,p_confirm_email);
-  return jsonb_build_object('username',v_alias.username,'expires_at',v_expires);
+  return jsonb_build_object('user_id',v_alias.user_id,'username',v_alias.username,'setup_completed',v_alias.setup_completed,'expires_at',v_expires);
 end;
 $$;
 
@@ -169,18 +180,28 @@ $$;
 -- never make this code usable again. Processing/failed require inspected recovery.
 create function public.employee_login_claim(p_username text,p_code_hash text,p_claim_id uuid)
 returns jsonb language plpgsql volatile security definer set search_path=pg_catalog as $$
-declare v_alias employee_login.aliases%rowtype;
+declare v_alias employee_login.aliases%rowtype;v_username text:=employee_login.normalized(p_username);
 begin
   perform employee_login.require_service();
-  if p_claim_id is null then return null; end if;
-  select * into v_alias from employee_login.aliases where username=employee_login.normalized(p_username) for update;
+  if p_claim_id is null or v_username is null or p_code_hash is null or p_code_hash collate "C" !~ '^[a-f0-9]{64}$' then return null; end if;
+  -- The globally unique code identifies the existing employee. A supplied name
+  -- cannot select another identity or attach an invitation to another UID.
+  select * into v_alias from employee_login.aliases where code_hash=p_code_hash for update;
   if not found or not v_alias.enabled or v_alias.state<>'pending' or v_alias.code_hash is distinct from p_code_hash
-    or v_alias.expires_at<=clock_timestamp() or not employee_login.target_allowed(v_alias.user_id) then
+    or v_alias.expires_at<=clock_timestamp() or not employee_login.target_allowed(v_alias.user_id)
+    or (v_alias.setup_completed and v_alias.username is distinct from v_username) then
     insert into employee_login.audit(event,outcome,target) values('redeem','denied',v_alias.user_id);
     return null;
   end if;
-  update employee_login.aliases set state='processing',code_hash=null,code_id=null,expires_at=null,
-    claim_id=p_claim_id,updated_at=clock_timestamp() where username=v_alias.username;
+  -- Reserve the requested username before Auth changes. A collision rolls this
+  -- subtransaction back, so the code stays usable with a different available name.
+  begin
+    update employee_login.aliases set username=v_username,state='processing',code_hash=null,code_id=null,expires_at=null,
+      claim_id=p_claim_id,updated_at=clock_timestamp() where user_id=v_alias.user_id;
+  exception when unique_violation then
+    insert into employee_login.audit(event,outcome,target) values('redeem','denied',v_alias.user_id);
+    return null;
+  end;
   return jsonb_build_object('user_id',v_alias.user_id,'confirm_email',v_alias.confirm_email);
 end;
 $$;
@@ -193,18 +214,18 @@ begin
   if not found or v_alias.state<>'processing' or p_claim_id is null or v_alias.claim_id is distinct from p_claim_id then return false; end if;
   v_success:=coalesce(p_success,false) and v_alias.enabled and employee_login.target_allowed(v_alias.user_id);
   update employee_login.aliases set state=case when v_success then 'active' else 'failed' end,
-    confirm_email=false,updated_at=clock_timestamp() where user_id=p_uid;
+    setup_completed=setup_completed or v_success,confirm_email=false,updated_at=clock_timestamp() where user_id=p_uid;
   insert into employee_login.audit(event,outcome,target) values('redeem',case when v_success then 'succeeded' else 'failed' end,p_uid);
   return v_success;
 end;
 $$;
-create function public.employee_login_disable(p_actor uuid,p_username text)
+create function public.employee_login_disable(p_actor uuid,p_uid uuid)
 returns boolean language plpgsql volatile security definer set search_path=pg_catalog as $$
 declare v_alias employee_login.aliases%rowtype;
 begin
   perform employee_login.require_service();
   if not employee_login.owner_allowed(p_actor) then raise exception using errcode='42501',message='Access request unavailable'; end if;
-  select * into v_alias from employee_login.aliases where username=employee_login.normalized(p_username) for update;
+  select * into v_alias from employee_login.aliases where user_id=p_uid for update;
   if not found or v_alias.state='processing' then
     insert into employee_login.audit(event,outcome,actor,target) values('disable','denied',p_actor,v_alias.user_id);
     return false;
@@ -212,7 +233,7 @@ begin
   update employee_login.aliases set enabled=false,state=case when v_alias.state='failed' then 'failed' else 'setup_required' end,
     code_hash=null,code_id=null,expires_at=null,
     claim_id=case when v_alias.state='failed' then v_alias.claim_id else null end,
-    confirm_email=false,updated_at=clock_timestamp() where username=v_alias.username;
+    confirm_email=false,updated_at=clock_timestamp() where user_id=v_alias.user_id;
   insert into employee_login.audit(event,outcome,actor,target) values('disable','succeeded',p_actor,v_alias.user_id);
   return true;
 end;
@@ -255,23 +276,23 @@ begin
   if v_uid is null then raise exception using errcode='42501',message='Access request unavailable'; end if;
   select * into v_alias from employee_login.aliases where user_id=v_uid;
   if not found then return jsonb_build_object('managed',false,'enabled',false,'status','unmanaged','username',null); end if;
-  return jsonb_build_object('managed',true,'enabled',v_alias.enabled and v_alias.state='active' and employee_login.target_allowed(v_uid),
+  return jsonb_build_object('managed',true,'enabled',v_alias.enabled and v_alias.setup_completed and v_alias.state='active' and employee_login.target_allowed(v_uid),
     'status',case when not v_alias.enabled then 'disabled' else v_alias.state end,'username',v_alias.username);
 end;
 $$;
 
 revoke all on all functions in schema employee_login from public,anon,authenticated,service_role;
 revoke all on function public.employee_login_check_owner(uuid),public.employee_login_list(uuid),public.employee_login_resolve(text),
-  public.employee_login_throttle(text[],integer,integer),public.employee_login_issue(uuid,text,text,uuid,boolean),
-  public.employee_login_claim(text,text,uuid),public.employee_login_finish(uuid,uuid,boolean),public.employee_login_disable(uuid,text),
+  public.employee_login_throttle(text[],integer,integer),public.employee_login_issue(uuid,uuid,text,uuid,boolean),
+  public.employee_login_claim(text,text,uuid),public.employee_login_finish(uuid,uuid,boolean),public.employee_login_disable(uuid,uuid),
   public.employee_login_password_rejected(uuid,uuid),public.employee_login_audit(text,text,uuid,uuid),public.get_employee_login_access() from public,anon,authenticated,service_role;
 grant execute on function public.employee_login_check_owner(uuid),public.employee_login_list(uuid),public.employee_login_resolve(text),
-  public.employee_login_throttle(text[],integer,integer),public.employee_login_issue(uuid,text,text,uuid,boolean),
-  public.employee_login_claim(text,text,uuid),public.employee_login_finish(uuid,uuid,boolean),public.employee_login_disable(uuid,text),
+  public.employee_login_throttle(text[],integer,integer),public.employee_login_issue(uuid,uuid,text,uuid,boolean),
+  public.employee_login_claim(text,text,uuid),public.employee_login_finish(uuid,uuid,boolean),public.employee_login_disable(uuid,uuid),
   public.employee_login_password_rejected(uuid,uuid),public.employee_login_audit(text,text,uuid,uuid) to service_role;
 grant execute on function public.get_employee_login_access() to authenticated;
 
 comment on schema employee_login is 'Private managed employee aliases and reset state; never expose via Data API. No passwords or tokens.';
 comment on table employee_login.owners is 'Explicit approved credential operators only; can_write alone never grants membership.';
-comment on function public.employee_login_disable(uuid,text) is 'Alias sign-in only. This does not revoke Auth tokens or business grants and is not employee offboarding.';
+comment on function public.employee_login_disable(uuid,uuid) is 'Alias sign-in only. This does not revoke Auth tokens or business grants and is not employee offboarding.';
 commit;

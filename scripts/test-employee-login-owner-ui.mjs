@@ -14,10 +14,12 @@ function fixture({enabled=true}={}){
  return {c,node,nodes,calls,pending,timers,windowHandlers,documentHandlers,auth:()=>authHandler,setSession:(s,u=s?.user)=>{session=s;verified=u},submit:()=>node('ownerIssueForm').handlers.submit({preventDefault(){}})};
 }
 const okay=data=>({ok:true,json:async()=>data});
-async function ready(){const f=fixture();await tick();f.pending[0].resolve(okay({employees:[{username:'sample-employee',user_id:'synthetic-employee',status:'active',enabled:true}]}));await tick();return f}
-const issued=()=>({username:'sample-employee',code:'DEMO-ONLY-CODE-HERE',expires_at:new Date(Date.now()+600000).toISOString()});
+const employeeId='00000000-0000-4000-8000-000000000101';
+const employeeRow=(overrides={})=>({username:'sample-employee',user_id:employeeId,display_name:'Sample employee',status:'active',enabled:true,setup_completed:true,...overrides});
+async function ready(overrides={}){const f=fixture();await tick();f.pending[0].resolve(okay({employees:[employeeRow(overrides)]}));await tick();return f}
+const issued=(overrides={})=>({employeeId,username:'sample-employee',setupCompleted:true,code:'DEMO-ONLY-CODE-HERE',expires_at:new Date(Date.now()+600000).toISOString(),...overrides});
 test('owner helper feature disabled does not initialize Auth or call network',async()=>{const f=fixture({enabled:false});await tick();assert.equal(f.calls.length,0);assert.equal(f.node('ownerIssueForm').hidden,true);assert.match(f.node('ownerMessage').textContent,/not enabled/)});
-test('owner list requires verified bearer user and no implicit writer capability',async()=>{const f=await ready();assert.equal(f.calls[1][2].action,'owner-list');assert.equal(f.calls[1][3].headers.Authorization,'Bearer synthetic-owner-token');assert.equal(f.node('ownerIssueForm').hidden,false);assert.equal(f.node('ownerEmployee').value,'sample-employee');assert.equal(f.node('ownerCodePanel').hidden,true);assert.doesNotMatch(source,/can_write|is_operations_admin|app_user_roles/)});
+test('owner list requires verified bearer user and no implicit writer capability',async()=>{const f=await ready();assert.equal(f.calls[1][2].action,'owner-list');assert.equal(f.calls[1][3].headers.Authorization,'Bearer synthetic-owner-token');assert.equal(f.node('ownerIssueForm').hidden,false);assert.equal(f.node('ownerEmployee').value,employeeId);assert.equal(f.node('ownerCodePanel').hidden,true);assert.doesNotMatch(source,/can_write|is_operations_admin|app_user_roles/)});
 test('unverified owner session cannot enumerate employees',async()=>{const f=fixture();f.setSession({access_token:'synthetic-owner-token',user:{id:'one'}},{id:'another'});await tick();assert.equal(f.pending.length,0);assert.equal(f.node('ownerIssueForm').hidden,true);assert.match(f.node('ownerMessage').textContent,/could not be confirmed/)});
 test('owner denial keeps issue controls and employee mapping hidden',async()=>{const f=fixture();await tick();f.pending[0].resolve({ok:false});await tick();assert.equal(f.node('ownerIssueForm').hidden,true);assert.equal(f.node('ownerReload').hidden,true);assert.equal(f.node('ownerCodePanel').hidden,true)});
 test('issuing code is explicit, duplicate blocked, confirmation opt-in, transient response only',async()=>{const f=await ready();assert.equal(f.calls.filter(x=>x[2]?.action==='owner-issue').length,0);const first=f.submit();await f.submit();await tick();assert.equal(f.pending.length,2);assert.equal(f.calls.at(-1)[2].action,'owner-issue');assert.equal(f.calls.at(-1)[2].confirmEmail,false);f.pending[1].resolve(okay(issued()));await first;assert.equal(f.node('ownerIssuedCode').textContent,'DEMO-ONLY-CODE-HERE');assert.equal(f.node('ownerCodePanel').hidden,false);assert.ok(f.timers.at(-1).ms<=600000);f.node('ownerHideCode').onclick();assert.equal(f.node('ownerIssuedCode').textContent,'');assert.equal(f.node('ownerCodePanel').hidden,true)});
@@ -32,7 +34,7 @@ test('initial owner-list response cannot reveal the former owner directory after
  assert.equal(f.node('ownerIssueForm').hidden,true);assert.equal(f.node('ownerReload').hidden,true);assert.equal(f.node('ownerEmployee').value,'');assert.equal(f.node('ownerEmployee').options.length,0);assert.equal(f.node('ownerCodePanel').hidden,true);assert.match(f.node('ownerMessage').textContent,/ended or changed/);
 });
 test('owner lock removes previously rendered directory names as well as hiding controls',async()=>{
- const f=await ready();assert.equal(f.node('ownerEmployee').value,'sample-employee');f.auth()('SIGNED_OUT',null);assert.equal(f.node('ownerEmployee').value,'');assert.equal(f.node('ownerEmployee').options.length,0);assert.equal(f.node('ownerEmployeeStatus').textContent,'');assert.equal(f.node('ownerIssueForm').hidden,true);
+ const f=await ready();assert.equal(f.node('ownerEmployee').value,employeeId);f.auth()('SIGNED_OUT',null);assert.equal(f.node('ownerEmployee').value,'');assert.equal(f.node('ownerEmployee').options.length,0);assert.equal(f.node('ownerEmployeeStatus').textContent,'');assert.equal(f.node('ownerIssueForm').hidden,true);
 });
 test('refresh owner-list cannot restore the prior directory after the native user changes',async()=>{
  const f=await ready(),refresh=f.node('ownerReload').onclick();await tick();assert.equal(f.pending.length,2);f.setSession({access_token:'synthetic-new-token',user:{id:'synthetic-new-user'}});f.auth()('SIGNED_IN',{user:{id:'synthetic-new-user'}});
@@ -41,4 +43,25 @@ test('refresh owner-list cannot restore the prior directory after the native use
 });
 test('identity change during initial owner verification cannot start directory enumeration',async()=>{
  const f=fixture();f.setSession({access_token:'synthetic-new-token',user:{id:'synthetic-new-user'}});f.auth()('SIGNED_IN',{user:{id:'synthetic-new-user'}});await tick();assert.equal(f.pending.length,0);assert.equal(f.node('ownerIssueForm').hidden,true);assert.match(f.node('ownerMessage').textContent,/could not be confirmed/);
+});
+
+test('first activation uses existing immutable employee UID while employee chooses both sign-in fields',async()=>{
+ const f=await ready({username:null,display_name:null,setup_completed:false,status:'pending'});
+ assert.equal(f.node('ownerEmployee').value,employeeId);assert.match(f.node('ownerEmployee').options[0].textContent,/Employee \(00000000\) — Needs activation/);assert.match(f.node('ownerEmployeeStatus').textContent,/choose their username and password/);
+ const work=f.submit();await tick();const body=f.calls.at(-1)[2];assert.equal(body.employeeId,employeeId);assert.equal(Object.hasOwn(body,'username'),false);assert.equal(Object.hasOwn(body,'display_name'),false);
+ f.pending[1].resolve(okay(issued({username:null,setupCompleted:false})));await work;
+ assert.match(f.node('ownerIssuedUsername').textContent,/employee chooses username and password/);assert.match(f.node('ownerPrivateChoice').textContent,/choose both.*username stays the same/);assert.equal(f.node('ownerCodePanel').hidden,false);
+});
+test('owner code response for another UID is never displayed even if username or label matches',async()=>{
+ const f=await ready(),work=f.submit();await tick();f.pending[1].resolve(okay(issued({employeeId:'00000000-0000-4000-8000-000000000102'})));await work;assert.equal(f.node('ownerCodePanel').hidden,true);assert.equal(f.node('ownerIssuedCode').textContent,'');assert.match(f.node('ownerMessage').textContent,/not confirmed/);
+});
+test('same display names do not select or authorize an employee; the complete UID is sent',async()=>{
+ const f=fixture(),otherId='00000000-0000-4000-8000-000000000102';await tick();f.pending[0].resolve(okay({employees:[employeeRow({display_name:'Same name',username:null,setup_completed:false}),employeeRow({user_id:otherId,display_name:'Same name',username:null,setup_completed:false})]}));await tick();
+ assert.equal(f.node('ownerEmployee').options.length,2);assert.notEqual(f.node('ownerEmployee').options[0].value,f.node('ownerEmployee').options[1].value);f.node('ownerEmployee').value=otherId;const work=f.submit();await tick();assert.equal(f.calls.at(-1)[2].employeeId,otherId);f.pending[1].resolve(okay(issued({employeeId:otherId,username:null,setupCompleted:false})));await work;assert.equal(f.node('ownerCodePanel').hidden,false);
+});
+test('unassigned or malformed list items cannot become code issuance targets',async()=>{
+ const f=fixture();await tick();f.pending[0].resolve(okay({employees:[{username:null,display_name:'Name only',enabled:true,status:'pending',setup_completed:false}]}));await tick();assert.equal(f.node('ownerIssueForm').hidden,true);await f.submit();assert.equal(f.pending.length,1);
+});
+test('reset handoff preserves established username rather than offering a rename',async()=>{
+ const f=await ready(),work=f.submit();await tick();f.pending[1].resolve(okay(issued()));await work;assert.equal(f.node('ownerIssuedUsername').textContent,'Existing username: sample-employee');assert.match(f.node('ownerPrivateChoice').textContent,/existing username.*does not rename/);
 });

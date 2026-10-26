@@ -11,8 +11,15 @@ for(const table of ['owners','aliases','throttles','audit'])assert.ok(sql.includ
 assert.match(sql,/revoke all on all tables in schema employee_login from public,anon,authenticated,service_role;/);
 assert.match(sql,/revoke all on all functions in schema employee_login from public,anon,authenticated,service_role;/);
 assert.match(sql,/current_setting\('role',true\) is distinct from 'service_role'/);
-assert.match(sql,/user_id uuid not null unique references auth\.users\(id\)/);
-assert.match(sql,/code_hash text check\(code_hash collate "C" ~ '\^\[a-f0-9\]\{64\}\$'\)/);
+assert.match(sql,/user_id uuid primary key references auth\.users\(id\)/);
+assert.match(sql,/username text unique check/);
+assert.match(sql,/setup_completed boolean not null default false/);
+assert.match(sql,/code_hash text unique check\(code_hash collate "C" ~ '\^\[a-f0-9\]\{64\}\$'\)/);
+assert.match(sql,/where code_hash=p_code_hash for update/);
+assert.match(sql,/exception when unique_violation then/);
+assert.match(sql,/v_alias\.setup_completed and v_alias\.username is distinct from v_username/);
+assert.match(sql,/setup_completed=setup_completed or v_success/);
+assert.doesNotMatch(sql,/set[\s\S]*?setup_completed\s*=\s*false\s*[,;]/i);
 assert.match(sql,/v_expires:=clock_timestamp\(\)\+interval '10 minutes'/);
 assert.match(sql,/v_alias\.state in \('processing','failed'\)/);
 assert.match(sql,/for update skip locked/);

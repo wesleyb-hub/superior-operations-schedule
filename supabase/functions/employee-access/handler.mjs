@@ -1,6 +1,6 @@
 // Dedicated employee credential boundary. Never import the operations agent or mail worker.
 // Passwords/codes live only in this request's memory; only Supabase Auth stores passwords.
-export const FAILURE = 'Unable to complete this request. Check your details or ask the owner for a new code.';
+export const FAILURE = 'Unable to complete this request. Check your details or ask the owner for help.';
 // Constructed only for a received native Auth422 weak_password response, never a transport error.
 export class PasswordRejected extends Error { constructor() { super('password_rejected'); } }
 const RESERVED = new Set(['admin', 'administrator', 'owner', 'root', 'system', 'support']);
@@ -9,6 +9,9 @@ export function normalizeUsername(value) {
   if (typeof value !== 'string' || value.length > 64) return null;
   const username = value.trim().toLowerCase();
   return /^[a-z][a-z0-9._-]{2,31}$/.test(username) && !RESERVED.has(username) ? username : null;
+}
+export function normalizeEmployeeId(value) {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value.toLowerCase() : null;
 }
 export function normalizeCode(value) {
   if (typeof value !== 'string' || value.length > 64) return null;
@@ -102,12 +105,14 @@ export function createEmployeeAccessHandler({ config, services, sleep = ms => ne
       const action = body.action;
       if (!['sign-in', 'redeem', 'owner-list', 'owner-issue', 'owner-disable'].includes(action)) return deny(400);
       const username = normalizeUsername(body.username);
+      const employeeId = normalizeEmployeeId(body.employeeId);
       const allowedKeys = {
         'sign-in': ['action', 'username', 'password'], redeem: ['action', 'username', 'code', 'password'],
-        'owner-list': ['action'], 'owner-issue': ['action', 'username', 'confirmEmail'], 'owner-disable': ['action', 'username'],
+        'owner-list': ['action'], 'owner-issue': ['action', 'employeeId', 'confirmEmail'], 'owner-disable': ['action', 'employeeId'],
       }[action];
       if (Object.keys(body).some(key => !allowedKeys.includes(key))) return deny(400);
-      if (action !== 'owner-list' && !username) return deny(400);
+      if (['sign-in', 'redeem'].includes(action) && !username) return deny(400);
+      if (['owner-issue', 'owner-disable'].includes(action) && !employeeId) return deny(400);
 
       if (action.startsWith('owner-')) {
         const token = request.headers.get('authorization')?.match(/^Bearer ([^\s]+)$/i)?.[1];
@@ -119,26 +124,28 @@ export function createEmployeeAccessHandler({ config, services, sleep = ms => ne
         if (action === 'owner-list') return reply({ employees: await svc.rpc('employee_login_list', { p_actor: actor.id }) });
         if (!await throttle([bucket('owner-issue', actor.id)], 10, 600)) return deny(429);
         if (action === 'owner-disable') {
-          const done = await svc.rpc('employee_login_disable', { p_actor: actor.id, p_username: username });
+          const done = await svc.rpc('employee_login_disable', { p_actor: actor.id, p_uid: employeeId });
           return done ? reply({ ok: true }) : deny(400);
         }
         if (body.confirmEmail !== undefined && typeof body.confirmEmail !== 'boolean') return deny(400);
         const code = generateCode();
-        const codeHash = await digestSecret(config.hmacSecret, 'code', `${username}\0${normalizeCode(code)}`);
+        // Code identifies the preapproved UID independently of a not-yet-chosen username.
+        const codeHash = await digestSecret(config.hmacSecret, 'code', normalizeCode(code));
         const issued = await svc.rpc('employee_login_issue', {
-          p_actor: actor.id, p_username: username, p_code_hash: codeHash, p_code_id: crypto.randomUUID(), p_confirm_email: body.confirmEmail === true,
+          p_actor: actor.id, p_uid: employeeId, p_code_hash: codeHash, p_code_id: crypto.randomUUID(), p_confirm_email: body.confirmEmail === true,
         });
-        if (!issued?.expires_at) return deny(400);
+        if (!issued?.expires_at || issued.user_id !== employeeId) return deny(400);
         // Code is returned ONCE; no retrieval endpoint and no outgoing email/message service.
-        return reply({ username, code, expires_at: issued.expires_at });
+        return reply({ employeeId, username: issued.username ?? null, setupCompleted: issued.setup_completed === true, code, expires_at: issued.expires_at });
       }
 
-      if (!await throttle([bucket(action, username)], action === 'redeem' ? 5 : 10, 600)) return deny(429);
       if (!acceptablePassword(body.password, action === 'redeem')) return deny(400);
       if (action === 'redeem') {
         const code = normalizeCode(body.code); if (!code) return deny(400);
+        // Changing a proposed username cannot reset the invitation's attempt budget.
+        if (!await throttle([bucket('redeem-code', code)], 5, 600)) return deny(429);
         const claimId = crypto.randomUUID();
-        const codeHash = await digestSecret(config.hmacSecret, 'code', `${username}\0${code}`);
+        const codeHash = await digestSecret(config.hmacSecret, 'code', code);
         const claim = await svc.rpc('employee_login_claim', { p_username: username, p_code_hash: codeHash, p_claim_id: claimId });
         if (!claim?.user_id) return deny();
         try {
@@ -164,6 +171,7 @@ export function createEmployeeAccessHandler({ config, services, sleep = ms => ne
         }
       }
 
+      if (!await throttle([bucket('sign-in', username)], 10, 600)) return deny(429);
       const alias = await svc.rpc('employee_login_resolve', { p_username: username });
       const loginDenied = async () => {
         await svc.rpc('employee_login_audit', { p_event: 'sign_in', p_outcome: 'denied', p_actor: null, p_target: alias?.user_id || null });
