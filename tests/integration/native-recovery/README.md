@@ -18,9 +18,10 @@ individual confirmation consequence, private password change, normal login,
 old-password rejection, replay and expiry. No SMTP or mailbox delivery is tested.
 The helper's real target configuration is deliberately not included here.
 
-The browser module loads the exact Hub with real native Auth and synthetic
-business-read responses. Two accounts/tabs test the password request's identity,
-interrupted lifecycle and cleanup. A racing newer tab may be locally signed out
+The browser module loads the exact Hub with real native Auth and the released
+business-read RPCs over the empty synthetic database. Two accounts/tabs test the
+password request's identity, interrupted lifecycle and cleanup. A racing newer
+tab may be locally signed out
 by conservative cleanup; its password must never change. It must also test a
 brand-new tab after cleanup, not only a tab sharing the old per-tab marker.
 

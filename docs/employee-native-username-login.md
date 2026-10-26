@@ -1,6 +1,6 @@
 # Assigned usernames with direct native Auth
 
-Status: unpublished, disabled-by-default frontend candidate. It starts from the
+Status: draft, disabled-by-default frontend candidate. It starts from the
 released main, not the separate credential-proxy draft. No deployment, mail
 configuration, account creation, invitation or access change is included.
 

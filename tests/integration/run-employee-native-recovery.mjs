@@ -80,17 +80,26 @@ try {
     const r = await localFetch(`${api}/auth/v1/admin/users/${uid}`, { headers: adminHeaders });
     requireThat(r.status === 200, 'Raw native Admin GET failed'); return r.json();
   };
+  // Native Auth 2.197 hides IsSSOUser (json:"-"). Its omission is not proof:
+  // require the server-owned email providers and one exact email identity too.
+  const helperIdentityShape = user => user?.id === employeeUid && user.email === employeeEmail && user.is_anonymous === false &&
+    (!Object.hasOwn(user, 'is_sso_user') || user.is_sso_user === false) &&
+    user.app_metadata?.provider === 'email' && Array.isArray(user.app_metadata?.providers) && user.app_metadata.providers.length === 1 && user.app_metadata.providers[0] === 'email' &&
+    Array.isArray(user.identities) && user.identities.length === 1 && user.identities[0].provider === 'email' && user.identities[0].user_id === employeeUid && user.identities[0].identity_data?.email === employeeEmail;
   const before = await getRawUser(employeeUid);
-  requireThat(before.id === employeeUid && before.email === employeeEmail && before.is_anonymous === false && before.is_sso_user === false && !before.email_confirmed_at && !before.recovery_sent_at, 'Private helper preflight shape not supported');
+  requireThat(helperIdentityShape(before) && !before.email_confirmed_at && !before.last_sign_in_at && !before.recovery_sent_at && !before.deleted_at && !before.banned_until && !before.new_email && !before.email_change && !before.factors?.length, 'Private helper preflight shape not supported');
   requireThat(before.identities?.length === 1 && before.identities[0].provider === 'email' && before.identities[0].user_id === employeeUid && before.identities[0].identity_data.email === employeeEmail, 'Native email identity shape differs from helper contract');
   const rawGenerated = await localFetch(`${api}/auth/v1/admin/generate_link`, { method: 'POST', headers: adminHeaders, body: JSON.stringify({ type: 'recovery', email: employeeEmail, redirect_to: 'http://127.0.0.1:3000/' }) });
   requireThat(rawGenerated.status === 200, 'Native recovery link generation failed');
   const generated = await rawGenerated.json();
   requireThat(generated.id === employeeUid && generated.email === employeeEmail && generated.verification_type === 'recovery' && generated.redirect_to === 'http://127.0.0.1:3000/', 'Generation response changed target or redirect');
+  requireThat(helperIdentityShape(generated) && !generated.email_confirmed_at && !generated.last_sign_in_at && !generated.deleted_at && !generated.banned_until && !generated.new_email && !generated.email_change && !generated.factors?.length, 'Generated user does not match the guarded first-setup helper contract');
+  requireThat(generated.identities?.length === 1 && generated.identities[0].provider === 'email' && generated.identities[0].user_id === employeeUid && generated.identities[0].identity_data?.email === employeeEmail, 'Generated native email identity shape differs from helper contract');
   const issued = new URL(generated.action_link);
   requireThat(issued.origin === api && issued.pathname === '/auth/v1/verify' && issued.searchParams.get('type') === 'recovery' && issued.searchParams.get('redirect_to') === 'http://127.0.0.1:3000/' && issued.searchParams.get('token') === generated.hashed_token, 'Native generated link wire contract mismatch');
+  requireThat(!issued.hash && [...issued.searchParams].length === 3 && new Set(issued.searchParams.keys()).size === 3 && /^[A-Za-z0-9._~-]{32,2048}$/.test(generated.hashed_token), 'Generated link query or token shape differs from guarded helper contract');
   const afterGeneration = await getRawUser(employeeUid);
-  requireThat(afterGeneration.id === employeeUid && afterGeneration.email === employeeEmail && !afterGeneration.email_confirmed_at && !afterGeneration.last_sign_in_at && afterGeneration.recovery_sent_at, 'Generation must not activate or replace existing user');
+  requireThat(helperIdentityShape(afterGeneration) && !afterGeneration.email_confirmed_at && !afterGeneration.last_sign_in_at && afterGeneration.recovery_sent_at, 'Generation must not activate or replace existing user');
   report('Native generate_link uses existing unconfirmed UID; no email, user recreation, backing-email change or confirmation at issue');
 
   stage = 'native redemption and private password';
