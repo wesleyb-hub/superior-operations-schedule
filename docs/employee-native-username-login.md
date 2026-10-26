@@ -1,8 +1,9 @@
 # Assigned usernames with direct native Auth
 
-Status: draft, disabled-by-default frontend candidate. It starts from the
-released main, not the separate credential-proxy draft. No deployment, mail
-configuration, account creation, invitation or access change is included.
+Status: approved username opt-in prepared for release, conditional on the final
+exact-head checks and release verification. It starts from the released main,
+not the separate credential-proxy draft. No mail configuration, account creation,
+invitation or access change is included.
 
 ## Small first pilot
 
@@ -14,8 +15,9 @@ password/session proxy or recoverable password store. The configured company
 domain remains unchanged; a username is not a role or permission.
 
 The new entry point is visible only when the separately approved configuration
-sets `employeeUsernameLoginEnabled: true`. This candidate leaves `config.js`
-unchanged, so it is off. Existing administrator email sign-in and recovery remain
+sets `employeeUsernameLoginEnabled: true`. This release configuration explicitly
+opts in; the application still defaults off when the flag is absent or false.
+Existing administrator email sign-in and recovery remain
 available. The ordinary session-start domain check, UID-based application access,
 restricted projections and business RLS remain authoritative.
 
@@ -86,8 +88,9 @@ cleanup. A valid recovery link already authenticates its UID; this form is not
 an onboarding-completion authorization gate, and existing backend grants still
 govern that session.
 
-The username UI remains off by default. The recovery security repair applies to
-the existing email setup/reset form if this candidate is separately released;
+The username UI code remains off by default; this approved release configuration
+opts in. The recovery security repair applies to the existing email setup/reset
+form when this candidate is released;
 it is not gated by the new username flag.
 
 ## Identity and access invariants

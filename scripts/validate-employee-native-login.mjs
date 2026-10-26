@@ -8,7 +8,7 @@ const employee = html.slice(html.indexOf('async function handleEmployeeNativeAut
 
 assert.ok(employee.length > 0, 'Dedicated employee native sign-in is present');
 assert.ok(html.includes('employeeUsernameLoginEnabled===true'), 'Username UI requires explicit boolean opt-in');
-assert.ok(!/employeeUsernameLoginEnabled\s*:\s*true/.test(config), 'Released configuration must not enable the candidate');
+assert.ok(/employeeUsernameLoginEnabled\s*:\s*true\b/.test(config), 'Approved release configuration explicitly enables employee usernames');
 assert.ok(employee.includes("username+'@'+ALLOWED_EMAIL_DOMAIN"), 'Username derives only the existing company identifier');
 assert.ok(employee.includes('client.auth.signInWithPassword({email,password})'), 'Password goes directly to native Auth');
 assert.ok(employee.includes('client.auth.getUser()'), 'Returned identity is verified through native Auth');
@@ -24,4 +24,4 @@ assert.ok(html.includes('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.11
 assert.ok(html.includes('recoverInterruptedEmployeeNativeSession'), 'Interrupted native login is fenced at bootstrap');
 assert.ok(html.includes("Ask your owner for help resetting your password."), 'Employee recovery is owner-assisted, not public registration');
 for (const script of html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)) new Function(script[1]);
-console.log('PASS: disabled direct-native username architecture; unchanged domain/access/native recovery boundaries.');
+console.log('PASS: approved direct-native username opt-in; unchanged domain/access/native recovery boundaries.');

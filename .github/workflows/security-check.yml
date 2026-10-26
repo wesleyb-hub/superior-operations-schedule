@@ -20,7 +20,7 @@ jobs:
         run: node scripts/validate-public-bundle.mjs
       - name: Test Operations Assistant read context
         run: node --test scripts/test-operations-agent-context.mjs scripts/test-operations-agent-provider.mjs
-      - name: Verify disabled direct-native employee username boundaries
+      - name: Verify approved direct-native employee username boundaries
         run: node scripts/validate-employee-native-login.mjs && node --test scripts/test-employee-native-username-ui.mjs
       - name: Test session isolation and save recovery
         run: node --test scripts/test-session-save-safety.mjs scripts/test-operational-modal-save.mjs scripts/test-installation-load-safety.mjs
