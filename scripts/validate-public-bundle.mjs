@@ -48,7 +48,7 @@ const checks = [
     message: 'Password recovery and invitation/setup links are not handled by the public app.',
   },
   {
-    ok: html.includes('sb.auth.updateUser({password})') && html.includes('password.length<12'),
+    ok: html.includes('isolatedClient.auth.updateUser({password})') && !html.includes('sb.auth.updateUser({password})') && html.includes('password.length<12'),
     message: 'Password setup does not enforce the minimum length and update the authenticated user.',
   },
   {
