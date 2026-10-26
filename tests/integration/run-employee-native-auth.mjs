@@ -184,12 +184,15 @@ try {
   requireThat(beforeGrant === afterGrant, 'Credential lifecycle changed business grants');
   report('Actual reset rejects old password/refresh session and preserves UID/grants; old unexpired JWT still reaches permitted backend');
   const claims = JSON.parse(Buffer.from(preReset.access_token.split('.')[1], 'base64url').toString());
-  const remaining = claims.exp * 1000 - Date.now() + 2500;
-  requireThat(remaining < 70_000, 'Unexpected JWT lifetime; refusing long test wait');
+  // Pinned PostgREST 16.5 permits 30 seconds of clock skew for exp/iat/nbf.
+  // https://github.com/PostgREST/postgrest/blob/v16.5/docs/references/auth.rst
+  // Wait beyond that documented tolerance, not merely beyond the JWT exp claim.
+  const remaining = claims.exp * 1000 - Date.now() + 35_000;
+  requireThat(remaining < 100_000, 'Unexpected JWT lifetime; refusing long test wait');
   if (remaining > 0) await wait(remaining);
   const expired = await fresh(preReset.access_token).rpc('get_app_access');
   requireThat(expired.status === 401 && expired.error?.code === 'PGRST303', 'Expected expired native JWT PGRST303/401 rejection');
-  report('Old access JWT denied after its configured expiry');
+  report('Old access JWT denied after expiry plus documented PostgREST clock-skew tolerance');
 
   stage = 'actual browser native SDK cross-tab';
   result.browser = await runNativeSdkBrowser({ apiUrl: api, publishableKey: vars.ANON_KEY, email: employeeEmail, password: resetPassword, report });

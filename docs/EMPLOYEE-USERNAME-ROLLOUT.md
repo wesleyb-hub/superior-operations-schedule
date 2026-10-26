@@ -80,7 +80,7 @@ Stopping or rolling back the username feature does not revoke already issued nat
 
 ## Offboarding and old tokens
 
-**Disable username is not full offboarding.** It blocks this alias and outstanding codes, not direct native email/password sign-in or all existing access JWTs. A native password update is expected to terminate refresh sessions in the current Auth implementation; already-issued access JWTs can remain usable until expiry. This behavior must be verified on the intended Auth deployment before any promise about session termination.
+**Disable username is not full offboarding.** It blocks this alias and outstanding codes, not direct native email/password sign-in or all existing access JWTs. A native password update is expected to terminate refresh sessions in the current Auth implementation; already-issued access JWTs can remain usable until expiry plus the verifier's clock-skew tolerance (30 seconds in the pinned PostgREST 16.5 test runtime). This behavior must be verified on the intended Auth deployment before any promise about session termination.
 
 Actual offboarding requires explicit revocation of every effective business grant and supported Auth account/session controls. The disposable database tests demonstrate that an alias-only disable leaves existing limited JWT business scope unchanged, while removing the fixture's real employee grant denies the protected backend APIs. No live offboarding is performed by this candidate.
 

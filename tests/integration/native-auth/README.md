@@ -8,6 +8,6 @@ Coverage: explicit individual confirmation, actual weak-password rejection/reiss
 
 **Evidence limits:** the business dataset here is empty; populated SQL projection tests remain separate evidence. The browser portion tests native SDK storage synchronization, not full Hub interrupted-session installation. This test does not prove the hosted Auth version/settings, hosted Edge ingress/header provenance, logging configuration, or production ACL parity. It is not deployment or account-activation approval.
 
-`auth.enable_signup=false` disables public registration. The email provider remains enabled so precreated users can sign in; email confirmation stays required. The 60-second JWT lifetime is a disposable-test setting only. No production Auth settings change.
+`auth.enable_signup=false` disables public registration. The email provider remains enabled so precreated users can sign in; email confirmation stays required. The 60-second JWT lifetime is a disposable-test setting only. Expiry acceptance waits beyond PostgREST 16.5's documented 30-second clock-skew tolerance, then requires the specific PGRST303/401 rejection. No production Auth settings change.
 
 Run only through **Employee native Auth lifecycle (disposable)** in the authorized draft PR. `node tests/integration/run-employee-native-auth.mjs` refuses ordinary local invocation, preserving the local runtime execution restriction. No live keys belong in this workflow or its artifacts.
