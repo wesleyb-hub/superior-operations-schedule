@@ -29,7 +29,7 @@ For the current approved pilot, the intended scope stays Walls production Today,
 - Native Supabase password sign-in and native Admin password update, without account recreation, direct `auth.users` writes or global email-confirmation changes.
 - Optional, explicit owner-approved **individual** identifier confirmation for first setup only. Existing confirmed accounts need no confirmation action.
 - CSPRNG 80-bit codes, HMAC-SHA256 storage, ten-minute lifetime, row-lock one-use claim before any Auth write, matching-claim completion and secret-free lifecycle audit.
-- Durable global/IP/username/invitation-code/owner rate limits with hashed bucket keys, generic errors, exact-origin CORS, bounded request size and no request/password/token logging.
+- Durable global, IP-or-shared-pilot, username, invitation-code and owner rate limits with hashed bucket keys, generic errors, exact-origin CORS, bounded request size and no application request/password/token logging. Hosted gateway logging is a separate activation gate.
 - Double-check of the alias after native sign-in, fail-closed unknown password-update outcomes, no automatic credential-write retry.
 - Private owner handoff screen and a network-disabled synthetic review demo. No real identifiers or credentials are embedded in the demo.
 
@@ -53,14 +53,19 @@ An expired or lost unused code can be replaced by the owner. A lost success resp
 | Server | `EMPLOYEE_ACCESS_ENABLED=true` only after explicit approval. Absent means off. |
 | Server | `EMPLOYEE_ACCESS_HMAC_SECRET`: independently generated high-entropy secret, at least 32 bytes; never browser-delivered. |
 | Server | `EMPLOYEE_ACCESS_ALLOWED_ORIGINS`: exact HTTPS origin allowlist, comma-separated, no wildcard. |
-| Server | `EMPLOYEE_ACCESS_TRUSTED_IP_HEADER` and `EMPLOYEE_ACCESS_IP_TRUST_VERIFIED=true` only after gateway overwrite/provenance is tested. The parser rejects forwarding lists and accepts a single canonical IP. |
+| Server | `EMPLOYEE_ACCESS_RATE_LIMIT_MODE`: absent means `trusted-ip`; explicitly use `shared-pilot` only for an approved small pilot. Unknown values fail closed. |
+| Server | In `trusted-ip` mode only: `EMPLOYEE_ACCESS_TRUSTED_IP_HEADER` and `EMPLOYEE_ACCESS_IP_TRUST_VERIFIED=true` only after gateway overwrite/provenance is tested. The parser rejects forwarding lists and accepts a single canonical IP. In `shared-pilot` mode leave these unset/false; no caller IP header is read or trusted. |
 | Server | Supabase URL and service-role secret from server-only environment; publishable key via `EMPLOYEE_ACCESS_PUBLISHABLE_KEY` or built-in anon key. |
 
-The ingress header cannot be assumed trustworthy merely because it is named `x-forwarded-for` or `cf-connecting-ip`. Verify the actual hosted path strips/overwrites attacker-supplied values. If this cannot be proven, do not activate this endpoint: configure a trusted ingress boundary first. Global and alias limits are independent of IP limits, but are not a replacement for provenance verification.
+The ingress header cannot be assumed trustworthy merely because it is named `x-forwarded-for` or `cf-connecting-ip`. For `trusted-ip` mode, verify the actual hosted path strips/overwrites attacker-supplied values; otherwise that mode must remain off. Do not set `EMPLOYEE_ACCESS_IP_TRUST_VERIFIED=true` to work around uncertainty.
+
+The explicit **`shared-pilot`** alternative uses one constant durable HMAC-keyed bucket for the entire endpoint: **120 requests per 300 seconds**, with no caller IP dependency. Every request to the enabled, correctly configured endpoint counts before origin/method/body dispatch, including OPTIONS preflight, invalid requests, sign-in, activation/reset and owner assistance. It retains the independent global **1,000/300s**, normalized sign-in username **10/600s**, invitation code **5/600s**, verified owner **30/600s**, and owner issue/disable **10/600s** budgets. All limits use the existing atomic database RPC, not worker memory; storage errors fail closed.
+
+**Availability tradeoff:** any caller can consume the shared pilot allowance and temporarily block all employee username and owner-help requests, not just their own. The window lasts five minutes from its first request; blocked attempts do not extend it. Preflight requests also consume allowance. An expired setup code may then need fresh owner issuance after the limit clears. Existing administrator email sign-in remains separate. Shared mode is a conservative small-pilot option, not a scalable anti-abuse guarantee, trusted-IP proof or a reason to disable limits. Switching modes/changing the server HMAC secret requires deliberate operational approval, not an automatic lockout workaround.
 
 The private `employee_login` schema must not be added to exposed Data API schemas. The public function wrappers have explicit ACLs; verify the hosted PostgREST role contract matches the synthetic tests. Function `verify_jwt=false` allows pre-login password/code requests; it **does not** make owner operations unauthenticated. Those verify the bearer with Auth and check the separate owner allowlist again in SQL.
 
-Before activation, also verify gateway/function/provider logging does not capture request bodies or credentials. Multi-tab pending-install/logout/session-switch acceptance remains required: conservative cleanup may log out a newer session sharing SDK storage.
+Before activation, also verify gateway/function/provider logging does not capture credential-bearing request/response bodies, authorization values, passwords, codes or session tokens. Current Supabase logging documentation describes invocation bodies; application no-console behavior or a clean limited sample is not sufficient assurance. Shared rate mode does not resolve this independent provider-logging gate. Multi-tab pending-install/logout/session-switch acceptance remains required: conservative cleanup may log out a newer session sharing SDK storage.
 
 No CAPTCHA or MFA enrollment is added or disabled. Before rollout, verify compatibility with the project's current native Auth settings; if they require a challenge this first-phase UI does not implement, keep the feature off rather than weakening that policy.
 

@@ -7,6 +7,7 @@ const config = {
   enabled: env('EMPLOYEE_ACCESS_ENABLED') === 'true',
   hmacSecret: env('EMPLOYEE_ACCESS_HMAC_SECRET'),
   origins: env('EMPLOYEE_ACCESS_ALLOWED_ORIGINS').split(',').map(v => v.trim()).filter(Boolean),
+  rateLimitMode: env('EMPLOYEE_ACCESS_RATE_LIMIT_MODE') || 'trusted-ip',
   ipHeader: env('EMPLOYEE_ACCESS_TRUSTED_IP_HEADER').toLowerCase(),
   ipTrustVerified: env('EMPLOYEE_ACCESS_IP_TRUST_VERIFIED') === 'true',
 };

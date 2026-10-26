@@ -83,13 +83,21 @@ export function createEmployeeAccessHandler({ config, services, sleep = ms => ne
       await sleep(Math.max(0, 700 - (now() - start)));
       return reply({ error: FAILURE }, status);
     };
-    if (!allowedOrigin) return reply({ error: FAILURE }, 403);
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
-    if (request.method !== 'POST') return reply({ error: FAILURE }, 405);
-    // Both gates are deliberately OFF until an authorized deployment verifies ingress IP provenance.
-    if (!config.enabled || !config.ipTrustVerified || !config.ipHeader || typeof config.hmacSecret !== 'string' || config.hmacSecret.length < 32) return reply({ error: FAILURE }, 503);
-    const ip = canonicalIp(request.headers.get(config.ipHeader));
-    if (!ip) return reply({ error: FAILURE }, 503);
+    // Absent mode preserves the original trusted-IP gate. Shared mode is an explicit,
+    // stricter pilot budget, not an assertion that any caller IP header is trustworthy.
+    const rateLimitMode = config.rateLimitMode ?? 'trusted-ip';
+    if (!['trusted-ip', 'shared-pilot'].includes(rateLimitMode)) return reply({ error: FAILURE }, 503);
+    const sharedPilot = rateLimitMode === 'shared-pilot';
+    if (!sharedPilot) {
+      if (!allowedOrigin) return reply({ error: FAILURE }, 403);
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+      if (request.method !== 'POST') return reply({ error: FAILURE }, 405);
+    }
+    if (!config.enabled || typeof config.hmacSecret !== 'string' || config.hmacSecret.length < 32
+      || (!sharedPilot && (!config.ipTrustVerified || !config.ipHeader))) return reply({ error: FAILURE }, 503);
+    // Do not even read IP-related config/header values in shared mode.
+    const ip = sharedPilot ? null : canonicalIp(request.headers.get(config.ipHeader));
+    if (!sharedPilot && !ip) return reply({ error: FAILURE }, 503);
     let svc, mintedSession;
     try {
       svc = services();
@@ -99,7 +107,14 @@ export function createEmployeeAccessHandler({ config, services, sleep = ms => ne
       });
       // Global cap runs BEFORE attacker-controlled alias buckets, bounding bucket cardinality.
       if (!await throttle([bucket('global', 'all')], 1000, 300)) return deny(429);
-      if (!await throttle([bucket('ip', ip)], 120, 300)) return deny(429);
+      if (!await throttle([sharedPilot ? bucket('shared-pilot', 'all') : bucket('ip', ip)], 120, 300)) return deny(429);
+      // Every request to an enabled/configured shared endpoint counts: preflight,
+      // invalid origin/method/body and all employee/owner actions share this budget.
+      if (sharedPilot) {
+        if (!allowedOrigin) return reply({ error: FAILURE }, 403);
+        if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
+        if (request.method !== 'POST') return reply({ error: FAILURE }, 405);
+      }
       let body;
       try { body = await boundedJson(request); } catch { return deny(400); }
       const action = body.action;

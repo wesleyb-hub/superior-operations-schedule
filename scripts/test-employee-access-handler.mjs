@@ -35,14 +35,15 @@ function fixture({ overrides = {}, cfg = {}, rpcOverride } = {}) {
     async updatePassword(uid, patch) { calls.push({ name: 'updatePassword', args: { uid, patch } }); return { id: uid }; },
     async revokeSession(jwt) { calls.push({ name: 'revokeSession', args: { jwt } }); },
   };
-  const handler = createEmployeeAccessHandler({ config: { ...config, ...cfg }, services: () => ({ ...defaults, ...overrides }), sleep: async ms => waits.push(ms), now: () => 1000 });
+  const activeConfig = { ...config, ...cfg };
+  const handler = createEmployeeAccessHandler({ config: activeConfig, services: () => ({ ...defaults, ...overrides }), sleep: async ms => waits.push(ms), now: () => 1000 });
   async function request(body = { action: 'sign-in', username: 'synthetic', password: PASSWORD }, { headers = {}, method = 'POST', raw } = {}) {
     return handler(new Request('https://synthetic.invalid/employee-access', {
       method, headers: { origin: 'https://synthetic.invalid', 'content-type': 'application/json', 'x-verified-test-ip': '203.0.113.8', ...headers },
       ...(['POST', 'PUT'].includes(method) ? { body: raw ?? JSON.stringify(body) } : {}),
     }));
   }
-  return { request, calls, waits };
+  return { request, calls, waits, handler, config: activeConfig };
 }
 async function generic(response, status) { assert.equal(response.status, status); assert.deepEqual(await response.json(), { error: FAILURE }); }
 const ownerHeaders = { authorization: 'Bearer synthetic-owner-token' };
@@ -114,6 +115,74 @@ test('IP and normalized alias limits are independent durable RPC calls, never pr
   assert.equal(response.status, 200); const limits = f.calls.filter(c => c.name === 'employee_login_throttle');
   assert.deepEqual(limits.map(c => c.args.p_limit), [1000, 120, 10]);
   assert.ok(!JSON.stringify(limits).includes('203.0.113')); assert.ok(!JSON.stringify(limits).includes('synthetic'));
+});
+test('explicit shared pilot never reads IP config or caller IP headers', async () => {
+  const f = fixture({ cfg: { rateLimitMode: 'shared-pilot', ipHeader: '', ipTrustVerified: false } });
+  for (const name of ['ipHeader', 'ipTrustVerified']) Object.defineProperty(f.config, name, { get() { throw new Error('IP config read in shared mode'); } });
+  const request = new Request('https://synthetic.invalid/employee-access', { method: 'POST', headers: { origin: 'https://synthetic.invalid', 'content-type': 'application/json' }, body: JSON.stringify({ action: 'sign-in', username: 'synthetic', password: PASSWORD }) });
+  const get = request.headers.get.bind(request.headers);
+  request.headers.get = name => { assert.ok(['origin', 'content-type', 'content-length', 'authorization'].includes(name), 'No caller IP header read'); return get(name); };
+  assert.equal((await f.handler(request)).status, 200);
+  const limits = f.calls.filter(c => c.name === 'employee_login_throttle');
+  assert.deepEqual(limits.map(c => [c.args.p_limit, c.args.p_window_seconds]), [[1000, 300], [120, 300], [10, 600]]);
+  assert.deepEqual(limits[1].args.p_keys, [await digestSecret(config.hmacSecret, 'throttle:shared-pilot', 'all')]);
+});
+test('shared pilot counts every action plus preflight, invalid origin, method and body before dispatch', async () => {
+  const f = fixture({ cfg: { rateLimitMode: 'shared-pilot', ipHeader: '', ipTrustVerified: false } });
+  const cases = [
+    [{ action: 'sign-in', username: 'synthetic', password: PASSWORD }, {}, 200, [1000, 120, 10]],
+    [{ action: 'redeem', username: 'synthetic', code: CODE, password: PASSWORD }, {}, 200, [1000, 120, 5]],
+    [{ action: 'owner-list' }, { headers: ownerHeaders }, 200, [1000, 120, 30]],
+    [{ action: 'owner-issue', employeeId: UID }, { headers: ownerHeaders }, 200, [1000, 120, 30, 10]],
+    [{ action: 'owner-disable', employeeId: UID }, { headers: ownerHeaders }, 200, [1000, 120, 30, 10]],
+    [undefined, { method: 'OPTIONS' }, 204, [1000, 120]],
+    [undefined, { method: 'GET' }, 405, [1000, 120]],
+    [undefined, { headers: { origin: 'https://attacker.invalid' } }, 403, [1000, 120]],
+    [undefined, { raw: '{' }, 400, [1000, 120]],
+    [{ action: 'unknown' }, {}, 400, [1000, 120]],
+    [{ action: 'owner-list' }, {}, 403, [1000, 120]],
+  ];
+  const sharedKey = await digestSecret(config.hmacSecret, 'throttle:shared-pilot', 'all');
+  for (const [body, options, status, expected] of cases) {
+    const start = f.calls.length;
+    assert.equal((await f.request(body, options)).status, status);
+    const calls = f.calls.slice(start).filter(c => c.name === 'employee_login_throttle');
+    assert.deepEqual(calls.map(c => c.args.p_limit), expected);
+    assert.deepEqual(calls[1].args, { p_keys: [sharedKey], p_limit: 120, p_window_seconds: 300 });
+    assert.ok(calls.slice(2).every(c => c.args.p_window_seconds === 600));
+  }
+});
+test('shared pilot uses one durable budget across requests and handler instances despite spoofed headers', async () => {
+  // The shared RPC fixture models persistence outside either handler instance.
+  const buckets = new Map();
+  const rpcOverride = (name, args) => {
+    if (name !== 'employee_login_throttle') return undefined;
+    const key = args.p_keys[0]; const count = (buckets.get(key) || 0) + 1; buckets.set(key, count);
+    return count <= args.p_limit;
+  };
+  const one = fixture({ cfg: { rateLimitMode: 'shared-pilot', ipTrustVerified: false }, rpcOverride });
+  const two = fixture({ cfg: { rateLimitMode: 'shared-pilot', ipTrustVerified: false }, rpcOverride });
+  const responses = await Promise.all(Array.from({ length: 125 }, (_, i) => (i % 2 ? one : two).request(undefined, { method: 'OPTIONS', headers: { 'x-verified-test-ip': `203.0.113.${i}`, 'x-forwarded-for': i % 2 ? 'malformed, spoofed' : '' } })));
+  assert.equal(responses.filter(r => r.status === 204).length, 120);
+  assert.equal(responses.filter(r => r.status === 429).length, 5);
+  assert.equal(buckets.size, 2, 'Only global and shared keys, never spoofed-IP keys');
+  await generic(await one.request({ action: 'owner-list' }, { headers: ownerHeaders }), 429);
+  await generic(await two.request({ action: 'redeem', username: 'other-choice', code: CODE, password: PASSWORD }), 429);
+  assert.ok([...one.calls, ...two.calls].every(c => c.name === 'employee_login_throttle'), 'Exhaustion blocks owner, Auth and alias operations');
+});
+test('shared pilot remains disabled/misconfiguration fail-closed and never silently replaces trusted-IP mode', async () => {
+  for (const cfg of [{ rateLimitMode: 'shared-pilot', enabled: false }, { rateLimitMode: 'shared-pilot', hmacSecret: '' }, { rateLimitMode: 'shared' }, { rateLimitMode: '' }, { rateLimitMode: 'trusted-ip', ipTrustVerified: false }, { rateLimitMode: undefined, ipTrustVerified: false }]) {
+    const f = fixture({ cfg }); await generic(await f.request(), 503); assert.equal(f.calls.length, 0);
+  }
+  const unavailable = fixture({ cfg: { rateLimitMode: 'shared-pilot' }, rpcOverride: () => { throw new Error('database unavailable'); } });
+  await generic(await unavailable.request(), 503);
+  assert.deepEqual(unavailable.calls.map(c => c.name), ['employee_login_throttle']);
+});
+test('shared pilot retains the independent global cap before any other bucket', async () => {
+  const f = fixture({ cfg: { rateLimitMode: 'shared-pilot' }, rpcOverride: name => name === 'employee_login_throttle' ? false : undefined });
+  await generic(await f.request(undefined, { method: 'OPTIONS' }), 429);
+  assert.deepEqual(f.calls.map(c => c.name), ['employee_login_throttle']);
+  assert.deepEqual(f.calls[0].args, { p_keys: [await digestSecret(config.hmacSecret, 'throttle:global', 'all')], p_limit: 1000, p_window_seconds: 300 });
 });
 test('username sign-in resolves existing UID internally and returns only native session tokens', async () => {
   const f = fixture(); const response = await f.request();

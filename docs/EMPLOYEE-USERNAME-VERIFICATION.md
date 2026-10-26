@@ -9,7 +9,7 @@ The owner authorizes an existing restricted UID. The employee chooses **both use
 
 | Check | Result |
 | --- | --- |
-| Full Node suite | **619 passed, 0 failed, 0 skipped** on Node 24.22.1. |
+| Full Node suite | **624 passed, 0 failed, 0 skipped** on Node 24.22.1, including shared-pilot all-request budgets, no IP reads, spoof resistance, concurrency and unchanged default fail-closed behavior. |
 | Edge static typecheck | Passed with Deno 2.5.2 and pinned Supabase JS 2.57.4; no hosted invocation. |
 | Disposable PostgreSQL | All **41 exact migrations** applied to fresh loopback PostgreSQL 17.10. |
 | Credential SQL | **35 cases passed**, including two invitations racing for one name, one code racing with different names, collision retry without code consumption, code-hash uniqueness, monotonic activation, reset no-rename, weak rejection versus ambiguous failure, role/ACL and offboarding boundaries. |
@@ -21,7 +21,7 @@ The owner authorizes an existing restricted UID. The employee chooses **both use
 
 The earlier password-only activation candidate at head `46f54de6d92b1247d0a41e2a72e8d056fe031e38` passed all six workflows: [credential/browser checks](https://github.com/wesleyb-hub/superior-operations-schedule/actions/runs/40345558510) and [broad security/UI checks](https://github.com/wesleyb-hub/superior-operations-schedule/actions/runs/40345558050), including 21 synthetic employee checks, 66 workflow screens, 28 modal recovery scenarios and 210 phone checks. Those results are historical, **not a substitute for the new employee-chosen-username head**.
 
-The revised head must pass the current PR checks, including the new **Employee native Auth lifecycle (disposable)** workflow. At this source checkpoint the native test has not executed; do not treat preparation as a pass. Current exact-head status and links are maintained in the PR.
+The employee-chosen-username head `139aa7a0f381d1b70677bb8761890de78eccfc54` passed all seven workflows, including [23 desktop/phone checks](https://github.com/wesleyb-hub/superior-operations-schedule/actions/runs/40361905703) and [19 actual native Auth check groups with cleanup=true](https://github.com/wesleyb-hub/superior-operations-schedule/actions/runs/40361905373). Those results predate the optional shared-pilot rate mode. The current shared-mode revision must pass exact-head CI, including its added real durable shared-budget test; do not treat preparation or older green checks as that pass.
 
 The native harness uses actual pinned Auth 2.197.0, PostgREST 16.5 and PostgreSQL 17.11 with invented identities only. It exercises the unchanged handler against real providers, individual confirmation, password rejection/setup/reset, username collision/retry, same-UID/grant preservation, refresh rejection, old-JWT expiry and real browser SDK cross-tab logout. Its business dataset is empty; existing populated SQL probes remain the row/projection evidence. Its browser fixture is SDK-only, not full Hub interrupted-install acceptance. See [native test boundaries](../tests/integration/native-auth/README.md).
 
@@ -29,7 +29,7 @@ The native harness uses actual pinned Auth 2.197.0, PostgREST 16.5 and PostgreSQ
 
 - Local Chromium was environment-blocked; authorized GitHub browser checks are the supported execution route.
 - The official checksummed native CLI/service archives installed locally, but its elevated launcher failed before execution on a read-only sandbox mount. No local Auth service or users started; the isolated tools/cache were removed. The separately authorized GitHub native test does not access a hosted project.
-- Hosted Auth version/settings compatibility, MFA/CAPTCHA requirements, actual Edge ingress IP-header provenance, credential-safe logging and production role/ACL parity remain unverified here.
+- Hosted Auth/settings compatibility and production role/ACL parity require separate preflight. Trusted-IP mode requires verified actual ingress provenance; the explicit shared-pilot alternative avoids caller-IP dependence at the cost of whole-pilot lockout. Credential-safe hosted logging remains required in either mode.
 - Full Hub multi-tab pending-install/logout/session-switch acceptance is distinct from SDK-only synchronization. Conservative cleanup can sign out a newer shared session.
 - Merge, deployment, feature activation, owner allowlisting, existing employee UID authorization, individual confirmation and real setup-code issuance still need their explicit release/action-time approvals.
 

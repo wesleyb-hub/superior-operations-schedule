@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { createHash, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { createClient } from '@supabase/supabase-js';
-import { createEmployeeAccessHandler, PasswordRejected } from '../../supabase/functions/employee-access/handler.mjs';
+import { createEmployeeAccessHandler, PasswordRejected, digestSecret } from '../../supabase/functions/employee-access/handler.mjs';
 import { bootstrapNativeDatabase } from './employee-native-auth-bootstrap.mjs';
 import { runNativeSdkBrowser } from './employee-native-auth-browser.mjs';
 
@@ -109,9 +109,10 @@ try {
       async revokeSession(jwt) { const r = await a.auth.admin.signOut(jwt, 'local'); if (r.error) throw new Error('Native signout failed'); },
     };
   };
-  const handler = createEmployeeAccessHandler({ config: { enabled: true, hmacSecret: randomBytes(32).toString('hex'), origins: ['https://native-test.invalid'], ipHeader: 'x-test-loopback-ip', ipTrustVerified: true }, services });
+  const hmacSecret = randomBytes(32).toString('hex');
+  const handler = createEmployeeAccessHandler({ config: { enabled: true, hmacSecret, origins: ['https://native-test.invalid'], rateLimitMode: 'shared-pilot' }, services });
   const call = async (body, token) => {
-    const r = await handler(new Request('https://native-test.invalid/employee-access', { method: 'POST', headers: { origin: 'https://native-test.invalid', 'content-type': 'application/json', 'x-test-loopback-ip': '127.0.0.1', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) }));
+    const r = await handler(new Request('https://native-test.invalid/employee-access', { method: 'POST', headers: { origin: 'https://native-test.invalid', 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) }));
     return { status: r.status, data: await r.json() };
   };
   const ownerCall = async body => {
@@ -207,6 +208,20 @@ try {
   requireThat((await access(beforeDisable.access_token)).authorized === false, 'Explicit synthetic grant removal did not block retained JWT');
   report('Alias disable is not offboarding: native login/retained scope persist; explicit synthetic grant removal blocks backend');
   requireThat((await client.query('select count(*)::int as count from auth.users')).rows[0].count === 3, 'Unexpected extra Auth identity');
+
+  stage = 'shared pilot durable all-request budget';
+  const sharedKey = await digestSecret(hmacSecret, 'throttle:shared-pilot', 'all');
+  const sharedBucket = (await client.query('select attempts,extract(epoch from(expires_at-clock_timestamp())) as remaining from employee_login.throttles where bucket_key=$1', [sharedKey])).rows[0];
+  requireThat(sharedBucket?.attempts > 5 && sharedBucket.attempts < 120 && Number(sharedBucket.remaining) > 15, 'Shared lifecycle budget missing or outside bounded test window');
+  const remainingRequests = 120 - sharedBucket.attempts;
+  const preflights = await Promise.all(Array.from({ length: remainingRequests }, (_, i) => handler(new Request('https://native-test.invalid/employee-access', { method: 'OPTIONS', headers: { origin: 'https://native-test.invalid', 'x-forwarded-for': `203.0.113.${i}`, 'cf-connecting-ip': 'spoofed, ignored' } }))));
+  requireThat(preflights.every(r => r.status === 204), 'Shared budget rejected before the 120-request boundary');
+  const blocked = await handler(new Request('https://native-test.invalid/employee-access', { method: 'OPTIONS', headers: { origin: 'https://attacker.invalid' } }));
+  requireThat(blocked.status === 429 && (await blocked.json()).error === 'Unable to complete this request. Check your details or ask the owner for help.', 'Shared budget did not block request 121 generically before origin dispatch');
+  requireThat((await call({ action: 'owner-list' })).status === 429, 'Owner action escaped exhausted shared budget');
+  requireThat((await client.query('select attempts from employee_login.throttles where bucket_key=$1', [sharedKey])).rows[0].attempts === 122, 'Concurrent shared attempts were lost or split by caller headers');
+  result.rateLimit = { mode: 'shared-pilot', limit: 120, windowSeconds: 300, allRequests: true, callerIpUsed: false };
+  report('Shared pilot durable 120/300 budget counts all actions/preflights across spoofed headers; concurrent boundary and owner lockout enforced');
   result.passed = true;
 } catch (error) {
   exitCode = 1;

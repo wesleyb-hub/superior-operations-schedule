@@ -46,7 +46,7 @@ This cross-service workflow is intentionally not described as a distributed tran
 
 ## Rate-limit maintenance
 
-Edge consumes a shared global bucket first, then independently keyed IP and sign-in username/activation-code/owner buckets. The activation limiter follows the code rather than a freely changeable proposed name. Missing/untrusted gateway IP, DB error or unavailable throttle storage must fail closed. A process-local counter is insufficient.
+Edge consumes the global 1,000/300s bucket first, then either a verified-IP 120/300s bucket (default `trusted-ip` mode) or one constant endpoint-wide 120/300s bucket (explicit `shared-pilot` mode). Shared mode counts every enabled/configured endpoint request, including preflight and invalid requests, before dispatch and never reads a caller IP header. It retains sign-in username 10/600s, activation-code 5/600s, verified owner 30/600s and owner issue/disable 10/600s budgets. The activation limiter follows the code rather than a freely changeable proposed name. Missing/untrusted gateway IP in trusted-IP mode, DB error or unavailable throttle storage must fail closed. A process-local counter is insufficient. Shared mode can temporarily lock out the whole pilot if any caller exhausts the allowance; it does not certify ingress provenance or credential-safe hosting.
 
 Throttle cleanup removes at most 100 records older than a day per request using row locks with `SKIP LOCKED` and an outer expiry recheck; a concurrently refreshed bucket cannot be deleted. Audit retention should follow an approved operational policy rather than exposing a free-form delete endpoint. Do not disable throttling to diagnose a sign-in problem.
 
