@@ -16,6 +16,8 @@ const delay = ms => new Promise(resolveWait => setTimeout(resolveWait, ms));
 const safeStages = new Set([
   'prepare full Hub', 'native recovery through full Hub success',
   'phone username form signs in with native private password',
+  'phone username native session settles', 'phone username restricted access assertion',
+  'phone visible tools and account menu signout', 'phone signout clears native persistence',
   'other user signs in before stale recovery submission',
   'actual A password request held while B signs in',
   'logout interrupts full Hub recovery', 'cancel recovery clears retained session',
@@ -173,11 +175,19 @@ export async function runNativeRecoveryHubBrowser({ root, apiUrl, anonKey, admin
     await first.locator('#authPassword').fill(currentEmployeePassword);
     ensure(await first.locator('#authBtn').isVisible());
     await first.locator('#authBtn').click();
+    stage = 'phone username native session settles';
     await first.waitForFunction(uid => currentUser?.id === uid && currentUserAuthorized && !employeeSessionInstalling && !employeeCleanupBlocked && !document.querySelector('.app').inert, browserEmployee.uid);
+    stage = 'phone username restricted access assertion';
     ensure(await first.evaluate(() => !currentUserIsAdmin && !currentUserCanWrite && currentUserRole === 'walls_inventory_counter' &&
       JSON.stringify([...currentAllowedViews].sort()) === JSON.stringify(['inventory','overview','walls','weekly-planner']) &&
       JSON.stringify(currentAllowedWallSubviews) === JSON.stringify(['production']) && inventoryCanView && inventoryCanAdjust && !inventoryCanManage));
+    stage = 'phone visible tools and account menu signout';
+    await first.locator('#mobileToolsToggle').click();
+    ensure(await first.locator('#mobileToolsToggle').getAttribute('aria-expanded') === 'true');
+    await first.locator('.header-more > summary').click();
+    ensure(await first.locator('.header-more').evaluate(element => element.open));
     await first.locator('#signOutBtn').click();
+    stage = 'phone signout clears native persistence';
     await settled(first);
     await first.waitForFunction(async () => { const result = await sb.auth.getSession(); return !result.error && !result.data.session && document.getElementById('retrySignOutBtn').hidden; });
     await noRecoveredSessionInNewTab();
