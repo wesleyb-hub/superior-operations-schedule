@@ -15,6 +15,19 @@ test('native caller validation uses public key and decrypted owner bearer, not s
 test('initialize is one exact-UID native PUT with individual confirmation only',async()=>{const f=fixture([response({id:uid,email:'plantdemo@company.example.invalid'})]);const r=await f.ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',true);assert.equal(r.kind,'updated');assert.equal(f.calls[0].url,cfg.authOrigin+'/auth/v1/admin/users/'+uid);assert.equal(f.calls[0].options.method,'PUT');assert.deepEqual(JSON.parse(f.calls[0].options.body),{password:'SYNTHETIC_PASSWORD',email_confirm:true});assert.equal(f.calls[0].options.headers.apikey,cfg.serverKey);assert.equal(f.calls[0].options.redirect,'error');});
 test('reset cannot send email, confirmation, metadata or business grants',async()=>{const f=fixture([response({id:uid})]);await f.ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',false);assert.deepEqual(JSON.parse(f.calls[0].options.body),{password:'SYNTHETIC_PASSWORD'});await assert.rejects(()=>f.ports.authAdmin.updatePassword('../target','x',false));assert.equal(f.calls.length,1);});
 test('only exact native422 weak_password is a definitive recoverable rejection',async()=>{const f=fixture([response({code:'weak_password',message:'SECRET_SENTINEL'},422)]);assert.deepEqual(await f.ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',false),{kind:'weak_password'});});
+test('all native Auth requests pin the modern API contract without changing PostgREST headers',async()=>{
+ const f=fixture([response({id:owner}),response({id:uid}),response({id:uid}),response({id:uid}),response(true)]);
+ await f.ports.authenticate('synthetic.owner.token');await f.ports.authAdmin.getUserById(uid);
+ await f.ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',true);await f.ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',false);
+ await f.ports.preflight();
+ for(const call of f.calls.slice(0,4))assert.equal(new Headers(call.options.headers).get('X-Supabase-Api-Version'),'2024-01-01');
+ assert.equal(new Headers(f.calls[4].options.headers).has('X-Supabase-Api-Version'),false);
+});
+test('legacy weak-password wire shape still fails closed instead of widening the rejection allowlist',async()=>{
+ const f=fixture([response({code:422,error_code:'weak_password',msg:'SECRET_SENTINEL',weak_password:{reasons:['length']}},422)]);
+ await assert.rejects(()=>f.ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',false),error=>error.message==='Native operation could not be verified.'&&!String(error.stack).includes('SECRET_SENTINEL'));
+ assert.equal(f.calls.length,1);
+});
 for(const [label,reply] of [['wrong status',response({code:'weak_password'},400)],['wrong code',response({code:'other'},422)],['rate limit',response({code:'over_request_rate_limit'},429)],['upstream500',response({message:'SECRET_SENTINEL'},500)],['network',Error('SECRET_SENTINEL')],['malformed',new Response('SECRET_SENTINEL',{headers:{'content-type':'application/json'}})],['MIME',new Response('SECRET_SENTINEL',{headers:{'content-type':'text/plain'}})],['large',response({},200,{'content-length':'999999999'})]])test(label+' never unlocks or leaks raw diagnostics and never retries',async()=>{const f=fixture([reply]);await assert.rejects(()=>f.ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',false),error=>error.message==='Native operation could not be verified.'&&!String(error.stack).includes('SECRET_SENTINEL'));assert.equal(f.calls.length,1);});
 test('RPC parameter keys are derived from the actual migration signatures',async()=>{
  const directory=new URL('../supabase/migrations/',import.meta.url),name=(await fs.readdir(directory)).find(x=>x.endsWith('_employee_owner_password.sql'));assert.ok(name);

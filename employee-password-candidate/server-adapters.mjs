@@ -31,7 +31,11 @@ function make(config,fetchImpl){
     let response;
     try{
       const key=caller?config.publicKey:config.serverKey;
-      response=await fetchImpl(config.authOrigin+path,{method,redirect:'error',signal:AbortSignal.timeout(10000),headers:{apikey:key,authorization:'Bearer '+(caller??key),'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
+      const headers={apikey:key,authorization:'Bearer '+(caller??key),'content-type':'application/json'};
+      // Pin the native Auth wire contract used by the strict error allowlist.
+      // Without this header Auth defaults to legacy numeric code/error_code JSON.
+      if(path.startsWith('/auth/v1/'))headers['X-Supabase-Api-Version']='2024-01-01';
+      response=await fetchImpl(config.authOrigin+path,{method,redirect:'error',signal:AbortSignal.timeout(10000),headers,...(body===undefined?{}:{body:JSON.stringify(body)})});
       return {status:response.status,data:await boundedJson(response)};
     }catch{try{await response?.body?.cancel();}catch{}throw failure();}
   }
