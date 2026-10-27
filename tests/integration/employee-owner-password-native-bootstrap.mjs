@@ -1,6 +1,6 @@
 // UNEXECUTED PRIVATE CI SOURCE: bootstrap business + owner-password schema into a fresh, real local
 // Supabase instance. Never replace native Auth objects or insert Auth records.
-// The orchestrator must create exactly four synthetic users through native Admin
+// The orchestrator must create exactly five synthetic users through native Admin
 // Auth first, pin the observed local CLI project/port, and destroy the instance.
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -67,11 +67,11 @@ async function nativeFingerprint(client){
  * No hosted URLs, auth.users mutations, JWT stubs or production fixture identifiers.
  */
 export async function bootstrapOwnerPasswordDatabase(client,{ownerUid,employees,keyId,audience}){
-  assert.equal(employees?.length,3);
-  assert.deepEqual(employees.map(x=>x.profile??'pilot'),['pilot','pilot','mixed']);
+  assert.equal(employees?.length,4);
+  assert.deepEqual(employees.map(x=>x.profile??'pilot'),['pilot','pilot','mixed','mixed']);
   const employeeUid=employees[0].uid;
   assert.ok(employees.every(x=>uuid.test(x.uid)&&/^[a-z][a-z0-9._-]{2,31}$/.test(x.username)));
-  assert.equal(new Set([ownerUid,...employees.map(x=>x.uid)]).size,4);
+  assert.equal(new Set([ownerUid,...employees.map(x=>x.uid)]).size,5);
   assert.equal(keyId,"employee-password-native-test");
   assert.equal(audience,"https://auth.example.invalid/functions/v1/employee-password");
   const connection=client?.connectionParameters;
@@ -108,7 +108,7 @@ export async function bootstrapOwnerPasswordDatabase(client,{ownerUid,employees,
   const before=await nativeFingerprint(client);
   assert.equal(before.helpers.length,3,'All native Auth helpers must exist');
   assert.equal(before.roles.length,3,'All native API roles must already exist');
-  assert.deepEqual(before.users.map(u=>u.id).sort(),[ownerUid,...employees.map(x=>x.uid)].sort(),'Native DB must contain exactly the four approved synthetic users');
+  assert.deepEqual(before.users.map(u=>u.id).sort(),[ownerUid,...employees.map(x=>x.uid)].sort(),'Native DB must contain exactly the five approved synthetic users');
   assert.ok(before.users.every(u=>u.is_anonymous===false&&typeof u.email==='string'&&u.email.endsWith('.invalid')),'Only nonanonymous synthetic .invalid Auth users are accepted');
 
   for(const employee of employees)assert.equal(before.users.find(x=>x.id===employee.uid)?.email,employee.username+'@company.example.invalid');
@@ -146,7 +146,7 @@ export async function bootstrapOwnerPasswordDatabase(client,{ownerUid,employees,
       inventory_can_view,inventory_can_adjust,inventory_can_manage,updated_by
     ) values($1,'walls_inventory_counter',array['overview','walls','inventory','weekly-planner'],
       array['production'],true,true,true,false,'SYNTHETIC native Auth test')`,[employee.uid]);
-    const mixed=employees.find(x=>x.profile==='mixed');
+    for(const mixed of employees.filter(x=>x.profile==='mixed')){
     for(const [division,area] of [['walls','production'],['walls','install'],['boxes','production']])await client.query(`insert into public.app_employee_access(
       user_id,profile_key,legal_entity,division_key,inventory_area,allowed_views,allowed_wall_subviews,enabled,
       inventory_can_view,inventory_can_adjust,inventory_can_manage,updated_by
@@ -157,6 +157,7 @@ export async function bootstrapOwnerPasswordDatabase(client,{ownerUid,employees,
       values($1,true,true,true,true,true,true,true,true)`,[mixed.uid]);
     await client.query(`insert into public.walls_installation_access(user_id,can_view,can_manage,can_assign_resources,can_qc,can_record_field_progress,enabled)
       values($1,true,false,false,true,false,true)`,[mixed.uid]);
+    }
     await client.query('insert into employee_password.owners(user_id,enabled) values($1,true)',[ownerUid]);
     await client.query("update employee_password.settings set enabled=true,current_key_id=$1,audience=$2,identifier_domain='company.example.invalid',version=version+1",[keyId,audience]);
     for(const employee of employees)await client.query(`insert into employee_password.approved_records(record_id,auth_uid,username,auth_email,display_name,enabled,reviewed_by,reviewed_at,reviewed_grants)
@@ -173,5 +174,5 @@ export async function bootstrapOwnerPasswordDatabase(client,{ownerUid,employees,
     allowed_wall_subviews:['production'],enabled:true,inventory_can_view:true,inventory_can_adjust:true,inventory_can_manage:false});
   await client.query("notify pgrst,'reload schema'");
   return {migrationCount:migrations.length,baselineSha256:digest(baseline),migrations:manifest,nativeAuthPreserved:true,
-    syntheticUsers:4,independentBusinessGrantsAdded:2,publicationCreated:!publication};
+    syntheticUsers:5,independentBusinessGrantsAdded:4,publicationCreated:!publication};
 }
