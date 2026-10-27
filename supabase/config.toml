@@ -1,2 +1,8 @@
 [functions.inventory-reorder-notify]
 verify_jwt = false
+
+# Owner JWT is encrypted inside JWE to keep it out of invocation headers.
+# The function performs native getUser + explicit owner authorization itself.
+# Its server flag and private DB readiness both default OFF.
+[functions.employee-password]
+verify_jwt = false
