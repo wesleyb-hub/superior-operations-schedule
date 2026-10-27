@@ -184,6 +184,7 @@ td{padding:9px 10px;border-bottom:1px solid #edf0f2;vertical-align:top}
 /* MODALS */
 .modal-backdrop{position:fixed;inset:0;background:rgba(8,19,29,.55);z-index:80;display:none;align-items:center;justify-content:center;padding:20px}
 .modal-backdrop.open{display:flex}
+.employee-password-details{margin:0;display:grid;gap:5px}.employee-password-details dt{font-size:11px;font-weight:800;color:#62717d}.employee-password-details dd{margin:0 0 10px;overflow-wrap:anywhere;font-size:14px}.employee-password-inputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}#employeePasswordModal .employee-password-check{display:flex;gap:10px;align-items:flex-start;text-transform:none;font-size:13px;line-height:1.5;letter-spacing:normal;margin:12px 0}#employeePasswordModal .employee-password-check input{width:20px;min-width:20px;height:20px;margin:0}#employeePasswordStatus,#employeePasswordVersion{overflow-wrap:anywhere;line-height:1.6}#employeePasswordModal [hidden]{display:none!important}
 .modal{width:min(900px,100%);max-height:90vh;overflow:hidden;background:#fff;border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.28);display:flex;flex-direction:column}
 .modal-head{padding:16px 18px 10px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.modal-head h2{margin:0;font-size:18px;color:var(--navy)}
 .modal-body{padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:12px;overflow-y:auto;min-height:0;flex:1 1 auto}.modal-body.install-job-modal-body{display:block}.field.full{grid-column:1/-1}.field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:850;color:#6c7781;margin-bottom:4px}.field input,.field select,.field textarea{width:100%;border:1px solid #ccd5dc;border-radius:7px;padding:9px;color:#27323a;background:#fff}.field textarea{min-height:70px;resize:vertical}
@@ -695,6 +696,7 @@ button:disabled{opacity:.58;filter:saturate(.35);box-shadow:none!important}.moda
           <button class="btn" id="refreshLiveBtn">Refresh Live</button>
           <button class="btn" id="exportBtn">Export Data</button>
           <button class="btn" id="resetBtn">Reload Live</button>
+          <button type="button" class="btn" id="employeePasswordBtn" hidden>Employees</button>
           <button class="btn" id="signOutBtn" style="display:none">Sign Out</button>
         </div>
       </details>
@@ -750,6 +752,26 @@ button:disabled{opacity:.58;filter:saturate(.35);box-shadow:none!important}.moda
   <div class="assistant-log" id="assistantLog"></div>
   <form class="assistant-form" id="assistantForm"><input id="assistantInput" autocomplete="off" placeholder="Ask about jobs, exceptions, production, QC, delivery, or billing"><button type="submit">Ask</button></form>
 </section>
+
+<div class="modal-backdrop" id="employeePasswordModal">
+  <section class="modal" role="dialog" aria-modal="true" aria-labelledby="employeePasswordTitle">
+    <div class="modal-head"><h2 id="employeePasswordTitle">Employees · password access</h2><button type="button" class="mini" id="employeePasswordClose">Close</button></div>
+    <div class="modal-body">
+      <p class="field full small-note">Set or reset a password for an approved existing employee. No email is sent. This does not create an account or change limited access. Passwords cannot be retrieved here.</p>
+      <div class="field full"><label for="employeePasswordTarget">Approved employee</label><select id="employeePasswordTarget" disabled></select></div>
+      <div class="field full" id="employeePasswordDetails" hidden>
+        <dl class="employee-password-details"><dt>Assigned username</dt><dd id="employeePasswordUsername"></dd><dt>Existing limited access</dt><dd id="employeePasswordScope"></dd><dt>Action</dt><dd id="employeePasswordAction"></dd></dl>
+        <p class="small-note" id="employeePasswordVersion"></p>
+        <div class="employee-password-inputs"><div class="field"><label for="employeePasswordNew">New password</label><input id="employeePasswordNew" type="password" autocomplete="new-password" minlength="8" maxlength="128"></div><div class="field"><label for="employeePasswordConfirm">Repeat new password</label><input id="employeePasswordConfirm" type="password" autocomplete="new-password" minlength="8" maxlength="128"></div></div>
+        <p class="small-note">Use 8–128 characters. Spaces are kept. Share credentials only through your approved private handoff, not chat or a password file. Existing sessions may remain active after a reset.</p>
+        <label class="employee-password-check"><input type="checkbox" id="employeePasswordReview"> I checked this employee, assigned username and limited access.</label>
+        <label class="employee-password-check" id="employeePasswordEmailApproval"><input type="checkbox" id="employeePasswordConfirmEmail"> I approve activating this existing company sign-in identifier without sending a confirmation email.</label>
+      </div>
+      <p class="field full small-note" id="employeePasswordStatus" role="status" aria-live="polite"></p>
+    </div>
+    <div class="modal-foot"><div></div><div class="modal-actions"><button type="button" class="ghost" id="employeePasswordReload">Reload approved list</button><button type="button" class="dark" id="employeePasswordSave" disabled>Set password</button></div></div>
+  </section>
+</div>
 
 <div class="modal-backdrop" id="wallModal">
   <div class="modal">
@@ -1167,6 +1189,7 @@ async function handleAuthSubmit(event){
 // Invalidate local work before awaiting network logout; never delete operational storage.
 let hubSessionEpoch=0,remoteLoadToken=0,inventoryLoadToken=0,importReadToken=0,hubSessionLocked=false;
 function resetLocalSession(){
+  if(typeof resetEmployeePasswordOwner==='function')resetEmployeePasswordOwner();
   if(typeof clearRecoveryIdentity==='function')clearRecoveryIdentity();
   if(typeof clearEmployeePasswordInputs==='function')clearEmployeePasswordInputs();
   hubSessionLocked=true;hubSessionEpoch++;remoteLoadToken++;inventoryLoadToken++;importReadToken++;
@@ -1325,10 +1348,147 @@ function subscribeLive(){
     const row=evt.new;if(remoteReady&&Number(row.revision||0)>lastRevision&&!saveBusy)loadRemoteState(false)
   }).subscribe()
 }
+// Owner-only password administration for approved existing employees.
+let employeePasswordGeneration=0,employeePasswordOwnerUid='',employeePasswordAvailable=false,employeePasswordOpen=false,employeePasswordLoading=false,employeePasswordTargets=[],employeePasswordReviewed=null,employeePasswordAttempt=null;
+// Only nonsecret request outcomes are retained here. Durable server locks remain
+// authoritative across reloads; a fresh approved version permits a new review.
+const employeePasswordRequests=new Map();
+function employeePasswordConfig(){
+  const config=window.SUPERIOR_CONFIG,key=config?.employeePasswordKey;
+  if(config?.employeePasswordAdminEnabled!==true||typeof config.employeePasswordEndpoint!=='string'||!key||Object.keys(key).sort().join(',')!=='jwk,kid,not_after'||!/^employee-password-[a-z0-9-]{1,48}$/.test(key.kid||'')||!key.jwk||Object.keys(key.jwk).sort().join(',')!=='e,kty,n'||key.jwk.kty!=='RSA'||key.jwk.e!=='AQAB'||typeof key.jwk.n!=='string'||!/^[a-zA-Z0-9_-]{342,684}$/.test(key.jwk.n))return null;
+  try{
+    const base=new URL(SUPABASE_URL),url=new URL(config.employeePasswordEndpoint),expiry=Date.parse(key.not_after),now=Date.now();
+    if(base.protocol!=='https:'||url.href!==base.origin+'/functions/v1/employee-password'||config.employeePasswordEndpoint!==url.href||typeof key.not_after!=='string'||!Number.isFinite(expiry)||expiry<=now||expiry>now+31*86400000)return null;
+    return {endpoint:url.href,key:JSON.parse(JSON.stringify({kid:key.kid,jwk:key.jwk,not_after:key.not_after}))};
+  }catch{return null}
+}
+function employeePasswordMessage(message){document.getElementById('employeePasswordStatus').textContent=message}
+function clearEmployeeAdminPasswords(){for(const id of ['employeePasswordNew','employeePasswordConfirm'])document.getElementById(id).value=''}
+function cancelEmployeePasswordAttempt(){
+  const attempt=employeePasswordAttempt;if(!attempt)return;
+  attempt.cancelled=true;attempt.password='';attempt.owner_token='';
+  if(attempt.request.status==='pending')attempt.request.status=attempt.applyDispatched?'needs_review':'blocked';
+  employeePasswordAttempt=null;
+}
+function employeePasswordClearReview(){
+  employeePasswordReviewed=null;clearEmployeeAdminPasswords();document.getElementById('employeePasswordReview').checked=false;document.getElementById('employeePasswordConfirmEmail').checked=false;
+  for(const id of ['employeePasswordUsername','employeePasswordScope','employeePasswordVersion','employeePasswordAction'])document.getElementById(id).textContent='';
+  document.getElementById('employeePasswordDetails').hidden=true;document.getElementById('employeePasswordSave').disabled=true;
+}
+function closeEmployeePassword(){
+  cancelEmployeePasswordAttempt();employeePasswordGeneration++;employeePasswordOpen=false;employeePasswordLoading=false;employeePasswordTargets=[];employeePasswordClearReview();
+  const modal=document.getElementById('employeePasswordModal');modal.classList.remove('open');modal.style.display='none';document.getElementById('employeePasswordTarget').replaceChildren();employeePasswordMessage('');
+}
+function resetEmployeePasswordOwner(){closeEmployeePassword();employeePasswordOwnerUid='';employeePasswordAvailable=false;document.getElementById('employeePasswordBtn').hidden=true}
+function employeePasswordAuthChanged(event,session){if(event==='SIGNED_OUT'||(employeePasswordOwnerUid&&session?.user?.id!==employeePasswordOwnerUid))resetEmployeePasswordOwner()}
+function employeePasswordContext(open=false){
+  const user=currentUser,client=sb,epoch=hubSessionEpoch,generation=employeePasswordGeneration,uid=user?.id,config=employeePasswordConfig(),fingerprint=JSON.stringify(config);
+  return {user,client,uid,config,valid:()=>Boolean(uid)&&Boolean(config)&&JSON.stringify(employeePasswordConfig())===fingerprint&&currentUser===user&&sb===client&&hubSessionEpoch===epoch&&employeePasswordGeneration===generation&&employeePasswordOwnerUid===uid&&!hubSessionLocked&&(!open||employeePasswordOpen)};
+}
+async function employeePasswordVerifiedToken(context){
+  const result=await context.client.auth.getSession();if(!context.valid())return '';
+  const session=result?.data?.session;if(result?.error||session?.user?.id!==context.uid||session.user.is_anonymous===true||typeof session.access_token!=='string'||!session.access_token)return '';
+  const checked=await context.client.auth.getUser(session.access_token);if(!context.valid()||checked?.error||checked?.data?.user?.id!==context.uid||checked.data.user.is_anonymous===true)return '';
+  return session.access_token;
+}
+async function refreshEmployeePasswordOwner(){
+  resetEmployeePasswordOwner();if(!employeePasswordConfig()||!sb||!currentUser?.id||!currentUserAuthorized||hubSessionLocked||currentUser.is_anonymous===true)return false;
+  employeePasswordOwnerUid=currentUser.id;const context=employeePasswordContext();
+  try{if(!await employeePasswordVerifiedToken(context))return false;const result=await context.client.rpc('employee_password_owner_status');if(!context.valid())return false;employeePasswordAvailable=!result?.error&&result?.data?.is_owner===true&&result.data.available===true;document.getElementById('employeePasswordBtn').hidden=!employeePasswordAvailable;return employeePasswordAvailable}catch{return false}
+}
+function scheduleEmployeePasswordOwner(){
+  if(!employeePasswordConfig())return;const user=currentUser,epoch=hubSessionEpoch;
+  // Do not take a native SDK lock inside its auth callback.
+  setTimeout(()=>{if(currentUser===user&&hubSessionEpoch===epoch)void refreshEmployeePasswordOwner()},0);
+}
+function employeePasswordValidTarget(row){
+  const text=(value,max)=>typeof value==='string'&&value.length>0&&value.length<=max&&!/[\x00-\x1f\x7f]/.test(value);
+  return row&&/^[a-z0-9][a-z0-9_-]{0,63}$/.test(row.record_id||'')&&Number.isSafeInteger(row.version)&&row.version>0&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.auth_uid||'')
+    &&text(row.display_name,160)&&/^[a-z][a-z0-9._-]{2,31}$/.test(row.username||'')&&text(row.scope_label,500)&&typeof row.setup_completed==='boolean'&&['ready','applying','needs_review','unavailable'].includes(row.status);
+}
+function employeePasswordStatusText(status){
+  return ({ready:'Review the fixed employee and access before choosing a password.',pending:'Request pending. Closing this window cannot undo a password update already submitted.',applying:'A password update is in progress. Do not submit another request.',applied:'Password updated. No email was sent and access was not changed. Already-issued sessions may remain active; this is not offboarding.',blocked:'The password request was blocked. Reload the approved record for review; no automatic retry was made.',needs_review:'The password outcome needs review. It may have changed. Do not submit again until the operation is checked.',not_configured:'Password administration is unavailable. No automatic retry was made.',not_authorized:'Owner access could not be confirmed. Close this window and sign in again.',invalid_request:'The password request could not be completed. Have the approved record reviewed.',invalid_password:'The password did not meet the current requirements. No automatic retry was made; reload the approved record before another deliberate attempt.',unavailable:'This record is unavailable. Have its existing identity and limited access reviewed.'})[status]||'The password outcome needs review. Do not submit again until the operation is checked.';
+}
+function employeePasswordSelected(){return employeePasswordTargets.find(row=>row.record_id===document.getElementById('employeePasswordTarget').value)||null}
+function employeePasswordRequestKey(row){return employeePasswordOwnerUid+':'+row.record_id+':'+row.version}
+function employeePasswordRequestFor(row){return row?employeePasswordRequests.get(employeePasswordRequestKey(row)):null}
+function renderEmployeePasswordSelection(){
+  employeePasswordClearReview();const row=employeePasswordSelected();if(!row)return;
+  document.getElementById('employeePasswordDetails').hidden=false;
+  for(const [id,value] of [['employeePasswordUsername',row.username],['employeePasswordScope',row.scope_label],['employeePasswordVersion','Existing account '+row.auth_uid+' · approved version '+row.version],['employeePasswordAction',row.setup_completed?'Reset password':'Set initial password']])document.getElementById(id).textContent=value;
+  document.getElementById('employeePasswordEmailApproval').hidden=row.setup_completed;
+  const request=employeePasswordRequestFor(row),status=row.status==='needs_review'?row.status:(request?.status||row.status),disabled=employeePasswordLoading||status!=='ready';
+  for(const id of ['employeePasswordNew','employeePasswordConfirm','employeePasswordReview','employeePasswordConfirmEmail'])document.getElementById(id).disabled=disabled;
+  document.getElementById('employeePasswordSave').textContent=row.setup_completed?'Reset password':'Set initial password';
+  employeePasswordMessage(employeePasswordStatusText(status)+(request?' Request ID: '+request.request_id+'.':'')+(request?.operation_id?' Operation: '+request.operation_id+'.':''));
+}
+function changeEmployeePasswordSelection(){cancelEmployeePasswordAttempt();employeePasswordGeneration++;employeePasswordLoading=false;renderEmployeePasswordSelection()}
+function reviewEmployeePassword(){
+  employeePasswordReviewed=null;const row=employeePasswordSelected(),confirmed=document.getElementById('employeePasswordReview').checked&&(row?.setup_completed||document.getElementById('employeePasswordConfirmEmail').checked);
+  if(employeePasswordOpen&&!employeePasswordLoading&&employeePasswordAvailable&&row?.status==='ready'&&!employeePasswordRequestFor(row)&&confirmed)employeePasswordReviewed=Object.freeze({...row});
+  document.getElementById('employeePasswordSave').disabled=!employeePasswordReviewed;
+}
+async function openEmployeePassword(){
+  if(!employeePasswordConfig()||!employeePasswordAvailable||employeePasswordOwnerUid!==currentUser?.id||hubSessionLocked)return false;
+  closeEmployeePassword();employeePasswordOpen=true;employeePasswordLoading=true;const context=employeePasswordContext(true),modal=document.getElementById('employeePasswordModal');modal.classList.add('open');modal.style.display='flex';document.getElementById('employeePasswordTarget').disabled=true;document.getElementById('employeePasswordReload').disabled=true;employeePasswordMessage('Checking owner access and approved employees…');document.getElementById('employeePasswordClose').focus();
+  try{
+    if(!await employeePasswordVerifiedToken(context))throw Error('unavailable');const capability=await context.client.rpc('employee_password_owner_status');if(!context.valid())return false;
+    if(capability?.error||capability?.data?.is_owner!==true||capability.data.available!==true)throw Error('unavailable');
+    const result=await context.client.rpc('employee_password_owner_targets');if(!context.valid())return false;
+    if(result?.error||!Array.isArray(result?.data)||result.data.length>20||!result.data.every(employeePasswordValidTarget)||new Set(result.data.map(row=>row.record_id)).size!==result.data.length)throw Error('unavailable');
+    employeePasswordTargets=result.data.map(row=>Object.freeze({record_id:row.record_id,version:row.version,auth_uid:row.auth_uid,display_name:row.display_name,username:row.username,scope_label:row.scope_label,setup_completed:row.setup_completed,status:row.status}));
+    // A definite rejected password may be retried only after this deliberate fresh read.
+    for(const row of employeePasswordTargets){const key=employeePasswordRequestKey(row);if(row.status==='ready'&&employeePasswordRequests.get(key)?.status==='invalid_password')employeePasswordRequests.delete(key)}
+    const select=document.getElementById('employeePasswordTarget');select.replaceChildren();for(const row of employeePasswordTargets){const option=document.createElement('option');option.value=row.record_id;option.textContent=row.display_name+' — '+row.username;select.appendChild(option)}
+    employeePasswordLoading=false;select.disabled=!employeePasswordTargets.length;document.getElementById('employeePasswordReload').disabled=false;
+    if(employeePasswordTargets.length){select.value=employeePasswordTargets[0].record_id;renderEmployeePasswordSelection()}else employeePasswordMessage('No approved employee records are available. This screen cannot create accounts or assign access.');return true;
+  }catch{if(context.valid()){employeePasswordLoading=false;employeePasswordTargets=[];employeePasswordClearReview();document.getElementById('employeePasswordTarget').replaceChildren();document.getElementById('employeePasswordReload').disabled=false;employeePasswordMessage('Employee password administration is unavailable. Loading this list does not change passwords or cancel a previous request.')}return false}
+}
+async function loadEmployeePasswordCrypto(){const module=await import('./employee-password-candidate/browser-crypto.mjs');if(typeof module.encryptCommand!=='function')throw Error('unavailable');return module.encryptCommand}
+async function submitEmployeePassword(){
+  let password=document.getElementById('employeePasswordNew').value,confirmation=document.getElementById('employeePasswordConfirm').value;clearEmployeeAdminPasswords();
+  const row=employeePasswordReviewed,selected=employeePasswordSelected();
+  if(!employeePasswordConfig()||!employeePasswordOpen||employeePasswordLoading||!employeePasswordAvailable||!row||row.record_id!==selected?.record_id||row.version!==selected.version||!document.getElementById('employeePasswordReview').checked||(!row.setup_completed&&!document.getElementById('employeePasswordConfirmEmail').checked)||employeePasswordRequestFor(row))return false;
+  if(password.length<8||password.length>128||password!==confirmation){employeePasswordMessage('Enter the same password twice, using 8–128 characters. Spaces are kept exactly as typed.');return false}
+  const context=employeePasswordContext(true);if(!context.valid())return false;let requestId;try{requestId=crypto.randomUUID()}catch{employeePasswordMessage('The request could not start safely. No password update was submitted.');return false}
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId))return false;
+  const request={request_id:requestId,status:'pending',operation_id:''},attempt={password,owner_token:'',cancelled:false,applyDispatched:false,request};password='';confirmation='';employeePasswordRequests.set(employeePasswordRequestKey(row),request);employeePasswordAttempt=attempt;employeePasswordLoading=true;employeePasswordReviewed=null;
+  for(const id of ['employeePasswordTarget','employeePasswordReload','employeePasswordNew','employeePasswordConfirm','employeePasswordReview','employeePasswordConfirmEmail','employeePasswordSave'])document.getElementById(id).disabled=true;
+  document.getElementById('employeePasswordReview').checked=false;document.getElementById('employeePasswordConfirmEmail').checked=false;employeePasswordMessage(employeePasswordStatusText('pending')+' Request ID: '+requestId+'.');
+  const owns=()=>context.valid()&&employeePasswordAttempt===attempt&&!attempt.cancelled&&employeePasswordSelected()===selected;
+  try{
+    attempt.owner_token=await employeePasswordVerifiedToken(context);if(!owns())return false;if(!attempt.owner_token)throw Error('unavailable');
+    const capability=await context.client.rpc('employee_password_owner_status');if(!owns())return false;if(capability?.error||capability?.data?.is_owner!==true||capability.data.available!==true)throw Error('unavailable');
+    const encryptCommand=await loadEmployeePasswordCrypto();if(!owns())return false;
+    async function encryptedRequest(kind,challengeId){
+      if(!owns())return null;const iat=Math.floor(Date.now()/1000),payload={v:1,kind,aud:context.config.endpoint,owner_uid:context.uid,owner_token:attempt.owner_token,record_id:row.record_id,target_uid:row.auth_uid,expected_version:row.version,action:row.setup_completed?'reset':'initialize',request_id:requestId,confirm_email:!row.setup_completed,iat,exp:iat+60};
+      if(kind==='apply'){payload.challenge_id=challengeId;payload.password=attempt.password}
+      let encrypted='';try{encrypted=await encryptCommand(payload,context.config.key)}finally{payload.owner_token='';if(Object.hasOwn(payload,'password'))payload.password=''}
+      if(!owns())return null;if(typeof encrypted!=='string'||encrypted.length>16384||!/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){4}$/.test(encrypted))throw Error('unavailable');
+      if(kind==='apply')attempt.applyDispatched=true;
+      let response;try{response=await fetch(context.config.endpoint,{method:'POST',headers:{'Content-Type':'application/jose','apikey':SUPABASE_ANON_KEY},body:encrypted,redirect:'error',credentials:'omit',cache:'no-store'})}finally{encrypted=''}
+      const body=await response.json();return {http:response.status,body};
+    }
+    const prepared=await encryptedRequest('prepare');if(!owns())return false;
+    const challenge=prepared?.body,expires=Date.parse(challenge?.expires_at);
+    if(prepared?.http!==200||challenge?.status!=='prepared'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(challenge?.challenge_id||'')||!Number.isFinite(expires)||expires<=Date.now()){if(['blocked','needs_review','not_configured','not_authorized','invalid_request'].includes(challenge?.status)&&[400,401,403,409,429,503].includes(prepared?.http))request.status=challenge.status;throw Error('unavailable')}
+    const applied=await encryptedRequest('apply',challenge.challenge_id);if(!owns())return false;
+    const body=applied?.body,allowed=['applied','blocked','needs_review','not_configured','not_authorized','invalid_request','invalid_password'];request.status=allowed.includes(body?.status)&&[200,202,400,401,403,409,422,429,503].includes(applied.http)?body.status:'needs_review';
+    if((request.status==='applied'&&applied.http!==200)||(request.status==='invalid_password'&&applied.http!==422))request.status='needs_review';
+    if(typeof body?.operation_id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.operation_id))request.operation_id=body.operation_id;
+  }catch{if(request.status==='pending')request.status=attempt.applyDispatched?'needs_review':'blocked'}
+  finally{
+    attempt.password='';attempt.owner_token='';if(request.status==='pending')request.status=attempt.applyDispatched?'needs_review':'blocked';
+    if(owns()){employeePasswordLoading=false;employeePasswordAttempt=null;document.getElementById('employeePasswordTarget').disabled=false;document.getElementById('employeePasswordReload').disabled=false;renderEmployeePasswordSelection()}
+  }
+  return request.status==='applied';
+}
+// End owner-only password administration.
 async function startSession(user){
   if(!user)return;const email=(user.email||'').toLowerCase();
   if(!authAllowed(email)){setAuthMessage('This hub is limited to @'+ALLOWED_EMAIL_DOMAIN+' accounts.',true);await sb.auth.signOut();showAuthGate(true);return}
   currentUser=user;const epoch=hubSessionEpoch,client=sb;await loadCurrentAccess(user);if(currentUser!==user||epoch!==hubSessionEpoch||client!==sb)return;if(!currentUserAuthorized){setAuthMessage('This account has not been assigned access to the Superior Operations Hub.',true);await sb.auth.signOut();currentUser=null;showAuthGate(true);return}showAuthGate(false);const sign=document.getElementById('signOutBtn');if(sign){sign.style.display='inline-block';sign.textContent='Sign Out - '+email.split('@')[0]}
+  if(typeof scheduleEmployeePasswordOwner==='function')scheduleEmployeePasswordOwner();
   await loadRemoteState();if(currentUser!==user||epoch!==hubSessionEpoch||client!==sb)return;
   const requestedView=new URLSearchParams(location.search).get('view');
   if(!requestedView&&window.matchMedia('(max-width:1000px)').matches){state.view='today';saveUiPrefs();render()}
@@ -4789,7 +4949,7 @@ function saveProject(){
     showProjectFormMessage('Could not save the project: '+(err?.message||String(err)));
   }
 }
-function closeModal(id){if(id==='productionModal'){closeProductionModal();return}if(id==='inventoryModal'){closeInventoryModal();return}const modal=document.getElementById(id);if(modal){modal.classList.remove('open');modal.style.display='none'}}
+function closeModal(id){if(id==='employeePasswordModal'){closeEmployeePassword();return}if(id==='productionModal'){closeProductionModal();return}if(id==='inventoryModal'){closeInventoryModal();return}const modal=document.getElementById(id);if(modal){modal.classList.remove('open');modal.style.display='none'}}
 
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));
 document.querySelectorAll('.modal-backdrop').forEach(m=>m.onclick=e=>{if(e.target===m)closeModal(m.id)});
@@ -4847,7 +5007,7 @@ employeePresentationMedia.addEventListener('change',refreshEmployeeMobilePresent
 window.addEventListener('resize',()=>{
   if(!window.matchMedia('(max-width:1000px)').matches)closeOperationsNav();else syncOperationsNavAccessibility();
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeOperationsNav();if(e.key!=='Tab')return;const gate=document.getElementById('authGate'),modal=gate&&gate.getClientRects().length?gate:document.querySelector('#inventoryModal.open,#productionModal.open');if(!modal)return;const controls=[...modal.querySelectorAll('button,input,select,textarea,a[href]')].filter(x=>!x.disabled&&!x.hidden&&x.getClientRects().length);if(!controls.length)return;const first=controls[0],last=controls.at(-1);if(e.shiftKey&&(document.activeElement===first||!modal.contains(document.activeElement))){e.preventDefault();last.focus()}else if(!e.shiftKey&&(document.activeElement===last||!modal.contains(document.activeElement))){e.preventDefault();first.focus()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeOperationsNav();if(e.key!=='Tab')return;const gate=document.getElementById('authGate'),modal=gate&&gate.getClientRects().length?gate:document.querySelector('#inventoryModal.open,#productionModal.open,#employeePasswordModal.open');if(!modal)return;const controls=[...modal.querySelectorAll('button,input,select,textarea,a[href]')].filter(x=>!x.disabled&&!x.hidden&&x.getClientRects().length);if(!controls.length)return;const first=controls[0],last=controls.at(-1);if(e.shiftKey&&(document.activeElement===first||!modal.contains(document.activeElement))){e.preventDefault();last.focus()}else if(!e.shiftKey&&(document.activeElement===last||!modal.contains(document.activeElement))){e.preventDefault();first.focus()}});
 if(mainTabs){
   mainTabs.addEventListener('click',e=>{
     const tab=e.target.closest('.tab[data-view]');
@@ -4918,6 +5078,15 @@ document.getElementById('resetBtn').onclick=()=>{if(confirm('Reload the newest s
 document.getElementById('exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='superior-master-operations-hub-v28-backup.json';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},0)};
 document.getElementById('refreshLiveBtn').onclick=()=>loadRemoteState(true);
 document.getElementById('signOutBtn').onclick=signOut;
+document.getElementById('employeePasswordBtn').onclick=openEmployeePassword;
+document.getElementById('employeePasswordClose').onclick=closeEmployeePassword;
+document.getElementById('employeePasswordTarget').onchange=changeEmployeePasswordSelection;
+document.getElementById('employeePasswordReview').onchange=reviewEmployeePassword;
+document.getElementById('employeePasswordConfirmEmail').onchange=reviewEmployeePassword;
+document.getElementById('employeePasswordReload').onclick=openEmployeePassword;
+document.getElementById('employeePasswordSave').onclick=submitEmployeePassword;
+window.addEventListener('pagehide',()=>{resetEmployeePasswordOwner()});
+document.getElementById('employeePasswordModal').addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeEmployeePassword()}});
 if(window.visualViewport){const updateVisibleHeight=()=>document.documentElement.style.setProperty('--hub-visible-height',Math.round(window.visualViewport.height)+'px');window.visualViewport.addEventListener('resize',updateVisibleHeight);updateVisibleHeight()}
 document.getElementById('mobileToolsToggle').onclick=()=>{const open=document.body.classList.toggle('mobile-tools-open');document.getElementById('mobileToolsToggle').setAttribute('aria-expanded',String(open));document.getElementById('mobileToolsToggle').textContent=open?'Hide tools':'More tools'};
 document.getElementById('assistantLaunch').onclick=openAssistant;
@@ -4952,6 +5121,7 @@ async function bootstrap(){
   // Establish the interrupted-session fence before registering any native callback.
   const pendingEmployeeSession=employeeNativeInstallPending()!==false;if(pendingEmployeeSession)employeeCleanupBlocked=true;
   sb.auth.onAuthStateChange(async(event,session)=>{
+    if(typeof employeePasswordAuthChanged==='function')employeePasswordAuthChanged(event,session);
     if(typeof recoveryIdentity!=='undefined'&&recoveryIdentity&&(!session?.user||session.user.id!==recoveryIdentity.uid)){cancelRecoveryAuth();return}
     if(typeof employeeNativeAuthBusy==='function'&&employeeNativeAuthBusy()){if(!session&&event==='SIGNED_OUT')resetLocalSession();return}
     if(event==='PASSWORD_RECOVERY'&&session){currentUser=null;showPasswordSetup(session,'Use this secure link to choose your password.');return}

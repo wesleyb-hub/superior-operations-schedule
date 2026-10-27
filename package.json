@@ -11,5 +11,8 @@
     "@supabase/supabase-js": "2.118.0",
     "pg": "8.16.3",
     "playwright": "1.56.1"
+  },
+  "dependencies": {
+    "jose": "6.2.13"
   }
 }
