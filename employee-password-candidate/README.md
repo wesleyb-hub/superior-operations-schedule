@@ -94,11 +94,22 @@ The new migration seeds disabled settings and **no owners or employee records**.
 
 Server needs explicit `EMPLOYEE_PASSWORD_ENABLED=true`, built-in `SUPABASE_URL`,
 `SUPABASE_ANON_KEY`, legacy-JWT `SUPABASE_SERVICE_ROLE_KEY`, and separately approved
-`EMPLOYEE_PASSWORD_HUB_ORIGIN`, `EMPLOYEE_PASSWORD_AUDIENCE`,
+`EMPLOYEE_PASSWORD_INGRESS_API_KEY`, `EMPLOYEE_PASSWORD_HUB_ORIGIN`, `EMPLOYEE_PASSWORD_AUDIENCE`,
 `EMPLOYEE_PASSWORD_IDENTIFIER_DOMAIN`, `EMPLOYEE_PASSWORD_KEY_ID`,
 `EMPLOYEE_PASSWORD_KEY_NOT_AFTER`, `EMPLOYEE_PASSWORD_PRIVATE_KEY`.
 Opaque `sb_secret_` keys are deliberately not supported by this adapter's header
 contract. Do not expose any server-only value in browser configuration or this repo.
+
+`EMPLOYEE_PASSWORD_INGRESS_API_KEY` must exactly equal the **existing publishable**
+`sb_publishable_...` key in this Hub's `config.js` `supabaseAnonKey` field. It is an
+explicit public routing/configuration pin, not owner authorization. Missing or
+non-publishable values disable the handler; there is no automatic legacy/secret-key
+fallback. No new key or browser change is implied. The server's legacy
+`SUPABASE_ANON_KEY` is used separately for native owner-token verification, and
+`SUPABASE_SERVICE_ROLE_KEY` is used only for internal service calls. Native Auth
+requests pin `X-Supabase-Api-Version: 2024-01-01`; unknown/legacy rejection shapes
+still retain the uncertainty lock. Verify hosted gateway/header parity before
+activation; the isolated native harness is not evidence of that hosted behavior.
 
 Private DB readiness must independently match enabled/current key/audience/domain.
 Neither a browser flag nor environment flag alone authorizes an account operation.
@@ -146,3 +157,9 @@ Primary references reviewed26 October2026:
 - https://raw.githubusercontent.com/supabase/auth/v2.197.0/internal/api/admin.go
 - https://supabase.com/docs/guides/functions/logging
 - https://supabase.com/docs/guides/auth/password-security
+
+API-contract and ingress-key references rechecked 27 October 2026:
+- https://github.com/supabase/auth/blob/v2.197.0/internal/api/apiversions.go
+- https://github.com/supabase/auth/blob/v2.197.0/internal/api/errors.go
+- https://supabase.com/docs/guides/functions/secrets
+- https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys

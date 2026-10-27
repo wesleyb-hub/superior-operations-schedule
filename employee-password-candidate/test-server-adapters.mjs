@@ -4,12 +4,59 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import {createSyntheticAdapters,createNativeAdapters} from './server-adapters.mjs';
 import {configuredPasswordHandler} from './production-entry.mjs';
+import {encryptCommand} from './browser-crypto.mjs';
 const uid='22222222-2222-4222-8222-222222222222',owner='11111111-1111-4111-8111-111111111111',op='66666666-6666-4666-8666-666666666666';
 const cfg={authOrigin:'https://auth.example.invalid',publicKey:'synthetic-public-key',serverKey:'synthetic-server-key'};
 const response=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json',...headers}});
 function fixture(replies=[]){const calls=[];return {calls,ports:createSyntheticAdapters(cfg,async(url,options)=>{calls.push({url,options});const next=replies.shift();if(next instanceof Error)throw next;return next??response(true);})};}
 test('disabled production entry reads only the opt-in flag and never accesses keys or HTTP',async()=>{const reads=[];const handler=configuredPasswordHandler(name=>{reads.push(name);return 'false'},()=>{throw Error('HTTP forbidden')});assert.equal((await handler({})).status,503);assert.deepEqual(reads,['EMPLOYEE_PASSWORD_ENABLED']);});
 test('missing server configuration remains disabled',async()=>{const handler=configuredPasswordHandler(name=>name==='EMPLOYEE_PASSWORD_ENABLED'?'true':undefined,()=>{throw Error('HTTP forbidden')});assert.equal((await handler({})).status,503);});
+function productionEnv(){
+ return {EMPLOYEE_PASSWORD_ENABLED:'true',SUPABASE_URL:'https://abcdefghijklmnopqrst.supabase.co',
+  EMPLOYEE_PASSWORD_HUB_ORIGIN:'https://hub.example.invalid',EMPLOYEE_PASSWORD_AUDIENCE:'https://abcdefghijklmnopqrst.supabase.co/functions/v1/employee-password',
+  EMPLOYEE_PASSWORD_IDENTIFIER_DOMAIN:'company.example.invalid',EMPLOYEE_PASSWORD_INGRESS_API_KEY:'sb_publishable_SYNTHETIC_PUBLIC_ONLY_12345',
+  SUPABASE_ANON_KEY:'synthetic.anon.key',SUPABASE_SERVICE_ROLE_KEY:'synthetic.server.key',EMPLOYEE_PASSWORD_KEY_ID:'employee-password-contract-test',
+  EMPLOYEE_PASSWORD_KEY_NOT_AFTER:new Date(Date.now()+3600000).toISOString(),EMPLOYEE_PASSWORD_PRIVATE_KEY:'unused-synthetic-key'};
+}
+test('production ingress requires an explicit publishable pin and never falls back to legacy or secret keys',async()=>{
+ for(const ingress of [undefined,'','synthetic.anon.key','sb_secret_SYNTHETIC_ONLY_12345','sb_publishable_short']){
+  const env={...productionEnv(),EMPLOYEE_PASSWORD_INGRESS_API_KEY:ingress};let calls=0;
+  const handler=configuredPasswordHandler(name=>env[name],()=>{calls++;throw Error('HTTP forbidden')});
+  assert.equal((await handler({})).status,503);assert.equal(calls,0);
+ }
+});
+test('production outer public pin is exact and is not a substitute for encrypted owner authorization',async()=>{
+ const env=productionEnv(),calls=[];
+ const handler=configuredPasswordHandler(name=>env[name],async(url,options)=>{calls.push({url,options});return response(false);});
+ const request=apikey=>new Request(env.EMPLOYEE_PASSWORD_AUDIENCE,{method:'POST',headers:{origin:env.EMPLOYEE_PASSWORD_HUB_ORIGIN,apikey,'content-type':'application/jose'},body:'synthetic-not-an-envelope'});
+ for(const key of [env.SUPABASE_ANON_KEY,env.SUPABASE_SERVICE_ROLE_KEY,'sb_publishable_WRONG_PUBLIC_ONLY_12345'])assert.equal((await handler(request(key))).status,403);
+ assert.equal(calls.length,0);
+ assert.equal((await handler(request(env.EMPLOYEE_PASSWORD_INGRESS_API_KEY))).status,429);
+ assert.equal(calls.length,1);assert.ok(calls[0].url.endsWith('/rest/v1/rpc/employee_password_preflight'));
+ assert.equal(calls[0].options.headers.apikey,env.SUPABASE_SERVICE_ROLE_KEY);
+});
+test('production entry keeps publishable ingress separate from native owner-token verification and owner allowlist',async()=>{
+ const env=productionEnv(),calls=[];
+ const keys=await crypto.subtle.generateKey({name:'RSA-OAEP',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['encrypt','decrypt']);
+ const raw=await crypto.subtle.exportKey('jwk',keys.publicKey);
+ env.EMPLOYEE_PASSWORD_PRIVATE_KEY='-----BEGIN PRIVATE KEY-----\n'+Buffer.from(await crypto.subtle.exportKey('pkcs8',keys.privateKey)).toString('base64')+'\n-----END PRIVATE KEY-----';
+ const handler=configuredPasswordHandler(name=>env[name],async(url,options)=>{
+  calls.push({url,options});
+  if(url.endsWith('/employee_password_preflight'))return response(true);
+  if(url.endsWith('/auth/v1/user'))return response({id:owner,is_anonymous:false});
+  if(url.endsWith('/employee_password_is_owner'))return response(false);
+  throw Error('Unexpected request');
+ });
+ const now=Math.floor(Date.now()/1000),command={v:1,kind:'prepare',aud:env.EMPLOYEE_PASSWORD_AUDIENCE,owner_uid:owner,owner_token:'synthetic.owner.token',record_id:'demo',target_uid:uid,expected_version:1,action:'initialize',request_id:op,iat:now,exp:now+60,confirm_email:true};
+ const encrypted=await encryptCommand(command,{kid:env.EMPLOYEE_PASSWORD_KEY_ID,not_after:env.EMPLOYEE_PASSWORD_KEY_NOT_AFTER,jwk:{kty:raw.kty,n:raw.n,e:raw.e}});
+ const reply=await handler(new Request(env.EMPLOYEE_PASSWORD_AUDIENCE,{method:'POST',headers:{origin:env.EMPLOYEE_PASSWORD_HUB_ORIGIN,apikey:env.EMPLOYEE_PASSWORD_INGRESS_API_KEY,'content-type':'application/jose'},body:encrypted}));
+ assert.equal(reply.status,403);assert.deepEqual(await reply.json(),{status:'blocked'});assert.equal(calls.length,3);
+ const native=calls.find(c=>c.url.endsWith('/auth/v1/user'));
+ assert.equal(native.options.headers.apikey,env.SUPABASE_ANON_KEY);assert.equal(native.options.headers.authorization,'Bearer synthetic.owner.token');
+ assert.equal(new Headers(native.options.headers).get('X-Supabase-Api-Version'),'2024-01-01');
+ assert.ok(calls.every(c=>!c.url.includes('/admin/users/')&&c.options.headers.apikey!==env.EMPLOYEE_PASSWORD_INGRESS_API_KEY));
+ env.EMPLOYEE_PASSWORD_PRIVATE_KEY='';command.owner_token='';
+});
 test('production adapter rejects arbitrary origin and opaque secret keys',()=>{for(const authOrigin of ['http://localhost','https://auth.example.invalid','https://abcdefghijklmnopqrst.supabase.co.evil.invalid'])assert.throws(()=>createNativeAdapters({...cfg,authOrigin,serverKey:'synthetic.service.key'},()=>{}));assert.throws(()=>createNativeAdapters({...cfg,authOrigin:'https://abcdefghijklmnopqrst.supabase.co',serverKey:'sb_secret_SYNTHETIC'},()=>{}));});
 test('native caller validation uses public key and decrypted owner bearer, not server credential',async()=>{const f=fixture([response({id:owner,is_anonymous:false})]);await f.ports.authenticate('synthetic.owner.token');assert.equal(f.calls[0].url,cfg.authOrigin+'/auth/v1/user');assert.equal(f.calls[0].options.headers.apikey,cfg.publicKey);assert.equal(f.calls[0].options.headers.authorization,'Bearer synthetic.owner.token');assert.equal(f.calls[0].options.redirect,'error');});
 test('initialize is one exact-UID native PUT with individual confirmation only',async()=>{const f=fixture([response({id:uid,email:'plantdemo@company.example.invalid'})]);const r=await f.ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',true);assert.equal(r.kind,'updated');assert.equal(f.calls[0].url,cfg.authOrigin+'/auth/v1/admin/users/'+uid);assert.equal(f.calls[0].options.method,'PUT');assert.deepEqual(JSON.parse(f.calls[0].options.body),{password:'SYNTHETIC_PASSWORD',email_confirm:true});assert.equal(f.calls[0].options.headers.apikey,cfg.serverKey);assert.equal(f.calls[0].options.redirect,'error');});
