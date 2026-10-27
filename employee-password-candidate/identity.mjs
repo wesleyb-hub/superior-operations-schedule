@@ -18,3 +18,22 @@ export function matchesExistingEmailIdentity(user,record){
     &&Array.isArray(user.identities)&&user.identities.length===1&&user.identities[0]?.provider==='email'
     &&user.identities[0]?.user_id===record.auth_uid&&user.identities[0]?.identity_data?.email===record.auth_email;
 }
+
+// Fixed reviewed mixed profile; this does not authorize account creation or grants.
+export const MIXED_EMPLOYEE_SCOPE=Object.freeze({
+ enabled:true,preset:'walls_production_inventory_qc_v1',division:'walls',
+ production_views:Object.freeze(['today','five_day','table_board','weekly_forecast']),
+ production_actions:Object.freeze(['setup','pour','strip','issue','assign','plan']),
+ production_write:true,production_full_read:false,
+ inventory_scopes:Object.freeze(['walls/production','walls/install','boxes/production']),
+ inventory_counts:true,inventory_manage:true,inventory_other_mutations:false,
+ field_work:'read_only',qc_divisions:Object.freeze(['walls']),
+ approved_walls_packs:true,unapproved_packs:false,management:false,purchasing:false,approvals:false,
+ other_divisions:Object.freeze(['boxes','manholes','fence','block']),other_division_write:false,
+ independent_grants:Object.freeze(['walls_production','walls_installation_view_qc'])
+});
+export function isRestrictedMixedProfile(scope){
+ if(!scope||typeof scope!=='object'||!exactSet(Object.keys(scope),Object.keys(MIXED_EMPLOYEE_SCOPE)))return false;
+ return Object.entries(MIXED_EMPLOYEE_SCOPE).every(([key,value])=>Array.isArray(value)?exactSet(scope[key],value):scope[key]===value);
+}
+export function isReviewedEmployeeScope(scope){return isRestrictedPilot(scope)||isRestrictedMixedProfile(scope);}

@@ -72,6 +72,8 @@ jobs:
         run: node scripts/validate-operational-modal-ui.mjs artifacts/workflow-ui/modal-recovery
       - name: Verify phone pilot navigation and input recovery
         run: node scripts/validate-mobile-pilot-ui.mjs artifacts/workflow-ui/mobile-pilot
+      - name: Verify restricted production, inventory and Walls-only QC presentation
+        run: node scripts/validate-scoped-production-user-ui.mjs artifacts/workflow-ui/scoped-production
       - name: Retain synthetic screenshots and results for visual review
         if: always()
         uses: actions/upload-artifact@v4

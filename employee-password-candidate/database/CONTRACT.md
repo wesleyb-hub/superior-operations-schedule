@@ -94,3 +94,9 @@ NODE_PATH=/tmp/employee-login-tools/node_modules node employee-password-candidat
 ```
 
 The runner uses already-installed pinned PostgreSQL 17.10/pg dependencies, creates a fresh ephemeral loopback cluster, applies baseline plus every migration, exercises actual SQL roles and concurrent connections, then runs the unchanged workflow and both employee-scope probes. It stops and removes the cluster. Minimal synthetic `auth.users`/identity/MFA fixture columns are **test compatibility scaffolding**, not real GoTrue. Evidence is written to `artifacts/employee-owner-password/database/{result.json,result.log}` and explicitly reports `nativeAuthVerified:false,hostedVerified:false`.
+
+## Fixed mixed-profile extension (private rollout candidate)
+
+`20261027112125_mixed_employee_password_scope.sql` adds a second fixed grant profile, `walls_production_inventory_qc_v1`, without enrolling any target or changing grants. The original pilot remains separately validated. A complete actual/reviewed grant union is still mandatory; no global role, legacy inventory or weekly planner row is accepted for the mixed profile. Three exact inventory scope rows plus production execution/plan controls and Walls installation view/QC are required. Other division screens remain read-only; the weekly schedule exposes approved Walls crew packs only, without a planner grant row. Field management and plan-review approval are excluded. `record_payload` returns the validated profile's distinct canonical effective scope. The runtime recognizes only these two exact scope objects.
+
+See `docs/KYLER-PASSWORD-SCOPE-ROLLOUT.md` for the review/activation sequence, unchanged Jade re-review caused by authority fingerprint drift, and precise synthetic/native verification limits. Neither schema migration performs target enrollment, UID creation, owner changes or automatic reviewed-record refresh.

@@ -18,7 +18,7 @@ function elements(markup){
 function adapter(nodes){return {querySelector:()=>null,querySelectorAll:selector=>{const attr=selector.match(/^\[([\w-]+)\]$/)?.[1];return attr?nodes.filter(n=>Object.hasOwn(n.attributes,attr)):[]},getElementById:()=>null}}
 function fixture(){
  const view={innerHTML:''},calls=[];
- const c={console,Date,URL,Math,Set,Map,JSON,Number,String,currentUserIsAdmin:true,
+ const c={console,Date,URL,Math,Set,Map,JSON,Number,String,currentUserIsAdmin:true,currentUserCanWrite:true,
   state:{subview:{boxes:'current'},walls:[],jobs:[],qcHistory:[],week:'2026-10-19',productionDay:'2026-10-19',installationDay:'2026-10-19'},
   wallsProduction:{permissions:{assign:true,plan:true},assignments:[],jobs:[],tables:[{table_id:'1',label:'Synthetic table'}]},
   wallsInstallation:{permissions:{manage:true},jobs:[],day_cards:[]},wallsInstallationReady:true,PRODUCTION_STAGE_LABELS:{},
@@ -33,7 +33,7 @@ function fixture(){
   alert(m){throw Error(m)}
  };
  vm.createContext(c);
- const names=`htmlSafe normalizeDate parseDate iso addDays fmt weekday weekStart todayISO productionDateTimeLocal productionJob productionLfBreakdown productionReleasePill renderProductionQueue openProductionAssignmentModal bindWallsProductionControls installResources installationCanManage installationCanProgress installationActivityCanBeRemoved installationStatusLabel installationActivityCard installationWorkspaceActivityCard installationWorkspacePanel installationJobCompactCard installationTodayFieldWorkContent renderInstallationCatchupToday renderWallsInstallationEnhanced applyInstallationActionAccess bindWallsInstallationEnhancedControls wallCard wallDateKey bindWallDragDrop renderProductRow bindPrecastControls allProducts kpi renderQC renderPrecast weekDates pieceIsScheduledOn plannedQtyForDate actualQtyForDate productionCompletionsForWeek producedQty releasedQty pieceCountsForDate pct statusClass`.split(' ');
+ const names=`htmlSafe normalizeDate parseDate iso addDays fmt weekday weekStart todayISO productionDateTimeLocal productionJob productionLfBreakdown productionReleasePill renderProductionQueue openProductionAssignmentModal bindWallsProductionControls installResources installationCanManage installationCanProgress installationActivityCanBeRemoved installationStatusLabel installationActivityCard installationWorkspaceActivityCard installationWorkspacePanel installationJobCompactCard installationTodayFieldWorkContent renderInstallationCatchupToday renderWallsInstallationEnhanced applyInstallationActionAccess bindWallsInstallationEnhancedControls wallCard wallDateKey bindWallDragDrop renderProductRow bindPrecastControls allProducts kpi bindWallsQcControls renderQC renderPrecast weekDates pieceIsScheduledOn plannedQtyForDate actualQtyForDate productionCompletionsForWeek producedQty releasedQty pieceCountsForDate pct statusClass`.split(' ');
  vm.runInContext(html.slice(html.indexOf('const divisionMeta='),html.indexOf('const seed='))+names.map(sourceOf).join('\n'),c);
  return {c,view,calls};
 }

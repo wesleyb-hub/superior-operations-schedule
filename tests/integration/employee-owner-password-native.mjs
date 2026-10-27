@@ -13,6 +13,7 @@ import { bootstrapOwnerPasswordDatabase } from './employee-owner-password-native
 import {runEmployeeOwnerPasswordNativeBrowser,EmployeeOwnerPasswordBrowserFailure} from './employee-owner-password-native-browser.mjs';
 import { createPasswordHandler } from '../../employee-password-candidate/password-service.mjs';
 import { createSyntheticAdapters } from '../../employee-password-candidate/server-adapters.mjs';
+import {matchesExistingEmailIdentity} from '../../employee-password-candidate/identity.mjs';
 import { encryptCommand } from '../../employee-password-candidate/browser-crypto.mjs';
 
 if (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUN_EMPLOYEE_OWNER_PASSWORD_NATIVE_TEST !== '1') {
@@ -63,7 +64,7 @@ try {
   const fresh = () => createClient(api, vars.ANON_KEY, options);
   const keyId='employee-password-native-test', audience='https://auth.example.invalid/functions/v1/employee-password';
   const ownerEmail='owner-password-test@company.example.invalid',ownerPassword=password();
-  const employees=[{username:'nativeplantone',initialPassword:password()},{username:'nativeplanttwo',initialPassword:password()}];
+  const employees=[{username:'nativeplantone',initialPassword:password()},{username:'nativeplanttwo',initialPassword:password()},{username:'nativemixed',profile:'mixed'}];
   db=new pg.Client({connectionString:vars.DB_URL});
   const effectiveDb=db.connectionParameters;
   requireThat(['127.0.0.1','localhost','::1'].includes(effectiveDb.host)&&effectiveDb.database==='postgres'&&dbUrl.port&&Number(effectiveDb.port)===Number(dbUrl.port)&&!dbUrl.search&&!dbUrl.hash,'Unexpected effective local DB connection');
@@ -74,11 +75,20 @@ try {
   const ownerUid=ownerCreated.data.user.id;
   for(const employee of employees){
     employee.email=employee.username+'@company.example.invalid';
-    const created=await admin.auth.admin.createUser({email:employee.email,password:employee.initialPassword,email_confirm:false});
+    const attributes=employee.profile==='mixed'?{email:employee.email,email_confirm:false}:{email:employee.email,password:employee.initialPassword,email_confirm:false};
+    if(employee.profile==='mixed')requireThat(Object.keys(attributes).sort().join(',')==='email,email_confirm','Mixed create must omit password, metadata and invitation attributes');
+    const created=await admin.auth.admin.createUser(attributes);
     requireThat(!created.error&&created.data.user?.id&&!created.data.user.email_confirmed_at,'Synthetic employee creation failed');
+    if(employee.profile==='mixed'){
+      requireThat(matchesExistingEmailIdentity(created.data.user,{auth_uid:created.data.user.id,auth_email:employee.email}),'No-password native create lacks required exact email identity');
+      requireThat(!created.data.user.last_sign_in_at&&!created.data.user.confirmation_sent_at&&!created.data.user.recovery_sent_at,'No-password native create unexpectedly used confirmation/recovery/sign-in flow');
+      report('Synthetic mixed account created by native Admin with email and email_confirm:false only; no password or email flow; exact provider/identity verified');
+    }
     employee.uid=created.data.user.id;employee.record_id='native-'+employee.username;employee.version=1;
   }
   result.bootstrap=await bootstrapOwnerPasswordDatabase(db,{ownerUid,employees,keyId,audience});
+  const fullGrantSnapshot=async()=>JSON.stringify((await db.query(`select user_id,employee_password.current_grants(user_id,username||'@company.example.invalid') as grants from (select auth_uid as user_id,username from employee_password.approved_records) s order by user_id`)).rows);
+  const baselineFullGrants=await fullGrantSnapshot();
   const baselineUsers=JSON.stringify((await db.query('select id,email from auth.users order by id')).rows);
   const baselineGrants=JSON.stringify((await db.query('select to_jsonb(a) r from public.app_employee_access a order by user_id')).rows);
   const baselineOwnerGrants=JSON.stringify((await db.query('select to_jsonb(a) r from public.app_user_roles a order by user_id')).rows);
@@ -224,6 +234,20 @@ try {
   requireThat(!renewedOwner.error&&renewedOwner.data.session?.access_token,'Native owner session renewal after browser fixture failed');
   ownerToken=renewedOwner.data.session.access_token;
 
+  stage='mixed profile real native lifecycle';
+  const mixed=employees[2],mixedPassword=password(),mixedPrepared=await prepare(mixed);
+  const mixedInitialized=await apply(mixed,mixedPrepared,mixedPassword);
+  requireThat(mixedInitialized.status===200&&mixedInitialized.body.status==='applied','Mixed profile native initialize failed');mixed.version++;
+  const mixedLogin=await login(mixed,mixedPassword);
+  requireThat(!mixedLogin.error&&mixedLogin.data.user?.id===mixed.uid,'Mixed native login failed');
+  const mixedDenied=await invoke(makeCommand(mixed,'prepare',{actor:mixed.uid,token:mixedLogin.data.session.access_token}));
+  requireThat(mixedDenied.status===403,'Mixed profile became password owner');
+  const mixedResetPassword=password(),mixedReset=await apply(mixed,await prepare(mixed),mixedResetPassword);
+  requireThat(mixedReset.status===200&&mixedReset.body.status==='applied','Mixed profile native reset failed');mixed.version++;
+  requireThat(!(await login(mixed,mixedResetPassword)).error&&(await login(mixed,mixedPassword)).error?.code==='invalid_credentials','Mixed native reset password verification failed');
+  requireThat(await fullGrantSnapshot()===baselineFullGrants,'Mixed password lifecycle changed grants');
+  report('Fourth synthetic mixed-profile identity created without password initializes and resets through real native Auth; cannot administer passwords; full six-table grants unchanged');
+
   stage='native lost-success-response uncertainty';
   const interrupted=await prepare(uncertain),uncertainPassword=password();loseNextWriteResponse=true;
   const lost=await apply(uncertain,interrupted,uncertainPassword);
@@ -235,14 +259,15 @@ try {
   report('Lost response after an actual native update remains needs_review; new nonce/request cannot blindly overwrite');
 
   stage='unchanged scopes and secret-free state';
+  requireThat(await fullGrantSnapshot()===baselineFullGrants,'Password operations changed full union of business grants');
   requireThat(JSON.stringify((await db.query('select id,email from auth.users order by id')).rows)===baselineUsers,'Native owner password operations changed identities or account count');
   requireThat(JSON.stringify((await db.query('select to_jsonb(a) r from public.app_employee_access a order by user_id')).rows)===baselineGrants,'Employee business grants changed');
   requireThat(JSON.stringify((await db.query('select to_jsonb(a) r from public.app_user_roles a order by user_id')).rows)===baselineOwnerGrants,'Owner business grants changed');
   requireThat(!(await fresh().auth.signInWithPassword({email:ownerEmail,password:ownerPassword})).error,'Other owner password changed');
   const audit=JSON.stringify((await db.query('select * from employee_password.audit')).rows);
   requireThat(!/@|password|token|https:|Bearer|cipher/i.test(audit),'Audit includes unexpected sensitive/free-form data');
-  report('Exactly three synthetic existing identities and all employee/owner business grants are unchanged; audit contains only fixed nonsecret metadata');
-  result.nativePasswordUpdateRequests=nativeWrites;result.syntheticUsers=3;result.passed=true;ownerToken='';
+  report('Exactly four synthetic existing identities and all employee/owner business grants are unchanged; audit contains only fixed nonsecret metadata');
+  result.nativePasswordUpdateRequests=nativeWrites;result.syntheticUsers=4;result.passed=true;ownerToken='';
 } catch(error){
   exitCode=1;result.failure={stage,message:error instanceof TestFailure||error instanceof EmployeeOwnerPasswordBrowserFailure?error.message:'Native operation failed; raw provider/parser/process diagnostics suppressed'};
   console.error(`FAIL: ${stage}: ${result.failure.message}`);
