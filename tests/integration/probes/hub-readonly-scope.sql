@@ -65,8 +65,10 @@ do $$ declare x jsonb;p text;s record;r record;args text;cnt int:=0; begin
  perform test_reader.rejects(format('select public.approve_weekly_planner_section(%L,%s)',current_setting('test.reader_section'),current_setting('test.reader_section_version')),'known valid planner section approval denied');
  perform test_reader.rejects($q$select public.publish_weekly_planner_pack('2026-11-09')$q$,'known existing planner week publication denied');
  perform test_reader.rejects(format('select public.save_schedule_snapshot(%s,%L::jsonb)',(public.get_schedule_snapshot()->>'revision')::bigint,public.get_schedule_snapshot()#>'{payload,data}'),'correct current revision cannot write snapshot');
+ perform test_reader.rejects('select public.capture_current_walls_production_weekly_forecast()','reader current-week capture wrapper authority denied');
+ perform test_reader.rejects($q$select public.capture_walls_production_weekly_forecast('2026-11-09','TEST reader denied')$q$,'reader valid-week capture authority denied');
  perform test_reader.assert(cnt>=35,'at least35 actual RPC signatures reject null-input smoke');
- foreach p in array array['replace_schedule_records(jsonb,text)','compose_schedule_data()','rebuild_weekly_planner_conflicts(date)','sync_walls_installation_week(date)','capture_current_walls_production_weekly_forecast()'] loop
+ foreach p in array array['replace_schedule_records(jsonb,text)','compose_schedule_data()','rebuild_weekly_planner_conflicts(date)','sync_walls_installation_week(date)'] loop
   if to_regprocedure('public.'||p) is not null then perform test_reader.assert(not has_function_privilege('authenticated','public.'||p,'execute'),'internal execute revoked '||p); end if;
  end loop;
  for r in select tablename from pg_tables where schemaname='public' loop
@@ -77,7 +79,7 @@ do $$ declare x jsonb;p text;s record;r record;args text;cnt int:=0; begin
  end loop;
  perform test_reader.rejects($q$select public.execute_operations_agent_action('00000000-0000-4000-8900-000000000901','CONFIRM')$q$,'existing expired action cannot change status');
  perform test_reader.rejects($q$select public.reject_operations_agent_action('00000000-0000-4000-8900-000000000901')$q$,'existing action cannot be rejected');
- perform test_reader.rejects($q$select public.create_operations_agent_proposal('Synthetic','set_inventory_count','{}','Synthetic','TEST-READER-PENDING')$q$,'idempotent old proposal cannot change row');
+ perform test_reader.rejects(format('select public.create_operations_agent_proposal(%L,%L,%L::jsonb,%L,%L)','Synthetic','set_inventory_count',jsonb_build_object('item_id',current_setting('test.reader_item')::bigint,'expected_version',current_setting('test.reader_item_version')::bigint,'quantity',11),'Synthetic','TEST-READER-PENDING'),'known-item idempotent old proposal denied by existing write authority before upsert');
  update public.schedule_state set updated_by='FORBIDDEN'; get diagnostics cnt=row_count; perform test_reader.assert(cnt=0,'legacy state UPDATE RLS denies');
 perform test_reader.assert(test_reader.state_digest()=current_setting('test.reader_before'),'ALL public table contents unchanged after read and denial matrix');
 end $$;

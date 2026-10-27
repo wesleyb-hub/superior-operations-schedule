@@ -165,62 +165,6 @@ create or replace function public.can_edit_schedule()
 returns boolean language sql stable security definer set search_path=public,pg_temp as $$
 select public.is_operations_admin();
 $$;
-create or replace function public.create_operations_agent_proposal(
-  p_request_text text,p_action_type text,p_parameters jsonb,p_summary text,p_idempotency_key text
-) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
-declare v_action public.operations_agent_actions%rowtype;v_item public.inventory_items%rowtype;v_assignment public.walls_production_assignments%rowtype;
-v_stage text;v_required text;v_quantity integer;v_progress integer;v_actual numeric;v_expected bigint;
-begin
-  if public.has_hub_readonly_profile() then raise exception 'Read-only account'; end if;
-  if auth.uid() is null then raise exception 'Authentication required'; end if;
-  if length(btrim(coalesce(p_request_text,''))) not between 1 and 4000 then raise exception 'Request text is required'; end if;
-  if length(btrim(coalesce(p_summary,''))) not between 1 and 1000 then raise exception 'Action summary is required'; end if;
-  if length(coalesce(p_idempotency_key,'')) not between 8 and 200 then raise exception 'Valid idempotency key required'; end if;
-  if p_action_type not in ('set_inventory_count','advance_production_stage','update_setup_progress') then raise exception 'Unsupported agent action'; end if;
-
-  if p_action_type='set_inventory_count' then
-    v_quantity:=(p_parameters->>'quantity')::integer;v_expected:=(p_parameters->>'expected_version')::bigint;
-    select * into v_item from public.inventory_items where item_id=(p_parameters->>'item_id')::bigint;
-    if not found then raise exception 'Inventory item not found'; end if;
-    if not public.inventory_item_access(v_item.item_id,'adjust') then raise exception 'Inventory count access required'; end if;
-    if v_quantity is null or v_quantity<0 then raise exception 'Quantity must be zero or a positive whole number'; end if;
-    if v_expected is null then raise exception 'Inventory version is required'; end if;
-    if v_item.version<>v_expected then raise exception 'Inventory version conflict; refresh before proposing the change'; end if;
-  elsif p_action_type='advance_production_stage' then
-    v_stage:=p_parameters->>'new_stage';v_expected:=(p_parameters->>'expected_version')::bigint;
-    if v_stage is null or v_stage not in ('setup_in_progress','setup_complete','poured','curing','stripped') then raise exception 'Unsupported production stage'; end if;
-    select * into v_assignment from public.walls_production_assignments where assignment_id=(p_parameters->>'assignment_id')::uuid;
-    if not found then raise exception 'Production assignment not found'; end if;
-    if v_expected is null or v_assignment.version<>v_expected then raise exception 'Production assignment changed; refresh before proposing the change'; end if;
-    if not ((v_assignment.stage='planned' and v_stage='setup_in_progress') or
-      (v_assignment.stage='setup_in_progress' and v_stage='setup_complete') or
-      (v_assignment.stage='ready_for_pour' and v_stage='poured') or
-      (v_assignment.stage='poured' and v_stage='curing') or
-      (v_assignment.stage='curing' and v_stage='stripped')) then raise exception 'Only the immediate next routine production stage can be proposed'; end if;
-    v_required:=case when v_stage in ('setup_in_progress','setup_complete','ready_for_pour') then 'setup' when v_stage in ('poured','curing') then 'pour' else 'strip' end;
-    if not public.walls_production_permission(v_required) then raise exception 'Production stage permission required'; end if;
-    if v_stage='poured' then
-      v_actual:=(p_parameters->>'actual_lf')::numeric;
-      if v_actual is null or v_actual<=0 or v_actual>v_assignment.planned_lf then raise exception 'Actual poured LF must be positive and cannot exceed planned LF'; end if;
-    end if;
-  else
-    v_progress:=(p_parameters->>'setup_progress')::integer;v_expected:=(p_parameters->>'expected_version')::bigint;
-    select * into v_assignment from public.walls_production_assignments where assignment_id=(p_parameters->>'assignment_id')::uuid;
-    if not found then raise exception 'Production assignment not found'; end if;
-    if v_expected is null or v_assignment.version<>v_expected then raise exception 'Production assignment changed; refresh before proposing the change'; end if;
-    if not public.walls_production_permission('setup') then raise exception 'Setup permission required'; end if;
-    if v_assignment.stage<>'setup_in_progress' or v_progress not between 1 and 99 then raise exception 'Setup progress must be 1-99 for setup in progress'; end if;
-  end if;
-
-  insert into public.operations_agent_actions(requested_by_user_id,requested_by_email,request_text,action_type,parameters,summary,idempotency_key)
-  values(auth.uid(),lower(coalesce(auth.jwt()->>'email','')),btrim(p_request_text),p_action_type,p_parameters,btrim(p_summary),p_idempotency_key)
-  on conflict(requested_by_user_id,idempotency_key) do update set idempotency_key=excluded.idempotency_key
-  returning * into v_action;
-  return public.employee_agent_action_projection(to_jsonb(v_action));
-exception when invalid_text_representation or numeric_value_out_of_range then
-  raise exception 'Agent action parameters are invalid';
-end;
-$$;
 create or replace function public.execute_operations_agent_action(p_action_id uuid,p_confirmation text)
 returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare v_action public.operations_agent_actions%rowtype;v_item public.inventory_items%rowtype;v_assignment public.walls_production_assignments%rowtype;
@@ -279,7 +223,6 @@ create policy "Full Hub readonly select" on public.schedule_meta for select to a
 create policy "Full Hub readonly select" on public.schedule_records for select to authenticated using ((select public.is_operations_reader()));
 create policy "Full Hub readonly select" on public.schedule_milestones for select to authenticated using ((select public.is_operations_reader()));
 create policy "Full Hub readonly select" on public.schedule_change_log for select to authenticated using ((select public.is_operations_reader()));
-revoke all on function public.capture_current_walls_production_weekly_forecast() from public,anon,authenticated;
 create policy "Full Hub readonly roster" on public.schedule_settings for select to authenticated using((select public.is_operations_reader()) and setting_key='companyEmployeeRoster');
 drop policy if exists "Employee projection only" on public.schedule_meta;
 create policy "Employee projection only" on public.schedule_meta as restrictive for select to authenticated using((select public.operations_can_read_full()));
