@@ -27,6 +27,16 @@ h1{margin:3px 0 0;font-size:27px;line-height:1.08;letter-spacing:-.02em}
 .subtitle{margin-top:5px;color:#dbe5ed;font-size:13px}
 .header-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .header-more{display:contents}.header-more summary{display:none}.header-more-actions{display:contents}
+/* A closed native details element hides its contents even with display:contents.
+   Keep a real desktop disclosure; mobile tools retain their existing layout. */
+@media(min-width:1001px){
+ .header-more{display:block;position:relative}
+ .header-more>summary{display:flex;align-items:center;justify-content:center;list-style:none}
+ .header-more>summary::-webkit-details-marker{display:none}
+ .header-more-actions{display:none}
+ .header-more[open]>.header-more-actions{display:grid;position:absolute;right:0;top:calc(100% + 8px);z-index:90;min-width:190px;gap:7px;padding:8px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 8px 24px rgba(19,40,61,.16)}
+ .header-more-actions .btn{text-align:left;white-space:nowrap}
+}
 .btn{border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#fff;padding:9px 12px;border-radius:8px;font-weight:800;font-size:12px}
 .btn:hover{background:rgba(255,255,255,.16)}.btn.primary{background:var(--accent);border-color:var(--accent)}.btn.light{background:#fff;color:var(--navy);border-color:#fff}
 .main{max-width:1650px;margin:auto;padding:22px 24px 60px}

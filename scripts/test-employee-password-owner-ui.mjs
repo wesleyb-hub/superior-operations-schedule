@@ -32,6 +32,12 @@ function installBootstrap(f){Object.assign(f.c,{INVENTORY_REVIEW_MODE:false,ensu
 async function submit(f){f.review();f.fill();return f.c.submitEmployeePassword()}
 function assertCleared(f){for(const id of ['employeePasswordNew','employeePasswordConfirm'])assert.equal(f.node(id).value,'');assert.equal(f.evaluate('employeePasswordAttempt'),null)}
 
+test('desktop owner entry retains a visible native disclosure without forcing capability or details open',()=>{
+ const desktop=html.match(/@media\(min-width:1001px\)\{([\s\S]*?)\r?\n\}/)?.[1];assert.ok(desktop);
+ assert.match(desktop,/\.header-more>summary\{display:flex/);assert.match(desktop,/\.header-more\[open\]>\.header-more-actions\{display:grid/);
+ assert.match(html,/<details class="header-more">/);assert.match(html,/<button type="button" class="btn" id="employeePasswordBtn" hidden>Employees<\/button>/);
+ assert.match(html,/\[hidden\]\{display:none!important\}/);assert.doesNotMatch(desktop,/#employeePasswordBtn|\[hidden\]|display:contents/);
+});
 test('strict disabled default requires explicit endpoint and unexpired public key; no owner traffic otherwise',async()=>{
  for(const config of [null,{}, {...enabledConfig(),employeePasswordAdminEnabled:false},{...enabledConfig(),employeePasswordAdminEnabled:'true'},{...enabledConfig(),employeePasswordEndpoint:undefined},{...enabledConfig(),employeePasswordKey:undefined}]){const f=fixture(config);assert.equal(await f.c.refreshEmployeePasswordOwner(),false);assert.equal(await f.c.openEmployeePassword(),false);assert.equal(f.node('employeePasswordBtn').hidden,true);assert.equal(f.calls.length,0)}
 });

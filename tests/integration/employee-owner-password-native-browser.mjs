@@ -8,7 +8,7 @@ import {randomBytes} from 'node:crypto';
 const require=createRequire(import.meta.url);
 const HUB='https://hub.example.invalid',AUTH='https://auth.example.invalid';
 const ENDPOINT=AUTH+'/functions/v1/employee-password';
-const phases=new Set(['fixture preparation','phone owner sign-in','cancel before encryption module resolves','native initial password through phone UI','native password reset through phone UI','native identity switch before prepare','final assertions']);
+const phases=new Set(['fixture preparation','desktop owner sign-in','responsive owner disclosure','non-owner disclosure','phone owner sign-in','cancel before encryption module resolves','native initial password through phone UI','native password reset through phone UI','native identity switch before prepare','final assertions']);
 export class EmployeeOwnerPasswordBrowserFailure extends Error{constructor(phase){const safePhase=phases.has(phase)?phase:'unknown safe phase';super('Native owner password browser failed at '+safePhase+'; credential diagnostics suppressed.');this.safePhase=safePhase}}
 const ensure=value=>{if(!value)throw Error('Synthetic native browser assertion failed')};
 const strong=()=>`Aa9!${randomBytes(24).toString('base64url')}`;
@@ -51,9 +51,9 @@ export async function runEmployeeOwnerPasswordNativeBrowser({root,apiUrl,anonKey
       return {contentType:javascript?'text/javascript':({'.css':'text/css','.svg':'image/svg+xml'})[extname(file)]||'application/octet-stream',body:await readFile(file)};
     };
     browser=await chromium.launch({headless:true,args:['--no-sandbox']});
-    async function newContext(){
+    async function newContext(viewport={width:390,height:844}){
       if(context)await context.close();
-      context=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block'});
+      context=await browser.newContext({viewport,serviceWorkers:'block'});
       // Realtime is deliberately absent from the native stack. Block sockets,
       // including any unexpected origin, rather than contacting external hosts.
       ensure(typeof context.routeWebSocket==='function');
@@ -93,8 +93,8 @@ export async function runEmployeeOwnerPasswordNativeBrowser({root,apiUrl,anonKey
       });
       const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',()=>{pageErrors++});return page;
     }
-    async function ownerPage(){
-      phase='phone owner sign-in';const page=await newContext();await page.goto(HUB+'/',{waitUntil:'domcontentloaded'});
+    async function ownerPage(viewport={width:390,height:844}){
+      phase=viewport.width>1000?'desktop owner sign-in':'phone owner sign-in';const page=await newContext(viewport);await page.goto(HUB+'/',{waitUntil:'domcontentloaded'});
       await page.waitForFunction(()=>typeof sb!=='undefined'&&Boolean(sb)&&authMode==='login');
       // Use the real native username form's ordered session installation. The
       // synthetic owner still receives only its actual server-assigned role.
@@ -102,7 +102,8 @@ export async function runEmployeeOwnerPasswordNativeBrowser({root,apiUrl,anonKey
       await page.waitForFunction(uid=>currentUser?.id===uid&&currentUserAuthorized&&!employeeSessionInstalling&&!employeeCleanupBlocked&&!document.querySelector('.app').inert,owner.uid);
       await page.waitForFunction(()=>!document.getElementById('employeePasswordBtn').hidden);
       ownerAccessToken=await page.evaluate(async()=>{const result=await sb.auth.getSession();return result.data.session?.access_token||''});ensure(ownerAccessToken);
-      await page.locator('#mobileToolsToggle').click();await page.locator('.header-more > summary').click();ensure(await page.locator('#employeePasswordBtn').isVisible());
+      if(viewport.width<=1000)await page.locator('#mobileToolsToggle').click();
+      ensure(await page.locator('.header-more > summary').isVisible());await page.locator('.header-more > summary').click();ensure(await page.locator('#employeePasswordBtn').isVisible());
       return page;
     }
     async function selectEmployee(page){
@@ -121,7 +122,26 @@ export async function runEmployeeOwnerPasswordNativeBrowser({root,apiUrl,anonKey
     async function choose(page,secret){await page.locator('#employeePasswordNew').fill(secret);await page.locator('#employeePasswordConfirm').fill(secret);await page.locator('#employeePasswordReview').check();if(await page.locator('#employeePasswordEmailApproval').isVisible())await page.locator('#employeePasswordConfirmEmail').check();ensure(await page.locator('#employeePasswordSave').isEnabled());await page.locator('#employeePasswordSave').click()}
     const settled=page=>page.evaluate(()=>window.fixturePasswordSubmission);
 
-    let page=await ownerPage();await openEmployee(page);phase='cancel before encryption module resolves';
+    let page=await ownerPage({width:1440,height:900});phase='responsive owner disclosure';
+    const summary=page.locator('.header-more > summary');
+    await summary.click();ensure(!await page.locator('#employeePasswordBtn').isVisible());
+    for(const width of [1001,1440,1920]){
+      await page.setViewportSize({width,height:900});ensure(await summary.isVisible());
+      await summary.focus();await summary.press('Enter');ensure(await page.locator('#employeePasswordBtn').isVisible());
+      const panel=await page.locator('.header-more-actions').boundingBox();ensure(panel&&panel.x>=0&&panel.y>=0&&panel.x+panel.width<=width&&panel.y+panel.height<=900);
+      ensure(await page.locator('#signOutBtn').isVisible()&&await page.locator('#refreshLiveBtn').isVisible());
+      await openEmployee(page);await page.locator('#employeePasswordClose').click();
+      await summary.focus();await summary.press('Space');ensure(!await page.locator('#employeePasswordBtn').isVisible());
+    }
+    for(const width of [1000,760,390]){
+      await page.setViewportSize({width,height:844});ensure(await page.locator('#mobileToolsToggle').isVisible());
+      ensure(!await summary.isVisible());await page.locator('#mobileToolsToggle').click();await summary.click();
+      ensure(await page.locator('#employeePasswordBtn').isVisible());await openEmployee(page);await page.locator('#employeePasswordClose').click();
+      await summary.click();await page.locator('#mobileToolsToggle').click();ensure(!await summary.isVisible());
+    }
+    ensure(edgeCalls===0);report('Native owner desktop disclosure is keyboard and pointer accessible at 1001/1440/1920px; mobile parity at 1000/760/390px; opening or closing dispatches no protected command');
+
+    page=await ownerPage();await openEmployee(page);phase='cancel before encryption module resolves';
     holdImport=gate();const importGate=holdImport;pauseGates.push(importGate);await choose(page,cancelledPassword);await bounded(importGate.reached);
     await page.locator('#employeePasswordClose').click();importGate.release();await settled(page);
     ensure(edgeCalls===0&&await page.locator('#employeePasswordNew').inputValue()===''&&await page.locator('#employeePasswordConfirm').inputValue()==='');
@@ -148,6 +168,14 @@ export async function runEmployeeOwnerPasswordNativeBrowser({root,apiUrl,anonKey
     ensure(edgeCalls===4&&await passwordWorks(resetPassword));await expectPasswordRejected(cancelledPassword);
     ensure(await page.locator('#employeePasswordNew').inputValue()===''&&await page.locator('#employeePasswordConfirm').inputValue()==='');
     report('Real native identity switch before prepare invalidates owner UI and prevents another protected password command');
+
+    phase='non-owner disclosure';
+    for(const width of [1440,390]){
+      await page.setViewportSize({width,height:900});ensure(await page.locator('.header-more > summary').isVisible());
+      ensure(await page.locator('#employeePasswordBtn').evaluate(button=>button.hidden));
+      ensure(!await page.locator('#employeePasswordBtn').isVisible());
+    }
+    report('After native identity switch, non-owner Employees remains hidden on desktop and phone even with More actions open');
 
     phase='final assertions';ensure(edgeCalls===4&&transportFailures===0&&unexpectedRequests===0&&pageErrors===0);
     report('All four custom requests contain ciphertext and public apikey only; native owner bearer and password sentinels are absent outside JWE');
