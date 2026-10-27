@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
@@ -11,7 +12,7 @@ function fixture(){
  const c={wallsInstallationLoadToken:0,console:{error(){}},Promise,clearTimeout,Date,JSON,clone:x=>JSON.parse(JSON.stringify(x)),seed:{walls:[]},state:{view:'other',walls:[{id:'draft'}]},currentUser:{id:'test',email:'test@example.invalid'},sb:null,currentUserCanWrite:true,currentUserIsAdmin:true,remoteReady:true,structuredBackendReady:true,lastRevision:1,lastRemoteData:{},lastSharedJson:'',lastRemoteUpdatedAt:'',saveBusy:false,saveQueued:false,queuedReason:'Saved',inventoryScopeKey:'walls-production',inventoryAvailableScopes:[],inventoryItems:[],inventoryEvents:[],inventoryReady:false,inventoryRawRealtimeAllowed:false,subscribeInventory(){},inventoryLoadError:'',inventoryBusy:false,inventoryScopeDefinitions:[{key:'walls-production',division:'walls',area:'production'},{key:'walls-install',division:'walls',area:'install'}],stateChannel:{id:1},inventoryChannel:{id:2},productionChannel:null,weeklyPlannerChannel:null,wallsInstallationChannel:null,weeklyPlannerRefreshTimer:null,wallsInstallationReloadTimer:null,inventoryToastTimer:null,loadUiPrefs:()=>({}),showAuthGate(){},setAuthMode(){},setAuthMessage:m=>messages.push(m),document:{getElementById:node,querySelectorAll:()=>[]},alert:m=>messages.push(m),showInventoryToast:m=>messages.push(m),renderInventory(){},saveUiPrefs(){},sharedDataFromState:s=>JSON.parse(JSON.stringify(s)),validateOperationalTransition:()=>'',applyRemoteRow:async row=>{c.applied=row;return true}};
  const request=(name,args)=>new Promise((resolve,reject)=>pending.push({name,args,resolve,reject}));
  c.sb={rpc:request,from(table){const q={};for(const method of ['select','eq','order','in','limit','update'])q[method]=()=>q;q.then=(resolve,reject)=>request(table).then(resolve,reject);return q},removeChannel:async channel=>removed.push(channel),auth:{signOut:()=>request('signOut')}};
- vm.createContext(c);vm.runInContext(part('let hubSessionEpoch=','function updateAccessStatus('),c);
+ vm.createContext(c);installHubReaderHelpers(c,html);vm.runInContext(part('let hubSessionEpoch=','function updateAccessStatus('),c);
  vm.runInContext(part('async function loadRemoteState(', 'function validateOperationalTransition('),c);
  vm.runInContext(part('async function persistState(', 'function subscribeLive('),c);
  vm.runInContext(part('async function loadInventory(', 'function subscribeInventory('),c);

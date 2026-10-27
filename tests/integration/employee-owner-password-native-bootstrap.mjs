@@ -6,11 +6,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import {HUB_READONLY_SCOPE} from '../../employee-password-candidate/identity.mjs';
 
 const root=path.resolve(import.meta.dirname,'../..');
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const expectedMigrationCount=43;
-const finalMigration='20261027112125_mixed_employee_password_scope.sql';
+const expectedMigrationCount=45;
+const finalMigration='20261027133126_hub_readonly_password_scope.sql';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 
 function betweenUnique(source,start,end){
@@ -68,7 +69,8 @@ async function nativeFingerprint(client){
  */
 export async function bootstrapOwnerPasswordDatabase(client,{ownerUid,employees,keyId,audience}){
   assert.equal(employees?.length,3);
-  assert.deepEqual(employees.map(x=>x.profile??'pilot'),['pilot','pilot','mixed']);
+  assert.deepEqual(employees.slice(0,2).map(x=>x.profile??'pilot'),['pilot','pilot']);
+  assert.ok(['mixed','readonly'].includes(employees[2].profile));
   const employeeUid=employees[0].uid;
   assert.ok(employees.every(x=>uuid.test(x.uid)&&/^[a-z][a-z0-9._-]{2,31}$/.test(x.username)));
   assert.equal(new Set([ownerUid,...employees.map(x=>x.uid)]).size,4);
@@ -141,12 +143,13 @@ export async function bootstrapOwnerPasswordDatabase(client,{ownerUid,employees,
   await client.query('begin');
   try{
     await client.query("insert into public.app_user_roles(user_id,role,can_write) values($1,'management',true)",[ownerUid]);
-    for(const employee of employees.filter(x=>x.profile!=='mixed'))await client.query(`insert into public.app_employee_access(
+    for(const employee of employees.filter(x=>(x.profile??'pilot')==='pilot'))await client.query(`insert into public.app_employee_access(
       user_id,profile_key,allowed_views,allowed_wall_subviews,enabled,
       inventory_can_view,inventory_can_adjust,inventory_can_manage,updated_by
     ) values($1,'walls_inventory_counter',array['overview','walls','inventory','weekly-planner'],
       array['production'],true,true,true,false,'SYNTHETIC native Auth test')`,[employee.uid]);
     const mixed=employees.find(x=>x.profile==='mixed');
+    if(mixed){
     for(const [division,area] of [['walls','production'],['walls','install'],['boxes','production']])await client.query(`insert into public.app_employee_access(
       user_id,profile_key,legal_entity,division_key,inventory_area,allowed_views,allowed_wall_subviews,enabled,
       inventory_can_view,inventory_can_adjust,inventory_can_manage,updated_by
@@ -157,6 +160,10 @@ export async function bootstrapOwnerPasswordDatabase(client,{ownerUid,employees,
       values($1,true,true,true,true,true,true,true,true)`,[mixed.uid]);
     await client.query(`insert into public.walls_installation_access(user_id,can_view,can_manage,can_assign_resources,can_qc,can_record_field_progress,enabled)
       values($1,true,false,false,true,false,true)`,[mixed.uid]);
+    }
+    const reader=employees.find(x=>x.profile==='readonly');
+    if(reader)await client.query(`insert into public.app_employee_access(user_id,profile_key,legal_entity,division_key,inventory_area,allowed_views,allowed_wall_subviews,enabled,inventory_can_view,inventory_can_adjust,inventory_can_manage,updated_by)
+      values($1,'hub_readonly_v1','Superior Walls of North Dakota, LLC','walls','production',$2,$3,true,true,false,false,'SYNTHETIC native readonly test')`,[reader.uid,HUB_READONLY_SCOPE.business_views,HUB_READONLY_SCOPE.wall_subviews]);
     await client.query('insert into employee_password.owners(user_id,enabled) values($1,true)',[ownerUid]);
     await client.query("update employee_password.settings set enabled=true,current_key_id=$1,audience=$2,identifier_domain='company.example.invalid',version=version+1",[keyId,audience]);
     for(const employee of employees)await client.query(`insert into employee_password.approved_records(record_id,auth_uid,username,auth_email,display_name,enabled,reviewed_by,reviewed_at,reviewed_grants)
@@ -173,5 +180,5 @@ export async function bootstrapOwnerPasswordDatabase(client,{ownerUid,employees,
     allowed_wall_subviews:['production'],enabled:true,inventory_can_view:true,inventory_can_adjust:true,inventory_can_manage:false});
   await client.query("notify pgrst,'reload schema'");
   return {migrationCount:migrations.length,baselineSha256:digest(baseline),migrations:manifest,nativeAuthPreserved:true,
-    syntheticUsers:4,independentBusinessGrantsAdded:2,publicationCreated:!publication};
+    syntheticUsers:4,independentBusinessGrantsAdded:employees[2].profile==='mixed'?2:0,publicationCreated:!publication};
 }

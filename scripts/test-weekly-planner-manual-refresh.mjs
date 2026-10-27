@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 // Actual manual-refresh and snapshot-loader functions; deferred synthetic reads only.
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
@@ -9,7 +10,7 @@ function setup(){
  const calls=[],messages=[],c={Promise,console:{error(){}},state:{week:'2026-10-26',view:'weekly-planner'},currentUser:{id:'synthetic'},currentUserIsAdmin:true,hubSessionEpoch:1,weeklyPlanner:{},weeklyPlannerBusy:false,weeklyPlannerProgress:null,weeklyPlannerManualRefreshRequest:null,weeklyPlannerDraftError:'',weeklyPlannerLoadPromise:null,weeklyPlannerLoadToken:null,weeklyPlannerLoadWeek:'',weeklyPlannerLoadedWeek:'',weeklyPlannerReady:false,weeklyPlannerError:'',weeklyPlannerErrorWeek:'',document:{querySelectorAll:()=>[],getElementById:()=>null},renderWeeklyPlanner:()=>{},showInventoryToast:m=>messages.push(m),names:0};
  c.sb={rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))};
  for(const name of ['loadWeeklyPlannerInstallEmployees','loadPlannerEmployeeHistory','loadPlannerCompanyRoster'])c[name]=async()=>{c.names++;return true};
- vm.createContext(c);
+ vm.createContext(c);installHubReaderHelpers(c,html);
  vm.runInContext(html.slice(html.indexOf('function loadWeeklyPlanner('),html.indexOf('// Realtime invalidations')),c);
  vm.runInContext(html.slice(html.indexOf('function plannerUpdatePendingUI('),html.indexOf('function plannerRefreshSectionMetadata(')),c);
  return {c,calls,messages};

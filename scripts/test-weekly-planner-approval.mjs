@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 // Synthetic button-handler integration; no production requests or credentials.
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
@@ -26,7 +27,7 @@ function setup(){
  if(name==='publish_weekly_planner_pack'){if(db.sections.filter(s=>s.status==='approved').length!==8)return {error:{message:'All eight sections must be approved and current before publishing'}};db.packs.push({pack_version:1});return {data:db.packs[0]}}
  throw Error(`Unexpected RPC ${name}`);
  }};
- vm.createContext(c);
+ vm.createContext(c);installHubReaderHelpers(c,html);
  vm.runInContext(html.slice(html.indexOf('function plannerRpcRequest('),html.indexOf('function plannerQueueSnapshot(')),c);
  for(const name of ['htmlSafe','plannerStatus','plannerEmployeeNames','plannerSelectedEmployeeNames','plannerCaptureInputs','plannerPublicationState'])vm.runInContext(html.split(/\r?\n/).find(line=>line.startsWith(`function ${name}(`)),c);
  for(const [start,end] of [['async function weeklyPlannerRpc(','function plannerCaptureInputs('],['function plannerCaptureSection(','function plannerAddAssignment('],['function bindWeeklyPlanner(','function render(){']])vm.runInContext(html.slice(html.indexOf(start),html.indexOf(end)),c);

@@ -13,7 +13,7 @@ import { bootstrapOwnerPasswordDatabase } from './employee-owner-password-native
 import {runEmployeeOwnerPasswordNativeBrowser,EmployeeOwnerPasswordBrowserFailure} from './employee-owner-password-native-browser.mjs';
 import { createPasswordHandler } from '../../employee-password-candidate/password-service.mjs';
 import { createSyntheticAdapters } from '../../employee-password-candidate/server-adapters.mjs';
-import {matchesExistingEmailIdentity} from '../../employee-password-candidate/identity.mjs';
+import {matchesExistingEmailIdentity,HUB_READONLY_SCOPE} from '../../employee-password-candidate/identity.mjs';
 import { encryptCommand } from '../../employee-password-candidate/browser-crypto.mjs';
 
 if (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUN_EMPLOYEE_OWNER_PASSWORD_NATIVE_TEST !== '1') {
@@ -67,7 +67,10 @@ try {
   const provisioningMode=process.env.NATIVE_PROVISIONING_MODE??'no-password';
   requireThat(['no-password','password'].includes(provisioningMode),'Unexpected synthetic provisioning mode');
   result.provisioningMode=provisioningMode;
-  const mixedFixture={username:'nativemixed',profile:'mixed',...(provisioningMode==='password'?{provisioning:'random-password',initialPassword:password()}:{})};
+  const scopedProfile=process.env.NATIVE_SCOPED_PROFILE??'mixed';
+  requireThat(['mixed','readonly'].includes(scopedProfile),'Unexpected synthetic scoped profile');
+  result.scopedProfile=scopedProfile;
+  const mixedFixture={username:scopedProfile==='mixed'?'nativemixed':'nativereader',profile:scopedProfile,...(provisioningMode==='password'?{provisioning:'random-password',initialPassword:password()}:{})};
   const employees=[{username:'nativeplantone',initialPassword:password()},{username:'nativeplanttwo',initialPassword:password()},mixedFixture];
   db=new pg.Client({connectionString:vars.DB_URL});
   const effectiveDb=db.connectionParameters;
@@ -79,18 +82,18 @@ try {
   const ownerUid=ownerCreated.data.user.id;
   for(const employee of employees){
     employee.email=employee.username+'@company.example.invalid';
-    const withoutPassword=employee.profile==='mixed'&&employee.provisioning!=='random-password';
+    const withoutPassword=['mixed','readonly'].includes(employee.profile)&&employee.provisioning!=='random-password';
     const attributes=withoutPassword?{email:employee.email,email_confirm:false}:{email:employee.email,password:employee.initialPassword,email_confirm:false};
-    if(withoutPassword)requireThat(Object.keys(attributes).sort().join(',')==='email,email_confirm','Mixed create must omit password, metadata and invitation attributes');
+    if(withoutPassword)requireThat(Object.keys(attributes).sort().join(',')==='email,email_confirm','Scoped create must omit password, metadata and invitation attributes');
     if(employee.provisioning==='random-password')requireThat(Object.keys(attributes).sort().join(',')==='email,email_confirm,password'&&attributes.email_confirm===false&&typeof attributes.password==='string','Random-password create must use exact unconfirmed native Admin attributes');
     const created=await admin.auth.admin.createUser(attributes);
     if(Object.hasOwn(attributes,'password'))attributes.password='';
     requireThat(!created.error&&created.data.user?.id&&!created.data.user.email_confirmed_at,'Synthetic employee creation failed');
-    if(employee.profile==='mixed'){
-      requireThat((await db.query('select count(*)::int n from auth.sessions where user_id=$1',[created.data.user.id])).rows[0].n===0,'Mixed native creation unexpectedly issued a session');
-      requireThat(matchesExistingEmailIdentity(created.data.user,{auth_uid:created.data.user.id,auth_email:employee.email}),'Mixed native create lacks required exact email identity');
-      requireThat(!created.data.user.last_sign_in_at&&!created.data.user.confirmation_sent_at&&!created.data.user.recovery_sent_at,'Mixed native create unexpectedly used confirmation/recovery/sign-in flow');
-      report(withoutPassword?'Synthetic mixed account created by native Admin with email and email_confirm:false only; no password or email flow; exact provider/identity verified':'Alternate synthetic mixed account created by native Admin with a memory-only random password and email_confirm:false; no email flow; exact provider/identity verified');
+    if(['mixed','readonly'].includes(employee.profile)){
+      requireThat((await db.query('select count(*)::int n from auth.sessions where user_id=$1',[created.data.user.id])).rows[0].n===0,'Scoped native creation unexpectedly issued a session');
+      requireThat(matchesExistingEmailIdentity(created.data.user,{auth_uid:created.data.user.id,auth_email:employee.email}),'Scoped native create lacks required exact email identity');
+      requireThat(!created.data.user.last_sign_in_at&&!created.data.user.confirmation_sent_at&&!created.data.user.recovery_sent_at,'Scoped native create unexpectedly used confirmation/recovery/sign-in flow');
+      report(withoutPassword?'Synthetic scoped account created by native Admin with email and email_confirm:false only; no password or email flow; exact provider/identity verified':'Alternate synthetic scoped account created by native Admin with a memory-only random password and email_confirm:false; no email flow; exact provider/identity verified');
     }
     employee.uid=created.data.user.id;employee.record_id='native-'+employee.username;employee.version=1;
   }
@@ -242,8 +245,8 @@ try {
   requireThat(!renewedOwner.error&&renewedOwner.data.session?.access_token,'Native owner session renewal after browser fixture failed');
   ownerToken=renewedOwner.data.session.access_token;
 
-  stage='mixed profile real native lifecycle';
-  for(const mixed of employees.filter(x=>x.profile==='mixed')){
+  stage='scoped profile real native lifecycle';
+  for(const mixed of employees.filter(x=>['mixed','readonly'].includes(x.profile))){
   const identityBefore=await getUser(mixed);
   // Native Auth 2.197.0 Confirm updates user_metadata.email_verified as well as confirmation time.
   const withoutVerification=value=>Object.fromEntries(Object.entries(value??{}).filter(([key])=>key!=='email_verified').sort(([a],[b])=>a.localeCompare(b)));
@@ -261,16 +264,27 @@ try {
     mixed.initialPassword='';
   }
   const mixedLogin=await login(mixed,mixedPassword);
-  requireThat(!mixedLogin.error&&mixedLogin.data.user?.id===mixed.uid,'Mixed native login failed');
+  requireThat(!mixedLogin.error&&mixedLogin.data.user?.id===mixed.uid,'Scoped native login failed');
+  if(mixed.profile==='readonly'){
+    const readerRpc=async(name,args={})=>localFetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:{apikey:vars.ANON_KEY,authorization:'Bearer '+mixedLogin.data.session.access_token,'content-type':'application/json'},body:JSON.stringify(args)});
+    const accessResponse=await readerRpc('get_app_access'),access=await accessResponse.json();
+    requireThat(accessResponse.status===200&&access.authorized===true&&access.full_read_access===true&&access.can_write===false&&access.is_admin===false,'Native reader access did not remain strictly read-only');
+    requireThat(JSON.stringify([...access.allowed_views].sort())===JSON.stringify([...HUB_READONLY_SCOPE.business_views].sort()),'Native reader business view scope drift');
+    const snapshot=await readerRpc('get_schedule_snapshot');requireThat(snapshot.status===200,'Native reader schedule snapshot denied');
+    const deniedSave=await readerRpc('save_schedule_snapshot',{p_expected_revision:0,p_snapshot:{},p_reason:'synthetic reader'});
+    const deniedSaveBody=await deniedSave.json();
+    requireThat(deniedSave.status===400&&deniedSaveBody.code==='P0001'&&deniedSaveBody.message==='Read-only account','Native reader schedule write did not reach actual permission denial');
+    const deniedOwner=await readerRpc('employee_password_owner_targets'),deniedOwnerBody=await deniedOwner.json();requireThat(deniedOwner.status===403&&deniedOwnerBody.code==='42501','Native reader did not reach actual password-owner denial');
+  }
   const mixedDenied=await invoke(makeCommand(mixed,'prepare',{actor:mixed.uid,token:mixedLogin.data.session.access_token}));
   requireThat(mixedDenied.status===403,'Mixed profile became password owner');
   const mixedResetPassword=password(),mixedReset=await apply(mixed,await prepare(mixed),mixedResetPassword);
   requireThat(mixedReset.status===200&&mixedReset.body.status==='applied','Mixed profile native reset failed');mixed.version++;
   const identityAfterReset=await getUser(mixed);
   requireThat(identityShape(identityAfterReset)===identityShape(identityAfter)&&identityAfterReset.email_confirmed_at===identityAfter.email_confirmed_at&&identityAfterReset.user_metadata?.email_verified===true,'Mixed reset changed identity, metadata or confirmation');
-  requireThat(!(await login(mixed,mixedResetPassword)).error&&(await login(mixed,mixedPassword)).error?.code==='invalid_credentials','Mixed native reset password verification failed');
+  requireThat(!(await login(mixed,mixedResetPassword)).error&&(await login(mixed,mixedPassword)).error?.code==='invalid_credentials','Scoped native reset password verification failed');
   requireThat(await fullGrantSnapshot()===baselineFullGrants,'Mixed password lifecycle changed grants');
-  report(mixed.provisioning==='random-password'?'Alternate random-password mixed identity completes owner first initialization and real login; bootstrap password invalidated; reset, metadata, owner denial and all six grant tables verified':'Synthetic mixed-profile identity created without password initializes and resets through real native Auth; cannot administer passwords; full six-table grants unchanged');
+  report((mixed.profile==='readonly'?'All-Hub readonly profile: ':'Mixed profile: ')+(mixed.provisioning==='random-password'?'Alternate random-password scoped identity completes owner first initialization and real login; bootstrap password invalidated; reset, metadata, owner denial and all six grant tables verified':'Synthetic scoped-profile identity created without password initializes and resets through real native Auth; cannot administer passwords; full six-table grants unchanged'));
   }
 
   stage='native lost-success-response uncertainty';

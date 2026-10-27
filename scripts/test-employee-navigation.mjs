@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 // Actual employee navigation helpers; synthetic capabilities, no services or browser.
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -11,7 +12,7 @@ function sourceOf(name){
 function fixture({admin=false,views=['overview'],subviews=[]}={}){
  const calls=[],nodes={view:{innerHTML:''},globalSearch:{value:' Synthetic search '},searchBtn:{},crewScheduleReturn:{}};
  const c={Date,console,currentUserIsAdmin:admin,currentUserAuthorized:true,currentUserCanWrite:admin,currentUser:{id:'synthetic-navigation'},currentUserRole:admin?'admin':'walls_inventory_counter',window:{matchMedia:()=>({matches:false})},currentAllowedViews:views,currentAllowedWallSubviews:subviews,state:{view:'overview',subview:{},week:'2026-10-19',searchQuery:''},wallsProduction:{permissions:{}},wallsInstallation:{permissions:{}},document:{body:{classList:{remove(){},add(){}}},getElementById:id=>nodes[id]||null,querySelectorAll:()=>[]},htmlSafe:s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'),setView:view=>{calls.push(['view',view]);c.state.view=view},syncBilling:()=>{throw Error('Restricted overview accessed management billing')},weekDates:()=>{throw Error('Restricted overview accessed schedule totals')},subscribeWeeklyPlanner:()=>{throw Error('Restricted planner subscribed')},loadWeeklyPlanner:()=>{throw Error('Restricted planner loaded')},renderEmployeeCrewSchedules:()=>calls.push(['employee-approved-view']),weeklyPlannerReady:true,weeklyPlannerLoadedWeek:'2026-10-19',weeklyPlanner:{recent_packs:[{snapshot:{secret:'Synthetic cached manager data'}}]}};
- vm.createContext(c);vm.runInContext(['employeeMobilePresentationAllowed','viewAllowed','wallSubviewAllowed','installationCanManage','todayWorkAreas','renderToday','renderOverview','renderWeeklyPlanner','applyAccessNavigation','openGlobalSearch','divisionSubtabs','productionInnerNav','installationNav','inventoryEmailPreview','renderInventoryWatch','renderInventory','inventoryFilteredItems','inventoryStatus','inventoryStatusLabel','inventoryPill','currentInventoryScope'].map(sourceOf).join('\n'),c);
+ vm.createContext(c);installHubReaderHelpers(c,html);vm.runInContext(['employeeMobilePresentationAllowed','viewAllowed','wallSubviewAllowed','installationCanManage','todayWorkAreas','renderToday','renderOverview','renderWeeklyPlanner','applyAccessNavigation','openGlobalSearch','divisionSubtabs','productionInnerNav','installationNav','inventoryEmailPreview','renderInventoryWatch','renderInventory','inventoryFilteredItems','inventoryStatus','inventoryStatusLabel','inventoryPill','currentInventoryScope'].map(sourceOf).join('\n'),c);
  return {c,calls,nodes};
 }
 for(const division of ['boxes','manholes','fence','block'])test(`restricted Overview uses only the granted ${division} launcher, never Walls records/totals`,()=>{
@@ -38,7 +39,7 @@ function navFixture(){
  c.operationsNavMenu={setAttribute:(k,v)=>attrs[k]=v,focus:()=>{focused.push('menu');c.document.activeElement=c.operationsNavMenu}};
  const tab={focus:()=>{focused.push('tab');c.document.activeElement=tab}};
  c.operationsSidebar={classList:{contains:k=>classes.has(k),remove:k=>classes.delete(k),toggle:(k,v)=>v?classes.add(k):classes.delete(k)},setAttribute:(k,v)=>attrs[k]=v,contains:n=>n===tab,querySelector:()=>tab};c.operationsNavBackdrop={classList:{remove(){},toggle(){}}};
- vm.createContext(c);vm.runInContext(['syncOperationsNavAccessibility','closeOperationsNav','toggleOperationsNav'].map(sourceOf).join('\n'),c);return {c,attrs,focused};
+ vm.createContext(c);installHubReaderHelpers(c,html);vm.runInContext(['syncOperationsNavAccessibility','closeOperationsNav','toggleOperationsNav'].map(sourceOf).join('\n'),c);return {c,attrs,focused};
 }
 test('mobile drawer is inert while closed and opening/closing preserves keyboard focus',()=>{
  const {c,attrs,focused}=navFixture();c.syncOperationsNavAccessibility();assert.equal(c.operationsSidebar.inert,true);assert.equal(attrs['aria-hidden'],'true');c.toggleOperationsNav();assert.equal(c.operationsSidebar.inert,false);assert.equal(attrs['aria-expanded'],'true');assert.deepEqual(focused,['tab']);c.closeOperationsNav();assert.equal(c.operationsSidebar.inert,true);assert.deepEqual(focused,['tab','menu']);
@@ -62,6 +63,6 @@ test('manager inventory retains purchasing preview, controls and activity',()=>{
 for(const kind of ['inventory','production'])test(`${kind} Refresh is one in-flight read, guarded during writes, and unlocks on settled failure`,async()=>{
  const refresh={disabled:false,isConnected:true,textContent:'Refresh'},nodes={view:{querySelectorAll:()=>[]},inventoryRefresh:refresh},pending=[];
  const c={inventoryBusy:false,productionBusy:false,document:{getElementById:id=>nodes[id]||null,querySelectorAll:q=>q==='[data-prod-refresh]'?[refresh]:[]},loadInventory:()=>new Promise(resolve=>pending.push(resolve)),loadWallsProduction:()=>new Promise(resolve=>pending.push(resolve))};
- vm.createContext(c);vm.runInContext(sourceOf(kind==='inventory'?'bindInventoryActions':'bindWallsProductionControls'),c);c[kind==='inventory'?'bindInventoryActions':'bindWallsProductionControls']();
+ vm.createContext(c);installHubReaderHelpers(c,html);vm.runInContext(sourceOf(kind==='inventory'?'bindInventoryActions':'bindWallsProductionControls'),c);c[kind==='inventory'?'bindInventoryActions':'bindWallsProductionControls']();
  const busy=kind==='inventory'?'inventoryBusy':'productionBusy';c[busy]=true;await refresh.onclick();assert.equal(pending.length,0);c[busy]=false;const read=refresh.onclick();await refresh.onclick();assert.equal(pending.length,1);assert.equal(refresh.disabled,true);pending[0](false);await read;assert.equal(refresh.disabled,false);assert.equal(refresh.textContent,'Refresh');
 });
