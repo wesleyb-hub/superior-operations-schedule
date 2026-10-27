@@ -28,7 +28,8 @@ try{
    }})};
   });
   await page.goto('http://offline.test/');
-  await page.evaluate(()=>{currentUserIsAdmin=true;currentUserAuthorized=true;showAuthGate(false);window.syntheticExecutions=0;window.synthetic=()=>window.syntheticExecutions++});
+  await page.evaluate(()=>{currentUserIsAdmin=true;currentUserCanWrite=true;currentUserAuthorized=true;showAuthGate(false);window.syntheticExecutions=0;window.synthetic=()=>window.syntheticExecutions++});
+  assert.equal(await page.evaluate(()=>currentUserIsAdmin&&currentUserCanWrite&&currentUserAuthorized),true,'Synthetic manager fixture must include its explicit write capability');
   const payload='<img src=x onerror="synthetic()">',header='customer" autofocus onfocus="synthetic()';
   await page.evaluate(({payload,header})=>{
    renderImport();importHeaders=[header];importData=[{[header]:payload}];renderImportPreview();
