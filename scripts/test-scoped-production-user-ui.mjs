@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 // Actual scoped UI functions, synthetic identities only; no hosted traffic.
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -8,7 +9,7 @@ function sourceOf(name){const start=html.search(new RegExp(`^(?:async )?function
 function fixture(){
  const calls=[],view={innerHTML:''},nodes=[];
  const c={currentUserCanWrite:false,currentUserIsAdmin:false,currentUserRole:'walls_production_inventory_qc_v1',wallsInstallationReady:true,wallsInstallationError:'',installationBusy:false,wallsInstallation:{permissions:{view:true,qc:true,manage:false,resources:false,field_progress:false},jobs:[{record_id:'wall',job:{job:'Synthetic foundation'},production:[{assignment_id:'run',table_id:'1',stage:'stripped',wall_height:8,planned_lf:120}],qc:[]}]},state:{jobs:[]},PRODUCTION_STAGE_LABELS:{stripped:'Stripped'},htmlSafe:String,productionHeightLabel:String,installationCanManage:()=>false,document:{getElementById:()=>view,querySelectorAll:()=>nodes,createElement:()=>({})},prompt:()=>null,wallsInstallationRpc:async(...args)=>calls.push(args),bindSubtabs(){},allProducts(){throw Error('Mixed QC read unrelated products')},projectById(){throw Error('Restricted mutation looked up a record')},pieceScheduleDates:()=>[],productStatusClass:()=>'',productStatusText:p=>p.status,productDisplayName:()=> 'Synthetic product',divisionMeta:{boxes:{unit:'pieces'}}};
- vm.createContext(c);vm.runInContext(['renderQC','renderWallsQcQueue','bindWallsQcControls','applyInstallationActionAccess','bindPrecastControls','renderProductRow','openProjectModal','openPieceModal','addSpecialPiece','undoProductionCompletion','markPreReady','markPoured','passQC','holdQC','releaseHold'].map(sourceOf).join('\n'),c);
+ vm.createContext(c);installHubReaderHelpers(c,html);vm.runInContext(['renderQC','renderWallsQcQueue','bindWallsQcControls','applyInstallationActionAccess','bindPrecastControls','renderProductRow','openProjectModal','openPieceModal','addSpecialPiece','undoProductionCompletion','markPreReady','markPoured','passQC','holdQC','releaseHold'].map(sourceOf).join('\n'),c);
  return {c,calls,view,nodes};
 }
 test('mixed QC uses Walls projection only and distinct operational release',()=>{const {c,view}=fixture();c.renderQC();assert.match(view.innerHTML,/Walls QC only|Separate from pre-production plan review/);assert.match(view.innerHTML,/data-wall-qc="run\|released"/);assert.doesNotMatch(view.innerHTML,/data-qc-pass|data-qc-hold|data-release-hold/)});

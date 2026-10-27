@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 // Execute actual rendering/binding functions against synthetic text identifiers. No services.
 // This lightweight event adapter is not a browser; the offline Chromium harness tests real DOM parsing.
 import {readFileSync,writeFileSync} from 'node:fs';
@@ -32,7 +33,7 @@ function fixture(){
   markPreReady:(...args)=>calls.push(['pre',...args]),markPoured:(...args)=>calls.push(['pour',...args]),openPieceModal:(...args)=>calls.push(['edit',...args]),passQC:(...args)=>calls.push(['pass',...args]),holdQC:(...args)=>calls.push(['hold',...args]),releaseHold:(...args)=>calls.push(['release',...args]),
   alert(m){throw Error(m)}
  };
- vm.createContext(c);
+ vm.createContext(c);installHubReaderHelpers(c,html);
  const names=`htmlSafe normalizeDate parseDate iso addDays fmt weekday weekStart todayISO productionDateTimeLocal productionJob productionLfBreakdown productionReleasePill renderProductionQueue openProductionAssignmentModal bindWallsProductionControls installResources installationCanManage installationCanProgress installationActivityCanBeRemoved installationStatusLabel installationActivityCard installationWorkspaceActivityCard installationWorkspacePanel installationJobCompactCard installationTodayFieldWorkContent renderInstallationCatchupToday renderWallsInstallationEnhanced applyInstallationActionAccess bindWallsInstallationEnhancedControls wallCard wallDateKey bindWallDragDrop renderProductRow bindPrecastControls allProducts kpi bindWallsQcControls renderQC renderPrecast weekDates pieceIsScheduledOn plannedQtyForDate actualQtyForDate productionCompletionsForWeek producedQty releasedQty pieceCountsForDate pct statusClass`.split(' ');
  vm.runInContext(html.slice(html.indexOf('const divisionMeta='),html.indexOf('const seed='))+names.map(sourceOf).join('\n'),c);
  return {c,view,calls};

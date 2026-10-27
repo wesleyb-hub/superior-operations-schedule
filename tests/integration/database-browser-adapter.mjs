@@ -6,6 +6,7 @@ import {Pool} from 'pg';
 import assert from 'node:assert/strict';
 const ident=x=>{assert.match(x,/^[a-z_][a-z0-9_]*$/);return '"'+x+'"'};
 export const identities={
+ reader:{id:'00000000-0000-4000-8000-000000000119',email:'test-hub-reader@superiorwallsnd.com'},
  admin:{id:'00000000-0000-4000-8000-000000000001',email:'test-admin@superiorwallsnd.com'},
  viewer:{id:'00000000-0000-4000-8000-000000000002',email:'test-viewer@superiorwallsnd.com'},
  outsider:{id:'00000000-0000-4000-8000-000000000003',email:'test-outsider@superiorwallsnd.com'},
@@ -34,7 +35,7 @@ export async function startHarness(){
   const start=Date.now();const result=await transact(identity,async c=>(await c.query(`select public.${ident(name)}(${parameters}) as value`,values)).rows[0]?.value);
   calls.push({name,identity:identity?.email||'anonymous',durationMs:Date.now()-start,error:result.error});return result;
  }
- const tables=new Set(['schedule_state','inventory_items','inventory_events','walls_installation_activity_assignments','walls_installation_resources','walls_installation_events','weekly_planner_section_people','weekly_planner_availability']);
+ const tables=new Set(['schedule_settings','schedule_state','inventory_items','inventory_events','walls_installation_activity_assignments','walls_installation_resources','walls_installation_events','weekly_planner_section_people','weekly_planner_availability']);
  async function query(identity,q){
   assert.ok(tables.has(q.table),'Test adapter only allows known frontend read tables');
   let sql='select '+q.columns.split(',').map(ident).join(',')+' from public.'+ident(q.table),values=[];

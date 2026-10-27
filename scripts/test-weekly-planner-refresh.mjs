@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 // Behavioral tests of the actual inline loader, using synthetic deferred RPCs only.
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -11,7 +12,7 @@ function setup(){
   context.renderWeeklyPlanner=()=>context.renders++;
   context.sb={rpc:(name,args)=>new Promise((resolve,reject)=>calls.push({name,args,resolve,reject}))};
   context.plannerUpdatePendingUI=()=>{};context.weeklyPlannerBusy=false;context.weeklyPlannerProgress=null;context.weeklyPlannerManualRefreshRequest=null;context.showInventoryToast=()=>{};context.plannerSectionFeedback=message=>context.weeklyPlannerDraftError=message;
-  vm.createContext(context);vm.runInContext(loader,context);
+  vm.createContext(context);installHubReaderHelpers(context,html);vm.runInContext(loader,context);
   vm.runInContext(html.slice(html.indexOf('async function weeklyPlannerRpc('),html.indexOf('function plannerCaptureInputs(')),context);
   return {context,calls,errors,load:force=>context.loadWeeklyPlanner(force)};
 }

@@ -397,7 +397,7 @@ select test_workflow.rejects($q$select public.get_inventory_snapshot('walls','pr
 select test_workflow.rejects('select public.get_walls_production_snapshot()','access required','missing UID cannot read production');
 select test_workflow.rejects('select public.get_operations_agent_context()','Authentication required','missing UID cannot read assistant context');
 select test_workflow.rejects($q$select public.capture_walls_production_weekly_forecast('2098-02-03','TEST missing UID')$q$,'Authentication required','missing UID authenticated caller cannot freeze or read raw baseline');
-select test_workflow.rejects('select public.capture_current_walls_production_weekly_forecast()','Authentication required','missing UID authenticated caller cannot bypass through current-week wrapper');
+select test_workflow.rejects('select public.capture_current_walls_production_weekly_forecast()','permission denied','missing UID authenticated caller cannot bypass through current-week wrapper');
 
 -- Current admin data and lifecycle behavior are unchanged.
 select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000000001","email":"test-admin@superiorwallsnd.com","role":"authenticated"}',true);

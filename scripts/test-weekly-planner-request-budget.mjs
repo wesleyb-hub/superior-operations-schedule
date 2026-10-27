@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 // Exercise the real planner renderer, loader and realtime subscriber together.
 // Transport and time are synthetic: this suite never contacts a database.
 import { readFileSync } from 'node:fs';
@@ -74,7 +75,7 @@ function setup() {
     },
     removeChannel() {},
   };
-  vm.createContext(context);
+  vm.createContext(context);installHubReaderHelpers(context,html);
   vm.runInContext(source, context);
   async function advance(delay = 450) {
     clock += delay;

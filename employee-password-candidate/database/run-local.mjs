@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
 import {randomUUID} from 'node:crypto';
+import {runHubReadonlyPasswordScopeTests} from './test-hub-readonly-scope.mjs';
 import {runMixedPasswordScopeTests} from './test-mixed-scope.mjs';
 import {runPasswordDatabaseTests} from './test-database.mjs';
 const require=createRequire(import.meta.url);
@@ -37,13 +38,14 @@ try{
   for(const file of migrations){try{await client.query(await readSql(`supabase/migrations/${file}`));}catch(error){throw new Error(`Migration ${file}: ${error.message} (position ${error.position??'unknown'})`);}}
   const version=(await client.query('show server_version')).rows[0].server_version;
   report(`PASS: ${migrations.length} exact migrations applied on fresh loopback PostgreSQL ${version}`);
+  const hubReadonlyScopeCases=await runHubReadonlyPasswordScopeTests({client,report});
   const mixedScopeCases=await runMixedPasswordScopeTests({client,report});
   const result=await runPasswordDatabaseTests({Client,config,report});
   for(const file of ['tests/integration/walls-workflow-cases.sql','tests/integration/probes/employee-data-scope.sql','tests/integration/probes/employee-approved-crew-packs.sql','tests/integration/probes/mixed-employee-scope.sql','tests/integration/probes/mixed-employee-approved-packs.sql']){
     await client.query(await readSql(file));report(`PASS: unchanged ${file}`);
   }
   await fs.mkdir(out,{recursive:true});
-  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({...result,mixedScopeCases,postgres:version,migrations:migrations.length,nativeAuthVerified:false,hostedVerified:false},null,2)+'\n');
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({...result,mixedScopeCases,hubReadonlyScopeCases,postgres:version,migrations:migrations.length,nativeAuthVerified:false,hostedVerified:false},null,2)+'\n');
 }catch(error){report(`FAIL: ${error?.message||'Database test failed'}`);console.error(error?.stack);failed=true;process.exitCode=1;}
 finally{
   if(client)await client.end();await cluster.stop().catch(()=>{});await fs.rm(temporary,{recursive:true,force:true});

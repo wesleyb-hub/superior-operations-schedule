@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
@@ -6,7 +7,7 @@ const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const part=(a,b)=>html.slice(html.indexOf(a),html.indexOf(b));
 function fixture(extra={}){
  const nodes={};const c={URL,console,state:{walls:[],jobs:[],billing:[],reportMonth:'2026-10',searchQuery:''},wallIsCompleted:w=>!!w.completedDate,wallCompletionMonth:w=>(w.completedDate||'').slice(0,7),divisionMeta:{boxes:{label:'Box Culverts',unit:'pieces'}},document:{getElementById:id=>nodes[id]||=( {} ),querySelectorAll:()=>[]},...extra};
- vm.createContext(c);
+ vm.createContext(c);installHubReaderHelpers(c,html);
  vm.runInContext(part('function htmlSafe(', 'function sourceVerifiedLabel('),c);
  vm.runInContext(part('function billingSourceMismatch(', 'ensureState();syncAllLinkedDeliveries();syncBilling();'),c);
  return {c,nodes};

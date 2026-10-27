@@ -36,4 +36,19 @@ export function isRestrictedMixedProfile(scope){
  if(!scope||typeof scope!=='object'||!exactSet(Object.keys(scope),Object.keys(MIXED_EMPLOYEE_SCOPE)))return false;
  return Object.entries(MIXED_EMPLOYEE_SCOPE).every(([key,value])=>Array.isArray(value)?exactSet(scope[key],value):scope[key]===value);
 }
-export function isReviewedEmployeeScope(scope){return isRestrictedPilot(scope)||isRestrictedMixedProfile(scope);}
+export function isReviewedEmployeeScope(scope){return isRestrictedPilot(scope)||isRestrictedMixedProfile(scope)||isHubReadonlyProfile(scope);}
+
+// All business screens are readable; this preset never confers mutation or owner rights.
+export const HUB_READONLY_SCOPE=Object.freeze({
+ enabled:true,preset:'hub_readonly_v1',full_read_access:true,
+ business_views:Object.freeze(['today','overview','walls','boxes','manholes','fence','block','qc','delivery','inventory','weekly-planner','billing','exceptions','import','audit','history','search']),
+ wall_subviews:Object.freeze(['production','installation','current','overall','active','plans','monthly','year']),
+ inventory_scopes:Object.freeze(['walls/production','walls/install','boxes/production']),
+ qc_divisions:Object.freeze(['walls','boxes','manholes','fence','block']),planner_drafts:true,management_read:true,
+ can_write:false,is_admin:false,inventory_counts:false,inventory_manage:false,
+ purchasing:false,approvals:false,password_admin:false,independent_grants:Object.freeze([])
+});
+export function isHubReadonlyProfile(scope){
+ if(!scope||typeof scope!=='object'||!exactSet(Object.keys(scope),Object.keys(HUB_READONLY_SCOPE)))return false;
+ return Object.entries(HUB_READONLY_SCOPE).every(([key,value])=>Array.isArray(value)?exactSet(scope[key],value):scope[key]===value);
+}

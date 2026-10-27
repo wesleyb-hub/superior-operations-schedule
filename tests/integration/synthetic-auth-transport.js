@@ -2,7 +2,7 @@
 // No Supabase Auth/password/JWT verification or Realtime behavior is claimed.
 window.SUPERIOR_CONFIG={supabaseUrl:'http://disposable.invalid',supabaseAnonKey:'synthetic-not-a-key'};
 window.supabase={createClient(){
- const users={admin:{id:'00000000-0000-4000-8000-000000000001',email:'test-admin@superiorwallsnd.com'},viewer:{id:'00000000-0000-4000-8000-000000000002',email:'test-viewer@superiorwallsnd.com'},outsider:{id:'00000000-0000-4000-8000-000000000003',email:'test-outsider@superiorwallsnd.com'}};
+ const users={reader:{id:'00000000-0000-4000-8000-000000000119',email:'test-hub-reader@superiorwallsnd.com'},admin:{id:'00000000-0000-4000-8000-000000000001',email:'test-admin@superiorwallsnd.com'},viewer:{id:'00000000-0000-4000-8000-000000000002',email:'test-viewer@superiorwallsnd.com'},outsider:{id:'00000000-0000-4000-8000-000000000003',email:'test-outsider@superiorwallsnd.com'}};
  let callbacks=[];
  const session=()=>users[sessionStorage.testIdentity]?{user:users[sessionStorage.testIdentity],access_token:'synthetic-not-a-jwt'}:null;
  const request=async(path,body)=>fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Test-Identity':sessionStorage.testIdentity||''},body:JSON.stringify(body)}).then(r=>r.json());

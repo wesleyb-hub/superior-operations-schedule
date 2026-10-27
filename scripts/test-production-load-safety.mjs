@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
@@ -7,7 +8,7 @@ const part=(a,b)=>html.slice(html.indexOf(a),html.indexOf(b));
 function fixture(){
   const pending=[],alerts=[],toasts=[];
   const c={hubSessionEpoch:0,console:{error(){}},state:{productionDay:'2026-10-19',view:'other',subview:{}},currentUser:{id:'synthetic'},wallsProduction:{marker:'initial'},wallsProductionReady:false,wallsProductionError:'',productionBusy:false,subscriptions:[],subscribeWallsProduction:()=>c.subscriptions.push(c.wallsProduction.full_read_access===true),wallSubviewAllowed:()=>true,normalizeDate:x=>x,todayISO:()=>'',weekStart:x=>x,addDays:x=>x,alert:x=>alerts.push(x),showInventoryToast:x=>toasts.push(x),sb:{rpc:(name,args)=>new Promise((resolve,reject)=>pending.push({name,args,resolve,reject}))}};
-  vm.createContext(c);
+  vm.createContext(c);installHubReaderHelpers(c,html);
   vm.runInContext(part('let wallsProductionLoadToken=','let wallsInstallationLoadPromise='),c);
   vm.runInContext(part('async function wallsProductionRpc(', 'function closeProductionModal('),c);
   return {c,pending,alerts,toasts,resolve:(offset,marker)=>{pending[offset].resolve({data:{marker}});pending[offset+1].resolve({data:{}})}};

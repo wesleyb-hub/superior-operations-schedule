@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 // Synthetic, offline tests of the actual inline picker and existing RPC payload contract.
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
@@ -8,7 +9,7 @@ function setup(){
  const planner={sections:[{section_id:'a',section_key:'production',section_name:'Synthetic production',schedule_version:4},{section_id:'b',section_key:'field',section_name:'Synthetic field'}],people:[{section_id:'a',employee_name:' Test Alpha ',role_name:'Synthetic role'},{section_id:'a',employee_name:'Legacy Name'},{section_id:'b',employee_name:'test alpha'}],availability:[{employee_name:'TEST ALPHA'},{employee_name:'Test Beta'}]};
  const elements={plannerCrewPeopleNew:{value:''},plannerCrewLeader:{value:'Test Alpha'}};const checked=[{value:'Test Alpha'},{value:'Legacy Name'}];
  const context={weeklyPlannerCompanyRoster:null,hubSessionEpoch:0,currentUserIsAdmin:false,weeklyPlannerEmployeeHistory:null,currentUser:null,sb:null,weeklyPlanner:planner,weeklyPlannerInstallEmployees:['Install Test'],weeklyPlannerSelected:'production',htmlSafe:x=>String(x).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),document:{getElementById:id=>elements[id],querySelectorAll:selector=>selector.includes(':checked')?checked:[]}};
- vm.createContext(context);
+ vm.createContext(context);installHubReaderHelpers(context,html);
  vm.runInContext(html.slice(html.indexOf('function plannerSection('),html.indexOf('function plannerDateLabel('))+html.slice(html.indexOf('function plannerInstallationEmployeeHint('),html.indexOf('function plannerReview('))+html.slice(html.indexOf('function plannerCaptureSection('),html.indexOf('async function plannerSaveSection(')),context);
  return {c:context,planner,elements,checked};
 }

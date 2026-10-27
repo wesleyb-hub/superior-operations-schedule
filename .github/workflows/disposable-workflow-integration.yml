@@ -64,12 +64,19 @@ jobs:
           set -o pipefail
           psql -X --set ON_ERROR_STOP=1 -f tests/integration/probes/mixed-employee-scope.sql 2>&1 | tee artifacts/disposable-workflow/mixed-employee-scope.log
           psql -X --set ON_ERROR_STOP=1 -f tests/integration/probes/mixed-employee-approved-packs.sql 2>&1 | tee artifacts/disposable-workflow/mixed-employee-approved-packs.log
+      - name: Verify full-Hub readonly authority and zero-write matrix
+        run: |
+          set -o pipefail
+          psql -X --set ON_ERROR_STOP=1 -f tests/integration/probes/hub-readonly-scope.sql 2>&1 | tee artifacts/disposable-workflow/hub-readonly-scope.log
       - name: Run browser through actual SQL functions and RLS
         if: ${{ always() && steps.schema.outcome == 'success' }}
         run: node tests/integration/workflow-browser.mjs
       - name: Exercise actual production-board browser controls
         if: ${{ always() && steps.schema.outcome == 'success' }}
         run: node tests/integration/production-browser-lifecycle.mjs
+      - name: Verify all-Hub readonly browser on phone and desktop
+        if: ${{ always() && steps.schema.outcome == 'success' }}
+        run: node tests/integration/hub-readonly-browser.mjs
       - name: Require all corrected SQL edge regressions to pass
         if: ${{ always() && steps.schema.outcome == 'success' }}
         run: |

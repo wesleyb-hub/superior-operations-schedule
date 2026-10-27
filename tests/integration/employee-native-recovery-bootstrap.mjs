@@ -9,8 +9,8 @@ import { createHash } from 'node:crypto';
 
 const root=path.resolve(import.meta.dirname,'../..');
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const expectedMigrationCount=43;
-const finalMigration='20261027112125_mixed_employee_password_scope.sql';
+const expectedMigrationCount=45;
+const finalMigration='20261027133126_hub_readonly_password_scope.sql';
 const digest=value=>createHash('sha256').update(value).digest('hex');
 
 function betweenUnique(source,start,end){

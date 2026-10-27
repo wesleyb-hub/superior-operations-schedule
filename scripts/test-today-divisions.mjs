@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 // Actual Today helper execution; synthetic capabilities only, no services or browser.
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -10,7 +11,7 @@ const divisions=['walls','boxes','manholes','fence','block'];
 const plain=value=>JSON.parse(JSON.stringify(value));
 function fixture({admin=false,views=[],subviews=[],issue=false,fieldIssue=false,manage=false}={}){
  const calls=[],c={currentUserIsAdmin:admin,currentUserAuthorized:true,currentUserCanWrite:admin,currentAllowedViews:views,currentAllowedWallSubviews:subviews,wallsProduction:{permissions:{issue}},wallsInstallation:{permissions:{field_progress:fieldIssue,manage}},state:{view:'today',week:'2026-10-19',subview:{},weeklyPlannerView:'review'},todayISO:()=>'2026-10-23',setView:v=>{calls.push(['view',v]);c.state.view=v},loadWallsProduction:()=>calls.push(['production-read']),ensureWallsInstallationLoaded:force=>calls.push(['installation-read',force]),showInventoryToast:text=>calls.push(['toast',text])};
- vm.createContext(c);vm.runInContext(['viewAllowed','wallSubviewAllowed','installationCanManage'].map(sourceLine).join('\n')+'\n'+helpers,c);
+ vm.createContext(c);installHubReaderHelpers(c,html);vm.runInContext(['viewAllowed','wallSubviewAllowed','installationCanManage'].map(sourceLine).join('\n')+'\n'+helpers,c);
  return {c,calls,areas:()=>plain(c.todayWorkAreas())};
 }
 test('one Today navigation entry, no duplicated division tabs',()=>{

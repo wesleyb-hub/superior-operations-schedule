@@ -1,3 +1,4 @@
+import {installHubReaderHelpers} from './hub-reader-test-helpers.mjs';
 // Actual inline renderers and save/reload functions; synthetic records only, no network/database.
 // String-boundary tests complement (not replace) the real Chromium DOM harness.
 import {readFileSync} from 'node:fs';
@@ -30,7 +31,7 @@ function fixture(){
  syncAllLinkedDeliveries(){},saveUiPrefs(){},render(){},printCurrent(){},renderWallsQcQueue:()=>'',installationCanManage:()=>true,installationJob:()=>null,deliverySourceLabel:()=>payload,
  alert(message){throw new Error('Unexpected alert: '+message)},loadRemoteState(){throw new Error('Unexpected reload')}
  };
- vm.createContext(c);
+ vm.createContext(c);installHubReaderHelpers(c,html);
  vm.runInContext(html.slice(html.indexOf('const divisionMeta='),html.indexOf('const seed='))+html.slice(html.indexOf('const WALL_HEIGHTS='),html.indexOf('function nonnegativeNumber('))+functions.map(sourceOf).join('\n'),c);
  return {c,nodes};
 }
