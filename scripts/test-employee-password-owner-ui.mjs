@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createPublicKey} from 'node:crypto';
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
 const section=(a,b)=>html.slice(html.indexOf(a),html.indexOf(b,html.indexOf(a)));
 const source=section('// Owner-only password administration','// End owner-only password administration.');
@@ -33,7 +34,23 @@ function assertCleared(f){for(const id of ['employeePasswordNew','employeePasswo
 
 test('strict disabled default requires explicit endpoint and unexpired public key; no owner traffic otherwise',async()=>{
  for(const config of [null,{}, {...enabledConfig(),employeePasswordAdminEnabled:false},{...enabledConfig(),employeePasswordAdminEnabled:'true'},{...enabledConfig(),employeePasswordEndpoint:undefined},{...enabledConfig(),employeePasswordKey:undefined}]){const f=fixture(config);assert.equal(await f.c.refreshEmployeePasswordOwner(),false);assert.equal(await f.c.openEmployeePassword(),false);assert.equal(f.node('employeePasswordBtn').hidden,true);assert.equal(f.calls.length,0)}
- assert.doesNotMatch(fs.readFileSync(new URL('../config.js',import.meta.url),'utf8'),/employeePasswordAdminEnabled|employeePasswordEndpoint|employeePasswordKey/);
+});
+test('explicit production rollout has only public key metadata, pinned endpoint and unchanged login configuration',()=>{
+ const text=fs.readFileSync(new URL('../config.js',import.meta.url),'utf8'),sandbox={window:{}};
+ vm.runInNewContext(text,sandbox);const config=JSON.parse(JSON.stringify(sandbox.window.SUPERIOR_CONFIG));
+ assert.deepEqual(Object.keys(config).sort(),['allowedEmailDomain','employeePasswordAdminEnabled','employeePasswordEndpoint','employeePasswordKey','employeeUsernameLoginEnabled','supabaseAnonKey','supabaseUrl']);
+ assert.equal(config.supabaseUrl,'https://qgetoeprpgxkmywjohba.supabase.co');
+ assert.equal(config.supabaseAnonKey,'sb_publishable_302aBGTTQVgTo_v1yXbXvw_M9DjbI1o');
+ assert.equal(config.allowedEmailDomain,'superiorwallsnd.com');assert.equal(config.employeeUsernameLoginEnabled,true);
+ assert.equal(config.employeePasswordAdminEnabled,true);assert.equal(config.employeePasswordEndpoint,config.supabaseUrl+'/functions/v1/employee-password');
+ const key=config.employeePasswordKey;assert.deepEqual(Object.keys(key).sort(),['jwk','kid','not_after']);
+ assert.match(key.kid,/^employee-password-[a-z0-9-]{1,48}$/);assert.deepEqual(Object.keys(key.jwk).sort(),['e','kty','n']);
+ assert.equal(key.jwk.kty,'RSA');assert.equal(key.jwk.e,'AQAB');assert.match(key.jwk.n,/^[A-Za-z0-9_-]{512}$/);
+ const publicKey=createPublicKey({key:key.jwk,format:'jwk'});assert.equal(publicKey.type,'public');assert.equal(publicKey.asymmetricKeyDetails.modulusLength,3072);
+ const expiry=Date.parse(key.not_after);assert.equal(new Date(expiry).toISOString(),key.not_after);assert.ok(expiry>Date.now()&&expiry<=Date.now()+31*86400000);
+ assert.doesNotMatch(text,/PRIVATE KEY|sb_secret_|service_role|owner_uid|target_uid|owner_token|password["']?\s*:/i);
+ const f=fixture(config);f.c.SUPABASE_URL=config.supabaseUrl;
+ assert.deepEqual(JSON.parse(JSON.stringify(f.c.employeePasswordConfig())),{endpoint:config.employeePasswordEndpoint,key});assert.equal(f.calls.length,0);
 });
 test('configuration refuses foreign or normalized URLs, private JWK material and expired/overlong key lifetime',async()=>{
  const bad=[...['https://external.example.invalid/functions/v1/employee-password',endpoint+'/',endpoint+'?x=1',endpoint+'#x',' '+endpoint,endpoint.replace('https:','http:')].map(value=>({...enabledConfig(),employeePasswordEndpoint:value})),...[new Date(Date.now()-1).toISOString(),new Date(Date.now()+32*86400000).toISOString(),'invalid'].map(value=>({...enabledConfig(),employeePasswordKey:{...keyConfig(),not_after:value}})),{...enabledConfig(),employeePasswordKey:{...keyConfig(),jwk:{...keyConfig().jwk,d:'private-material'}}}];
