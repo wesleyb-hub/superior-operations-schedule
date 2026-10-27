@@ -64,7 +64,11 @@ try {
   const fresh = () => createClient(api, vars.ANON_KEY, options);
   const keyId='employee-password-native-test', audience='https://auth.example.invalid/functions/v1/employee-password';
   const ownerEmail='owner-password-test@company.example.invalid',ownerPassword=password();
-  const employees=[{username:'nativeplantone',initialPassword:password()},{username:'nativeplanttwo',initialPassword:password()},{username:'nativemixed',profile:'mixed'},{username:'nativemixedrandom',profile:'mixed',provisioning:'random-password',initialPassword:password()}];
+  const provisioningMode=process.env.NATIVE_PROVISIONING_MODE??'no-password';
+  requireThat(['no-password','password'].includes(provisioningMode),'Unexpected synthetic provisioning mode');
+  result.provisioningMode=provisioningMode;
+  const mixedFixture={username:'nativemixed',profile:'mixed',...(provisioningMode==='password'?{provisioning:'random-password',initialPassword:password()}:{})};
+  const employees=[{username:'nativeplantone',initialPassword:password()},{username:'nativeplanttwo',initialPassword:password()},mixedFixture];
   db=new pg.Client({connectionString:vars.DB_URL});
   const effectiveDb=db.connectionParameters;
   requireThat(['127.0.0.1','localhost','::1'].includes(effectiveDb.host)&&effectiveDb.database==='postgres'&&dbUrl.port&&Number(effectiveDb.port)===Number(dbUrl.port)&&!dbUrl.search&&!dbUrl.hash,'Unexpected effective local DB connection');
@@ -280,7 +284,7 @@ try {
   report('Lost response after an actual native update remains needs_review; new nonce/request cannot blindly overwrite');
 
   stage='unchanged scopes and secret-free state';
-  requireThat((await db.query('select count(*)::int n from auth.users')).rows[0].n===5,'Exactly five synthetic native identities must remain');
+  requireThat((await db.query('select count(*)::int n from auth.users')).rows[0].n===4,'Exactly four synthetic native identities must remain');
   requireThat(await fullGrantSnapshot()===baselineFullGrants,'Password operations changed full union of business grants');
   requireThat(JSON.stringify((await db.query('select id,email from auth.users order by id')).rows)===baselineUsers,'Native owner password operations changed identities or account count');
   requireThat(JSON.stringify((await db.query('select to_jsonb(a) r from public.app_employee_access a order by user_id')).rows)===baselineGrants,'Employee business grants changed');
@@ -288,8 +292,8 @@ try {
   requireThat(!(await fresh().auth.signInWithPassword({email:ownerEmail,password:ownerPassword})).error,'Other owner password changed');
   const audit=JSON.stringify((await db.query('select * from employee_password.audit')).rows);
   requireThat(!/@|password|token|https:|Bearer|cipher/i.test(audit),'Audit includes unexpected sensitive/free-form data');
-  report('Exactly five synthetic existing identities and all employee/owner business grants are unchanged; audit contains only fixed nonsecret metadata');
-  result.nativePasswordUpdateRequests=nativeWrites;result.syntheticUsers=5;result.passed=true;ownerToken='';
+  report('Exactly four synthetic existing identities and all employee/owner business grants are unchanged; audit contains only fixed nonsecret metadata');
+  result.nativePasswordUpdateRequests=nativeWrites;result.syntheticUsers=4;result.passed=true;ownerToken='';
 } catch(error){
   exitCode=1;result.failure={stage,message:error instanceof TestFailure||error instanceof EmployeeOwnerPasswordBrowserFailure?error.message:'Native operation failed; raw provider/parser/process diagnostics suppressed'};
   console.error(`FAIL: ${stage}: ${result.failure.message}`);
