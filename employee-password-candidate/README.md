@@ -1,9 +1,15 @@
-# Owner password setup/reset — private, disabled candidate
+# Owner password setup/reset — approved gated rollout
 
-This branch implements a no-email owner workflow for **already approved existing
-restricted Auth identities**. It is not deployed or enabled. The released Hub's
-native username login is unchanged. No real employee, password, key, owner grant,
-domain, sender or live account has been added or changed by this candidate.
+This implementation provides a no-email owner workflow for **already approved existing
+restricted Auth identities**. Source publication and the bounded hosted rollout were
+explicitly approved. Native username login and existing account/business access remain
+unchanged. Deployment installs a dedicated endpoint, private authorization records and
+an expiring encryption key; it does **not** set/reset a password, confirm an account,
+create a new employee or grant new business permissions.
+
+Deployment state is verified separately through exact-head CI, hosted probes and the
+private rollout receipt; source configuration alone is not proof of activation. No
+real account identifiers, passwords, private keys or service credentials belong here.
 
 ## Owner experience
 
@@ -30,7 +36,7 @@ the later employee roster. No caller-supplied email/username/grants enter the co
   password. The custom endpoint receives a bounded compact JWE with only public
   `apikey` and content-type headers, never the owner's plaintext bearer header.
 - A deployment-pinned public key is the only browser key. The private key and native
-  service-role key remain server-only. Strict algorithm/header/kid allowlists reject
+  service API key remain server-only. Strict algorithm/header/kid allowlists reject
   compression, remote-key lookup and fallback. Library randomness is not overridden.
 - Server verifies the decrypted owner token using native `getUser`, then checks an
   explicit current provisioning-owner allowlist. General app writers and user-editable
@@ -44,12 +50,12 @@ the later employee roster. No caller-supplied email/username/grants enter the co
   The second encrypted apply request consumes it atomically before one exact-UID
   native Admin update. Setup includes individual `email_confirm:true`; reset sends
   only the new password. Neither changes email, username, role or business grants.
-- JWE commands expire within60 seconds; challenges within120 seconds. Lifetime is
-  rechecked after awaited work. Shared pre-decrypt120/300-second and durable
+- JWE commands expire within 60 seconds; challenges within 120 seconds. Lifetime is
+  rechecked after awaited work. Shared pre-decrypt 120/300-second and durable
   owner/target budgets apply without trusting caller IP headers.
 - Native uncertainty or interrupted finalization retains a durable target lock.
   No retry/new UUID/lease silently repeats a password write. Only exact native
-  HTTP422 `code=weak_password` is a defined non-mutating rejection that permits a
+  HTTP 422 `code=weak_password` is a defined non-mutating rejection that permits a
   fresh owner-reviewed attempt. Other failures remain blocked for inspection.
 - Definitive exact-target success is finalized with a new record version before
   releasing the lock. Later resets require a fresh challenge and confirmation;
@@ -72,7 +78,7 @@ arrays is best effort, not guaranteed memory erasure.
 Before live use, explicitly approve this trust/retention tradeoff, verify no custom
 body/error/session tracing, restrict key/log access, and approve the rotation and
 retention procedure. Public/server key configuration has a finite not-after time
-within31 days. Rotation must disable new commands, change server/private and pinned
+within 31 days. Rotation must disable new commands, change server/private and pinned
 public configuration, invalidate old-key challenges, verify the boundary, and then
 re-enable. Retire old decryption keys under the approved secret-manager retention
 policy; do not claim deletion also erases provider backups or retained ciphertext.
@@ -103,7 +109,7 @@ Modern `sb_secret_` keys are server-only and use the `apikey` header, never a Be
 `sb_publishable_...` key in this Hub's `config.js` `supabaseAnonKey` field. It is an
 explicit public routing/configuration pin, not owner authorization. Missing or
 non-publishable values disable the handler; there is no automatic legacy/secret-key
-fallback. No new key or browser change is implied. The named default publishable key is used separately for native owner-token verification; the named default secret key is used only for internal service calls. Both travel in `apikey` only. Only the decrypted owner JWT travels in native `Authorization`; a secret API key is never treated as a Bearer JWT. Missing/malformed/wrong-role dictionaries fail disabled, with no fallback to deprecated aliases or a different named key. No existing project key or legacy-key enablement is changed. Native Auth
+fallback. This routing pin does not create a new API key. The named default publishable key is used separately for native owner-token verification; the named default secret key is used only for internal service calls. Both travel in `apikey` only. Only the decrypted owner JWT travels in native `Authorization`; a secret API key is never treated as a Bearer JWT. Missing/malformed/wrong-role dictionaries fail disabled, with no fallback to deprecated aliases or a different named key. No existing project key or legacy-key enablement is changed. Native Auth
 requests pin `X-Supabase-Api-Version: 2024-01-01`; unknown/legacy rejection shapes
 still retain the uncertainty lock. Verify hosted gateway/header parity before
 activation; the isolated native harness is not evidence of that hosted behavior.
@@ -127,27 +133,29 @@ The offline `owner-preview.html` is explicitly simulated and has network blocked
 CSP; its actual action is permanently disabled. No production password should ever
 be entered into a preview.
 
-New native Auth + full-Hub/browser integration remains an exact-candidate runtime
-gate. Earlier released native-login CI is historical evidence, not a new result for
-this owner flow. Local native/browser launcher restrictions were respected.
+The exact-head native workflow exercises pinned native Auth, real PostgREST, JWE
+and full-Hub phone/browser flows using disposable synthetic accounts. Those tests
+are not a real employee login or hosted positive password-write acceptance. Hosted
+negative probes use an invalid synthetic owner token and no password; they verify
+runtime key/header compatibility, encryption and rejection without credential changes.
 
-Required next approvals, in order:
-1. Publish only reviewed source/synthetic tests to a new draft PR and run exact-head
-   native/database/browser CI. No live secrets or employee records in CI/artifacts.
-2. Approve encrypted-log/private-key risk, secure key generation/storage/rotation,
-   exact migration/function/config deployment and explicit owner/target record setup.
-3. Deploy disabled, verify hosted ACL/native role parity, configure the existing UID
-   and unchanged limited grants, review approved scope/identity at action time, then
-   enable only after verification. No credential operation is implied by deployment.
-4. Separately authorize the exact first setup/reset. The owner enters the password
-   privately in the verified UI—not in chat—and confirms individual activation.
-   Verify same UID/scopes and the employee's phone sign-in. No impersonation test by
-   the assistant using a real employee password.
+Release and credential-operation gates:
+1. Publish only reviewed source/synthetic tests and pass exact-head native, database
+   and browser CI. Never put live secrets or employee records in CI/artifacts.
+2. Obtain explicit encrypted-log/private-key risk and bounded deployment approval.
+   The current rollout has this approval; future key rotation is not automatic.
+3. Deploy with the DB gate disabled, verify hosted ACL/runtime parity and exact
+   existing UID/scope mappings, publish verified source/config, and only then enable.
+   No password operation is implied by deployment or by enabling the capability.
+4. The exact first setup/reset remains a separate owner action. Enter the password
+   privately in the verified UI—not in chat—and confirm individual identifier
+   activation for first setup. Then verify the employee's own phone sign-in and
+   unchanged scope. The assistant must not impersonate the employee with a real password.
 
 No Resend/SMTP/DNS setup, email delivery, Python helper, PR105 proxy, direct Auth SQL
 write, global email-confirmation disable or duplicate existing employee is involved.
 
-Primary references reviewed26 October2026:
+Primary references reviewed 26 October 2026:
 - https://github.com/panva/jose/releases/tag/v6.2.13
 - https://www.rfc-editor.org/rfc/rfc7516
 - https://supabase.com/docs/reference/javascript/auth-admin-updateuserbyid
