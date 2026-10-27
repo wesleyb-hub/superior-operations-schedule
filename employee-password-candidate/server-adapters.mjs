@@ -19,19 +19,23 @@ function identity(value){
 }
 export function createNativeAdapters(config,fetchImpl){
   if(!/^https:\/\/[a-z0-9]{20}\.supabase\.co$/.test(config.authOrigin)
-    ||!/^[-_a-zA-Z0-9]+\.[-_a-zA-Z0-9]+\.[-_a-zA-Z0-9]+$/.test(config.serverKey??'')||typeof fetchImpl!=='function')throw failure();
-  return make(config,fetchImpl);
+    ||!/^sb_publishable_[A-Za-z0-9_-]{16,512}$/.test(config.publicKey??'')
+    ||!/^sb_secret_[A-Za-z0-9_-]{16,512}$/.test(config.serverKey??'')||typeof fetchImpl!=='function')throw failure();
+  return make(config,fetchImpl,false);
 }
 export function createSyntheticAdapters(config,fetchImpl){
   if(config.authOrigin!=='https://auth.example.invalid'||config.serverKey!=='synthetic-server-key'||config.publicKey!=='synthetic-public-key')throw failure();
-  return make(config,fetchImpl);
+  return make(config,fetchImpl,true);
 }
-function make(config,fetchImpl){
+function make(config,fetchImpl,legacyServiceBearer){
   async function request(path,{body,method=body===undefined?'GET':'POST',caller}={}){
     let response;
     try{
       const key=caller?config.publicKey:config.serverKey;
-      const headers={apikey:key,authorization:'Bearer '+(caller??key),'content-type':'application/json'};
+      const headers={apikey:key,'content-type':'application/json'};
+      // Modern API keys are not JWTs. Only a user JWT is sent as Authorization;
+      // the isolated legacy-Auth harness keeps its explicit synthetic mapping.
+      if(caller||legacyServiceBearer)headers.authorization='Bearer '+(caller??key);
       // Pin the native Auth wire contract used by the strict error allowlist.
       // Without this header Auth defaults to legacy numeric code/error_code JSON.
       if(path.startsWith('/auth/v1/'))headers['X-Supabase-Api-Version']='2024-01-01';

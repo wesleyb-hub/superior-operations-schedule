@@ -85,28 +85,25 @@ in `database/CONTRACT.md`, not instantaneous global revocation. Existing access 
 can outlive a password change until native expiry/validation; offboarding also needs
 explicit business-grant/Auth controls, not just a reset.
 
-## Default-off configuration
+## Explicit gated configuration
 
-Tracked `config.js` is unchanged. UI needs all of:
+Tracked `config.js` now carries the explicitly approved public-only rollout flag, exact endpoint and expiring public key. UI needs all of:
 `employeePasswordAdminEnabled:true`, exact project function URL in
 `employeePasswordEndpoint`, and public-only `employeePasswordKey:{kid,jwk,not_after}`.
 The new migration seeds disabled settings and **no owners or employee records**.
 
 Server needs explicit `EMPLOYEE_PASSWORD_ENABLED=true`, built-in `SUPABASE_URL`,
-`SUPABASE_ANON_KEY`, legacy-JWT `SUPABASE_SERVICE_ROLE_KEY`, and separately approved
+`SUPABASE_PUBLISHABLE_KEYS` / `SUPABASE_SECRET_KEYS` JSON dictionaries with valid named `default` keys, and separately approved
 `EMPLOYEE_PASSWORD_INGRESS_API_KEY`, `EMPLOYEE_PASSWORD_HUB_ORIGIN`, `EMPLOYEE_PASSWORD_AUDIENCE`,
 `EMPLOYEE_PASSWORD_IDENTIFIER_DOMAIN`, `EMPLOYEE_PASSWORD_KEY_ID`,
 `EMPLOYEE_PASSWORD_KEY_NOT_AFTER`, `EMPLOYEE_PASSWORD_PRIVATE_KEY`.
-Opaque `sb_secret_` keys are deliberately not supported by this adapter's header
-contract. Do not expose any server-only value in browser configuration or this repo.
+Modern `sb_secret_` keys are server-only and use the `apikey` header, never a Bearer JWT. Do not expose any server-only value in browser configuration or this repo.
 
 `EMPLOYEE_PASSWORD_INGRESS_API_KEY` must exactly equal the **existing publishable**
 `sb_publishable_...` key in this Hub's `config.js` `supabaseAnonKey` field. It is an
 explicit public routing/configuration pin, not owner authorization. Missing or
 non-publishable values disable the handler; there is no automatic legacy/secret-key
-fallback. No new key or browser change is implied. The server's legacy
-`SUPABASE_ANON_KEY` is used separately for native owner-token verification, and
-`SUPABASE_SERVICE_ROLE_KEY` is used only for internal service calls. Native Auth
+fallback. No new key or browser change is implied. The named default publishable key is used separately for native owner-token verification; the named default secret key is used only for internal service calls. Both travel in `apikey` only. Only the decrypted owner JWT travels in native `Authorization`; a secret API key is never treated as a Bearer JWT. Missing/malformed/wrong-role dictionaries fail disabled, with no fallback to deprecated aliases or a different named key. No existing project key or legacy-key enablement is changed. Native Auth
 requests pin `X-Supabase-Api-Version: 2024-01-01`; unknown/legacy rejection shapes
 still retain the uncertainty lock. Verify hosted gateway/header parity before
 activation; the isolated native harness is not evidence of that hosted behavior.
@@ -163,3 +160,5 @@ API-contract and ingress-key references rechecked 27 October 2026:
 - https://github.com/supabase/auth/blob/v2.197.0/internal/api/errors.go
 - https://supabase.com/docs/guides/functions/secrets
 - https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys
+
+Hosted runtime key contract verified with noncredential booleans and [Supabase migration documentation](https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys#step-4-update-edge-functions). Local native harness uses its explicit legacy-only synthetic adapter; production adapter header semantics have separate strict tests and hosted noncredential probes.

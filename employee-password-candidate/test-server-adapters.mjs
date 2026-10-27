@@ -15,7 +15,7 @@ function productionEnv(){
  return {EMPLOYEE_PASSWORD_ENABLED:'true',SUPABASE_URL:'https://abcdefghijklmnopqrst.supabase.co',
   EMPLOYEE_PASSWORD_HUB_ORIGIN:'https://hub.example.invalid',EMPLOYEE_PASSWORD_AUDIENCE:'https://abcdefghijklmnopqrst.supabase.co/functions/v1/employee-password',
   EMPLOYEE_PASSWORD_IDENTIFIER_DOMAIN:'company.example.invalid',EMPLOYEE_PASSWORD_INGRESS_API_KEY:'sb_publishable_SYNTHETIC_PUBLIC_ONLY_12345',
-  SUPABASE_ANON_KEY:'synthetic.anon.key',SUPABASE_SERVICE_ROLE_KEY:'synthetic.server.key',EMPLOYEE_PASSWORD_KEY_ID:'employee-password-contract-test',
+  SUPABASE_PUBLISHABLE_KEYS:JSON.stringify({default:'sb_publishable_SYNTHETIC_NATIVE_PUBLIC_12345'}),SUPABASE_SECRET_KEYS:JSON.stringify({default:'sb_secret_SYNTHETIC_SERVER_ONLY_12345'}),EMPLOYEE_PASSWORD_KEY_ID:'employee-password-contract-test',
   EMPLOYEE_PASSWORD_KEY_NOT_AFTER:new Date(Date.now()+3600000).toISOString(),EMPLOYEE_PASSWORD_PRIVATE_KEY:'unused-synthetic-key'};
 }
 test('production ingress requires an explicit publishable pin and never falls back to legacy or secret keys',async()=>{
@@ -29,11 +29,11 @@ test('production outer public pin is exact and is not a substitute for encrypted
  const env=productionEnv(),calls=[];
  const handler=configuredPasswordHandler(name=>env[name],async(url,options)=>{calls.push({url,options});return response(false);});
  const request=apikey=>new Request(env.EMPLOYEE_PASSWORD_AUDIENCE,{method:'POST',headers:{origin:env.EMPLOYEE_PASSWORD_HUB_ORIGIN,apikey,'content-type':'application/jose'},body:'synthetic-not-an-envelope'});
- for(const key of [env.SUPABASE_ANON_KEY,env.SUPABASE_SERVICE_ROLE_KEY,'sb_publishable_WRONG_PUBLIC_ONLY_12345'])assert.equal((await handler(request(key))).status,403);
+ for(const key of [JSON.parse(env.SUPABASE_PUBLISHABLE_KEYS).default,JSON.parse(env.SUPABASE_SECRET_KEYS).default,'sb_publishable_WRONG_PUBLIC_ONLY_12345'])assert.equal((await handler(request(key))).status,403);
  assert.equal(calls.length,0);
  assert.equal((await handler(request(env.EMPLOYEE_PASSWORD_INGRESS_API_KEY))).status,429);
  assert.equal(calls.length,1);assert.ok(calls[0].url.endsWith('/rest/v1/rpc/employee_password_preflight'));
- assert.equal(calls[0].options.headers.apikey,env.SUPABASE_SERVICE_ROLE_KEY);
+ assert.equal(calls[0].options.headers.apikey,JSON.parse(env.SUPABASE_SECRET_KEYS).default);assert.equal(Object.hasOwn(calls[0].options.headers,'authorization'),false);
 });
 test('production entry keeps publishable ingress separate from native owner-token verification and owner allowlist',async()=>{
  const env=productionEnv(),calls=[];
@@ -52,12 +52,34 @@ test('production entry keeps publishable ingress separate from native owner-toke
  const reply=await handler(new Request(env.EMPLOYEE_PASSWORD_AUDIENCE,{method:'POST',headers:{origin:env.EMPLOYEE_PASSWORD_HUB_ORIGIN,apikey:env.EMPLOYEE_PASSWORD_INGRESS_API_KEY,'content-type':'application/jose'},body:encrypted}));
  assert.equal(reply.status,403);assert.deepEqual(await reply.json(),{status:'blocked'});assert.equal(calls.length,3);
  const native=calls.find(c=>c.url.endsWith('/auth/v1/user'));
- assert.equal(native.options.headers.apikey,env.SUPABASE_ANON_KEY);assert.equal(native.options.headers.authorization,'Bearer synthetic.owner.token');
+ assert.equal(native.options.headers.apikey,JSON.parse(env.SUPABASE_PUBLISHABLE_KEYS).default);assert.equal(native.options.headers.authorization,'Bearer synthetic.owner.token');
  assert.equal(new Headers(native.options.headers).get('X-Supabase-Api-Version'),'2024-01-01');
  assert.ok(calls.every(c=>!c.url.includes('/admin/users/')&&c.options.headers.apikey!==env.EMPLOYEE_PASSWORD_INGRESS_API_KEY));
  env.EMPLOYEE_PASSWORD_PRIVATE_KEY='';command.owner_token='';
 });
-test('production adapter rejects arbitrary origin and opaque secret keys',()=>{for(const authOrigin of ['http://localhost','https://auth.example.invalid','https://abcdefghijklmnopqrst.supabase.co.evil.invalid'])assert.throws(()=>createNativeAdapters({...cfg,authOrigin,serverKey:'synthetic.service.key'},()=>{}));assert.throws(()=>createNativeAdapters({...cfg,authOrigin:'https://abcdefghijklmnopqrst.supabase.co',serverKey:'sb_secret_SYNTHETIC'},()=>{}));});
+test('production adapter rejects arbitrary origin, legacy credentials and wrong modern key roles',()=>{
+ const config={authOrigin:'https://abcdefghijklmnopqrst.supabase.co',publicKey:'sb_publishable_SYNTHETIC_NATIVE_PUBLIC_12345',serverKey:'sb_secret_SYNTHETIC_SERVER_ONLY_12345'};
+ for(const authOrigin of ['http://localhost','https://auth.example.invalid','https://abcdefghijklmnopqrst.supabase.co.evil.invalid'])assert.throws(()=>createNativeAdapters({...config,authOrigin},()=>{}));
+ for(const serverKey of ['synthetic.service.key','sb_secret_short',config.publicKey,undefined])assert.throws(()=>createNativeAdapters({...config,serverKey},()=>{}));
+ for(const publicKey of ['synthetic.anon.key','sb_publishable_short',config.serverKey,undefined])assert.throws(()=>createNativeAdapters({...config,publicKey},()=>{}));
+});
+test('runtime key dictionaries require an own valid default and never fall back to legacy or other named keys',async()=>{
+ for(const name of ['SUPABASE_PUBLISHABLE_KEYS','SUPABASE_SECRET_KEYS']){
+  const valid=JSON.parse(productionEnv()[name]).default,wrong=JSON.parse(productionEnv()[name==='SUPABASE_SECRET_KEYS'?'SUPABASE_PUBLISHABLE_KEYS':'SUPABASE_SECRET_KEYS']).default;
+  for(const value of [undefined,'','null','[]','{}','broken',JSON.stringify({default:null}),JSON.stringify({default:7}),JSON.stringify({default:wrong}),JSON.stringify({other:valid}),JSON.stringify({__proto__:{default:valid}})]){
+   const env={...productionEnv(),[name]:value,SUPABASE_ANON_KEY:'synthetic.legacy.anon',SUPABASE_SERVICE_ROLE_KEY:'synthetic.legacy.service'};let calls=0;
+   const handler=configuredPasswordHandler(key=>env[key],()=>{calls++;throw Error('HTTP forbidden')});
+   assert.equal((await handler({})).status,503);assert.equal(calls,0);
+  }
+ }
+});
+test('modern service API key is never a bearer while native user token remains a bearer',async()=>{
+ const config={authOrigin:'https://abcdefghijklmnopqrst.supabase.co',publicKey:'sb_publishable_SYNTHETIC_NATIVE_PUBLIC_12345',serverKey:'sb_secret_SYNTHETIC_SERVER_ONLY_12345'},calls=[];
+ const ports=createNativeAdapters(config,async(url,options)=>{calls.push({url,options});return response(url.endsWith('/employee_password_preflight')?true:{id:uid})});
+ await ports.preflight();await ports.readiness();await ports.isOwner(owner);await ports.authAdmin.getUserById(uid);await ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',false);await ports.authenticate('synthetic.owner.token');
+ for(const call of calls.slice(0,5)){assert.equal(call.options.headers.apikey,config.serverKey);assert.equal(Object.hasOwn(call.options.headers,'authorization'),false);assert.equal(call.options.redirect,'error')}
+ assert.equal(calls[5].options.headers.apikey,config.publicKey);assert.equal(calls[5].options.headers.authorization,'Bearer synthetic.owner.token');
+});
 test('native caller validation uses public key and decrypted owner bearer, not server credential',async()=>{const f=fixture([response({id:owner,is_anonymous:false})]);await f.ports.authenticate('synthetic.owner.token');assert.equal(f.calls[0].url,cfg.authOrigin+'/auth/v1/user');assert.equal(f.calls[0].options.headers.apikey,cfg.publicKey);assert.equal(f.calls[0].options.headers.authorization,'Bearer synthetic.owner.token');assert.equal(f.calls[0].options.redirect,'error');});
 test('initialize is one exact-UID native PUT with individual confirmation only',async()=>{const f=fixture([response({id:uid,email:'plantdemo@company.example.invalid'})]);const r=await f.ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',true);assert.equal(r.kind,'updated');assert.equal(f.calls[0].url,cfg.authOrigin+'/auth/v1/admin/users/'+uid);assert.equal(f.calls[0].options.method,'PUT');assert.deepEqual(JSON.parse(f.calls[0].options.body),{password:'SYNTHETIC_PASSWORD',email_confirm:true});assert.equal(f.calls[0].options.headers.apikey,cfg.serverKey);assert.equal(f.calls[0].options.redirect,'error');});
 test('reset cannot send email, confirmation, metadata or business grants',async()=>{const f=fixture([response({id:uid})]);await f.ports.authAdmin.updatePassword(uid,'SYNTHETIC_PASSWORD',false);assert.deepEqual(JSON.parse(f.calls[0].options.body),{password:'SYNTHETIC_PASSWORD'});await assert.rejects(()=>f.ports.authAdmin.updatePassword('../target','x',false));assert.equal(f.calls.length,1);});
