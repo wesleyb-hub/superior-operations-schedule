@@ -68,3 +68,11 @@ for(const outcome of ['replaced','inactive','error','navigated away'])test(`fres
 test('old session result cannot clear or overwrite replacement session read',async()=>{
  const f=fixture(),old=f.c.loadEmployeeCrewSchedules();await tick();f.c.currentUser={id:'new-employee'};const fresh=f.c.loadEmployeeCrewSchedules();await tick();const cache=f.c.employeeCrewPacksCache;f.pending[0].resolve({data:payload()});assert.equal(await old,false);assert.equal(f.c.employeeCrewPacksCache,cache);assert.equal(f.c.employeeCrewPacksCache.promise,fresh);f.pending[1].resolve({data:payload()});assert.equal(await fresh,true);
 });
+
+test('mixed production inventory Walls-QC profile reads only fresh approved packets, never planner management',async()=>{
+ const f=fixture();f.c.currentUserRole='walls_production_inventory_qc_v1';f.c.currentAllowedViews=['overview','walls','inventory','boxes','manholes','fence','block','qc','weekly-planner'];
+ f.c.renderWeeklyPlanner();await tick();assert.equal(f.pending.length,1);assert.equal(f.pending[0].name,'get_employee_approved_crew_packs');f.pending[0].resolve({data:payload()});await tick();
+ assert.match(f.node('view').innerHTML,/ACTIVE APPROVED PACKET/);assert.doesNotMatch(f.node('view').innerHTML,/data-planner-action|PRIVATE MANAGER CACHE|PRIVATE DRAFT|PRIVATE ADMIN|PRIVATE APPROVER/);
+ const read=f.c.readEmployeeCrewPack('synthetic-pack');await tick();assert.equal(f.pending.length,2);f.pending[1].resolve({data:payload()});assert.equal(await read,true);assert.equal(f.opened.length,1);assert.doesNotMatch(f.opened[0].join(' '),/PRIVATE MANAGER CACHE|PRIVATE DRAFT|PRIVATE SOURCE|data-planner-action/);
+ f.c.currentAllowedViews=f.c.currentAllowedViews.filter(x=>x!=='weekly-planner');assert.equal(await f.c.readEmployeeCrewPack('synthetic-pack'),false);assert.equal(f.pending.length,2);
+});

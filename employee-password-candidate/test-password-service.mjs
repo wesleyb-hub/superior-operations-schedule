@@ -1,3 +1,4 @@
+import {MIXED_EMPLOYEE_SCOPE} from './identity.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {encryptCommand} from './browser-crypto.mjs';
@@ -53,3 +54,4 @@ test('command expiry during native precheck prevents mutation even with live cha
 test('command expiry while consuming leaves an uncertain lock, never mutates',async()=>{const f=fixture(),c=await f.prepared();f.state.beforeConsume=()=>{f.deps.now=()=>now+65000};assert.equal((await f.send(c)).status,409);assert.equal(f.state.updates.length,0);assert.ok(f.state.lock);});
 test('prepare expired during owner validation cannot issue a new challenge',async()=>{const f=fixture();f.deps.isOwner=async()=>{f.deps.now=()=>now+65000;return true};assert.equal((await f.send(f.command())).status,409);assert.equal(f.state.challenges.size,0);});
 test('prepare expired during target read cannot return a usable challenge',async()=>{const f=fixture();f.deps.authAdmin.getUserById=async()=>{f.deps.now=()=>now+65000;return structuredClone(f.user)};const r=await f.send(f.command());assert.equal(r.status,409);assert.equal((await r.json()).challenge_id,undefined);assert.equal(f.state.updates.length,0);});
+test('mixed profile uses same encrypted exact-UID native password path',async()=>{const f=fixture();f.record.effective_scope=structuredClone(MIXED_EMPLOYEE_SCOPE);const c=await f.prepared(),req=await f.request(c),body=await req.clone().text();assert.ok(!body.includes(password)&&!body.includes(token));assert.equal(req.headers.get('authorization'),null);const result=await f.handler(req);assert.equal(result.status,200);assert.equal((await result.json()).status,'applied');assert.deepEqual(f.state.updates,[{id:target,password,initialize:true}]);assert.equal(f.record.version,2);assert.equal(f.record.setup_completed,true);assert.equal(f.state.lock,null);assert.ok(!JSON.stringify(f.state.audit).includes(password));});

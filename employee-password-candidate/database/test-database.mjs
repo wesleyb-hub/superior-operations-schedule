@@ -118,6 +118,23 @@ export async function runPasswordDatabaseTests({Client,config,report=console.log
     const def=(await c.query("select pg_get_functiondef('public.can_edit_schedule()'::regprocedure) as d")).rows[0].d;
     await c.query("create or replace function public.can_edit_schedule() returns boolean language sql stable security definer set search_path=public as $$select false$$");assert.equal((await prepare(r)).kind,'blocked');await c.query(def);
     pass('Unknown grant columns and authority definition/ACL/RLS fingerprints fail closed');
+    for(const [table,trigger] of [['walls_production_assignments','mixed_employee_walls_assignment_target'],['walls_production_issues','mixed_employee_walls_issue_target']]){
+      const definition=(await c.query('select pg_get_triggerdef(oid,true) as definition from pg_trigger where tgrelid=$1::regclass and tgname=$2',[`public.${table}`,trigger])).rows[0].definition;
+      for(const mutation of ['disable','drop']){
+        await reset();const prepared=await prepare(r);assert.equal(prepared.kind,'prepared');
+        const fingerprint=(await c.query('select employee_password.authority_fingerprint() as value')).rows[0].value;
+        try{
+          await c.query(mutation==='disable'?`alter table public.${table} disable trigger ${trigger}`:`drop trigger ${trigger} on public.${table}`);
+          assert.notEqual((await c.query('select employee_password.authority_fingerprint() as value')).rows[0].value,fingerprint);
+          assert.equal((await prepare(r)).kind,'blocked');assert.equal((await consume(r,prepared)).kind,'blocked');
+          assert.equal(await phase(prepared.challenge_id),'prepared');
+          assert.equal((await read('employee_password_owner_targets')).find(x=>x.record_id===r.id).status,'unavailable');
+        }finally{await c.query(mutation==='disable'?`alter table public.${table} enable trigger ${trigger}`:definition);}
+        assert.equal((await c.query('select employee_password.authority_fingerprint() as value')).rows[0].value,fingerprint);
+      }
+    }
+    pass('Disabling or dropping either mixed target guard changes authority fingerprint and blocks prepare/consume without target effect');
+
 
     await reset();const edited=await prepare(r);
     await c.query("update employee_password.approved_records set display_name='Re-reviewed label',version=version+1,reviewed_at=clock_timestamp() where record_id=$1",[r.id]);r.version++;

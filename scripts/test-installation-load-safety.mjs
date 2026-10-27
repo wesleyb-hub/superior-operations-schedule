@@ -8,7 +8,7 @@ const part=(a,b)=>html.slice(html.indexOf(a),html.indexOf(b));
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(){
  const pending=[],renders=[];
- const c={console:{error(){}},hubSessionEpoch:0,currentUser:{id:'synthetic'},state:{view:'delivery',subview:{walls:'installation'},installationDay:'2026-10-19',installationView:'today',installationWeek:'2026-10-19',week:'2026-10-19'},wallsInstallationReady:true,wallsInstallationError:'',wallsInstallation:{jobs:[{record_id:'initial'}]},wallsInstallationChannel:{},wallSubviewAllowed:()=>true,normalizeDate:x=>x,todayISO:()=>'',weekStart:x=>x,addDays:(x,n)=>x+':'+n,render:()=>renders.push(true)};
+ const c={console:{error(){}},hubSessionEpoch:0,currentUserRole:'admin',currentUser:{id:'synthetic'},state:{view:'delivery',subview:{walls:'installation'},installationDay:'2026-10-19',installationView:'today',installationWeek:'2026-10-19',week:'2026-10-19'},wallsInstallationReady:true,wallsInstallationError:'',wallsInstallation:{jobs:[{record_id:'initial'}]},wallsInstallationChannel:{},wallSubviewAllowed:()=>true,normalizeDate:x=>x,todayISO:()=>'',weekStart:x=>x,addDays:(x,n)=>x+':'+n,render:()=>renders.push(true)};
  const request=(name,args)=>new Promise((resolve,reject)=>pending.push({name,args,resolve,reject}));
  c.sb={rpc:request,from:table=>({select:columns=>request(table,{columns})})};
  vm.createContext(c);vm.runInContext(part('let wallsInstallationLoadPromise=', 'function subscribeWallsInstallation('),c);
@@ -44,4 +44,8 @@ test('forced Installation trailing retry survives a failed older read',{timeout:
 });
 test('queued Installation refresh never follows a replacement session promise',{timeout:2000},async()=>{
  const f=fixture(),old=f.c.ensureWallsInstallationLoaded(true),queued=f.c.ensureWallsInstallationLoaded(true);f.c.hubSessionEpoch++;f.c.currentUser={id:'new'};vm.runInContext('wallsInstallationLoadPromise=null;wallsInstallationReloadQueued=false',f.c);const fresh=f.c.ensureWallsInstallationLoaded(true);f.pending[0].resolve({data:{jobs:[]}});assert.equal(await old,false);assert.equal(await queued,false);await resolveSnapshot(f,1,'new');assert.equal(await fresh,true);
+});
+
+test('mixed profile accepts projected production scope without raw table access',{timeout:2000},async()=>{
+ const f=fixture();f.c.currentUserRole='walls_production_inventory_qc_v1';const read=f.c.loadWallsInstallation();const scope=[{activity_id:'activity',assignment_id:'run',load_record_id:'load'}];f.pending[0].resolve({data:{permissions:{view:true,qc:true},jobs:[{record_id:'projected',activities:[{activity_id:'activity',production_scope:scope}]}]}});assert.equal(await read,true);assert.equal(f.pending.length,1);assert.deepEqual(f.c.wallsInstallation.jobs[0].activities[0].production_scope,scope);
 });

@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import net from 'node:net';
 import {randomUUID} from 'node:crypto';
+import {runMixedPasswordScopeTests} from './test-mixed-scope.mjs';
 import {runPasswordDatabaseTests} from './test-database.mjs';
 const require=createRequire(import.meta.url);
 const {default:EmbeddedPostgres}=await import(require.resolve('embedded-postgres'));
@@ -18,7 +19,7 @@ const cluster=new EmbeddedPostgres({databaseDir:path.join(temporary,'data'),user
   postgresFlags:['-c','listen_addresses=127.0.0.1','-c','unix_socket_directories='],onLog:()=>{},onError:()=>{}});
 const config={host:'127.0.0.1',port,user:'postgres',password,database:'superior_workflow_test'};
 const out=path.join(root,'artifacts/employee-owner-password/database');
-let client;const log=[];const report=value=>{log.push(value);console.log(value);};
+let client,failed=false;const log=[];const report=value=>{log.push(value);console.log(value);};
 const readSql=async relative=>(await fs.readFile(path.join(root,relative),'utf8')).replace(/^\\.*$/gm,'');
 try{
   await cluster.initialise();await cluster.start();await cluster.createDatabase(config.database);
@@ -33,17 +34,24 @@ try{
     create table auth.identities(id uuid primary key default gen_random_uuid(),user_id uuid references auth.users(id) on delete cascade,provider text not null,identity_data jsonb not null);
     create table auth.mfa_factors(id uuid primary key default gen_random_uuid(),user_id uuid references auth.users(id) on delete cascade);`);
   const migrations=(await fs.readdir(path.join(root,'supabase/migrations'))).filter(x=>x.endsWith('.sql')).sort();
-  for(const file of migrations)await client.query(await readSql(`supabase/migrations/${file}`));
+  for(const file of migrations){try{await client.query(await readSql(`supabase/migrations/${file}`));}catch(error){throw new Error(`Migration ${file}: ${error.message} (position ${error.position??'unknown'})`);}}
   const version=(await client.query('show server_version')).rows[0].server_version;
   report(`PASS: ${migrations.length} exact migrations applied on fresh loopback PostgreSQL ${version}`);
+  const mixedScopeCases=await runMixedPasswordScopeTests({client,report});
   const result=await runPasswordDatabaseTests({Client,config,report});
-  for(const file of ['tests/integration/walls-workflow-cases.sql','tests/integration/probes/employee-data-scope.sql','tests/integration/probes/employee-approved-crew-packs.sql']){
+  for(const file of ['tests/integration/walls-workflow-cases.sql','tests/integration/probes/employee-data-scope.sql','tests/integration/probes/employee-approved-crew-packs.sql','tests/integration/probes/mixed-employee-scope.sql','tests/integration/probes/mixed-employee-approved-packs.sql']){
     await client.query(await readSql(file));report(`PASS: unchanged ${file}`);
   }
   await fs.mkdir(out,{recursive:true});
-  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({...result,postgres:version,migrations:migrations.length,nativeAuthVerified:false,hostedVerified:false},null,2)+'\n');
-}catch(error){report(`FAIL: ${error?.message||'Database test failed'}`);console.error(error?.stack);process.exitCode=1;}
+  await fs.writeFile(path.join(out,'result.json'),JSON.stringify({...result,mixedScopeCases,postgres:version,migrations:migrations.length,nativeAuthVerified:false,hostedVerified:false},null,2)+'\n');
+}catch(error){report(`FAIL: ${error?.message||'Database test failed'}`);console.error(error?.stack);failed=true;process.exitCode=1;}
 finally{
   if(client)await client.end();await cluster.stop().catch(()=>{});await fs.rm(temporary,{recursive:true,force:true});
   await fs.mkdir(out,{recursive:true});await fs.writeFile(path.join(out,'result.log'),log.join('\n')+'\n');
+  if(failed){
+    await fs.writeFile(path.join(out,'result.json'),JSON.stringify({failed:true,passed:0,nativeAuthVerified:false,hostedVerified:false},null,2)+'\n');
+    // embedded-postgres imports async-exit-hook, whose beforeExit handler forces code 0.
+    // All async DB/filesystem cleanup and durable report writes above are complete.
+    process.exit(1);
+  }
 }

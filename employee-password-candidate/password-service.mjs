@@ -1,6 +1,6 @@
 import {decryptCommand} from './server-crypto.mjs';
 import {MAX_ENVELOPE_BYTES} from './browser-crypto.mjs';
-import {isRestrictedPilot,matchesExistingEmailIdentity} from './identity.mjs';
+import {isReviewedEmployeeScope,matchesExistingEmailIdentity} from './identity.mjs';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RECORD=/^[a-z0-9][a-z0-9_-]{0,63}$/;
 const BASE_FIELDS=['v','kind','aud','owner_uid','owner_token','record_id','target_uid','expected_version','action','request_id','iat','exp','confirm_email'];
@@ -37,7 +37,7 @@ function validCommand(value,policy,now){
 function recordMatches(record,command,policy){
   return record?.record_id===command.record_id&&record.auth_uid===command.target_uid&&record.version===command.expected_version
     &&/^[a-z][a-z0-9._-]{2,31}$/.test(record.username??'')&&record.auth_email===`${record.username}@${policy.identifierDomain}`
-    &&record.setup_completed===(command.action==='reset')&&isRestrictedPilot(record.effective_scope);
+    &&record.setup_completed===(command.action==='reset')&&isReviewedEmployeeScope(record.effective_scope);
 }
 export function allowedNativeState(user,action){
   if(!user||!empty(user.deleted_at)||!empty(user.banned_until)||!empty(user.new_email)||!empty(user.email_change)
